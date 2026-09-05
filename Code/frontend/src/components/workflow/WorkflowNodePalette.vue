@@ -627,7 +627,13 @@ function isFavorite(type: string): boolean {
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .engine-filter-btn:hover {
@@ -714,8 +720,8 @@ function isFavorite(type: string): boolean {
   font-weight: 600;
   text-align: left;
   transition:
-    background 0.16s ease,
-    color 0.16s ease;
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .category-header:hover {
@@ -743,7 +749,7 @@ function isFavorite(type: string): boolean {
 
 .category-toggle {
   font-size: var(--font-size-caption);
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .category-toggle.collapsed {
@@ -782,9 +788,9 @@ function isFavorite(type: string): boolean {
   font: inherit;
   text-align: left;
   transition:
-    border-color 0.16s ease,
-    background 0.16s ease,
-    transform 0.12s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .node-item:hover {
@@ -850,8 +856,8 @@ function isFavorite(type: string): boolean {
   font-size: var(--font-size-caption);
   line-height: 1;
   transition:
-    color 0.16s ease,
-    transform 0.12s ease;
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .node-item-favorite-btn:hover {

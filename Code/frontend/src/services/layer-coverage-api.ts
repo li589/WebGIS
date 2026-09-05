@@ -31,15 +31,32 @@ export function fetchLayerDataCoverage(layerId: string): Promise<LayerDataCovera
   )
 }
 
-/** 选定日是否落在至少一侧有数（或仅在线窗内可预拉） */
+/** 选定日或时段是否落在至少一侧有数（或仅在线窗内可预拉） */
 export function isDateCoveredByAnyChannel(
   dateKey: string,
   coverage: LayerDataCoverageResponse | null | undefined,
   opts?: { allowOnlinePrefetchOnly?: boolean },
 ): boolean {
   if (!coverage || !dateKey) return false
+  const trimmed = dateKey.trim()
+  const parts = trimmed.includes('~')
+    ? trimmed.split('~').map((s) => s.trim())
+    : trimmed.includes('_')
+      ? trimmed.split('_').map((s) => s.trim())
+      : [trimmed]
+  const startKey = parts[0]
+  const endKey = parts[1] || startKey
+
   const local = coverage.channels?.local?.dates ?? []
-  if (local.some((d) => d === dateKey || d.startsWith(dateKey) || dateKey.startsWith(d))) {
+  if (
+    local.some((d) => {
+      if (d === startKey || d === endKey || d.startsWith(startKey) || startKey.startsWith(d)) {
+        return true
+      }
+      if (d >= startKey && d <= endKey) return true
+      return false
+    })
+  ) {
     return true
   }
   const online = coverage.channels?.online
@@ -50,7 +67,7 @@ export function isDateCoveredByAnyChannel(
   const start = online.coverage_start
   const end = online.coverage_end
   if (!start && !end) return Boolean(opts?.allowOnlinePrefetchOnly && online.available)
-  if (start && dateKey < start.slice(0, dateKey.length)) return false
-  if (end && dateKey > end.slice(0, dateKey.length)) return false
+  if (start && endKey < start.slice(0, endKey.length)) return false
+  if (end && startKey > end.slice(0, startKey.length)) return false
   return true
 }

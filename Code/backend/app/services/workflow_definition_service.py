@@ -220,7 +220,7 @@ def can_mutate_user_definition(
 
 
 def _resolve_file(workflow_id: str) -> Path | None:
-    """在 system/ 和 user/ 目录中查找工作流定义文件。"""
+    """在 system/ 和 user/ 目录（及打包种子目录）中查找工作流定义文件。"""
     _validate_id(workflow_id)
     sys_file = _SYSTEM_DIR / f"{workflow_id}.json"
     if sys_file.exists():
@@ -228,6 +228,9 @@ def _resolve_file(workflow_id: str) -> Path | None:
     usr_file = _USER_DIR / f"{workflow_id}.json"
     if usr_file.exists():
         return usr_file
+    seed_file = _SEED_SYSTEM_DIR / f"{workflow_id}.json"
+    if seed_file.exists():
+        return seed_file
     return None
 
 

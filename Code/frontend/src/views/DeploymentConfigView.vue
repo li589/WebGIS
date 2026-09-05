@@ -477,7 +477,12 @@ onMounted(() => {
             </div>
             <div class="key-input">
               <!-- 级别：下拉 -->
-              <select v-if="k.kind === 'level'" v-model="draft[fieldId(k)]" :aria-label="k.label">
+              <select
+                v-if="k.kind === 'level'"
+                v-model="draft[fieldId(k)]"
+                class="cgda-native-select"
+                :aria-label="k.label"
+              >
                 <option value="">（未设置）</option>
                 <option v-for="opt in LEVEL_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
               </select>

@@ -688,9 +688,9 @@ def test_expand_data_root_win_posix_platform(monkeypatch) -> None:
         "app.core.config.settings", SimpleNamespace(data_root="/srv/geodata")
     )
     out = resolver._expand_data_root_placeholders(
-        {"local_dir": "{DATA_ROOT_WIN}/Soil_Moisture/FY3D/raw"}
+        {"local_dir": "{DATA_ROOT_WIN}/Satellite/FY3/FY3D/MWRI/L1"}
     )
-    assert out["local_dir"] == "/srv/geodata/Soil_Moisture/FY3D/raw"
+    assert out["local_dir"] == "/srv/geodata/Satellite/FY3/FY3D/MWRI/L1"
     assert "\\" not in out["local_dir"]
 
 

@@ -263,7 +263,7 @@ def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy
             "entry": "workflow_name",
             "value": "fy_tb_online_read",
             "dataset": "FY_MWRI_HDF",
-            "uri": "D:/prepared/FY_MWRI_HDF",
+            "uri": "D:/prepared/Satellite_FY3_FY3D_MWRI_L1",
         },
     }
 

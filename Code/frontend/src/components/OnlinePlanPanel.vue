@@ -21,6 +21,7 @@ import {
 } from '../utils/online-plan-params'
 import type { TimeGranularity } from '../utils/layer-timeline'
 import { isPlausiblePlanTimeKey } from '../utils/time-key-coverage'
+import { resolveLayerTemporalMode, alignDateToTemporalRange } from '../utils/temporal-mode'
 import { ONLINE_PLAN_COPY } from '../ui-copy'
 import { useTimelineActionBannerStore } from '../stores/timeline-action-banner'
 
@@ -209,6 +210,53 @@ const applyTimeLabel = computed(() =>
   unifiedTimeLock.value ? ONLINE_PLAN_COPY.applyToAll : ONLINE_PLAN_COPY.applyToActive,
 )
 
+const activeTabTemporalMode = computed(() => {
+  const id = activeTab.value?.catalogId
+  if (!id) return resolveLayerTemporalMode(null)
+  const desc =
+    workspace.resolveEffectiveDescriptor?.(id) ??
+    workspace.resolveEffectiveDescriptor?.(workspace.resolveBackendLayerId?.(id) ?? id) ??
+    null
+  return resolveLayerTemporalMode(desc)
+})
+
+const timeKeyPlaceholder = computed(() => {
+  const mode = activeTabTemporalMode.value
+  if (mode.mode === 'range') {
+    if (mode.subtype === 'monthly') return 'YYYY-MM 或 YYYY-MM-DD ~ YYYY-MM-DD'
+    if (mode.subtype === 'multi-day-block') return `YYYYMMDD_YYYYMMDD (${mode.stepDays || 8}天块)`
+    return 'YYYY-MM-DD ~ YYYY-MM-DD (时段)'
+  }
+  return 'YYYY-MM-DD'
+})
+
+const temporalModeLabel = computed(() => {
+  const mode = activeTabTemporalMode.value
+  if (mode.subtype === 'monthly') return '月度'
+  if (mode.subtype === 'multi-day-block') return mode.stepDays ? `${mode.stepDays}天块` : '多日块'
+  return '多日'
+})
+
+const quickAlignBtnLabel = computed(() => {
+  const mode = activeTabTemporalMode.value
+  if (mode.subtype === 'monthly') return '对齐整月'
+  if (mode.subtype === 'multi-day-block') return `对齐${mode.stepDays || 8}天块`
+  return '对齐时段'
+})
+
+function quickAlignDraftRange() {
+  const mode = activeTabTemporalMode.value
+  const raw = draftDate.value.trim()
+  const baseDate =
+    raw.split(/[~_]/)[0]?.trim() ||
+    activeTab.value?.timeRange?.start_at?.slice(0, 10) ||
+    new Date().toISOString().slice(0, 10)
+  const aligned = alignDateToTemporalRange(baseDate, mode)
+  if (aligned) {
+    draftDate.value = aligned.timeKey
+  }
+}
+
 const orbitMode = computed({
   get: () => String(activeTab.value?.paramOverrides?.orbit_mode ?? 'MWRID'),
   set: (v: string) => {
@@ -300,7 +348,15 @@ async function refreshCoverage(catalogId: string) {
 function syncDraftFromTab() {
   const t = activeTab.value
   if (!t) return
-  draftDate.value = t.timeKey || t.timeRange?.start_at?.slice(0, 10) || ''
+  let key = t.timeKey || t.timeRange?.start_at?.slice(0, 10) || ''
+  const mode = activeTabTemporalMode.value
+  if (mode.mode === 'range' && key && !key.includes('~') && !key.includes('_')) {
+    const aligned = alignDateToTemporalRange(key, mode)
+    if (aligned) {
+      key = aligned.timeKey
+    }
+  }
+  draftDate.value = key
   confirmError.value = null
   draftError.value = null
 }
@@ -369,6 +425,12 @@ function park() {
   confirmGeneration += 1
   submitting.value = false
   plan.parkSession()
+}
+
+function dismiss() {
+  confirmGeneration += 1
+  submitting.value = false
+  plan.dismissSession()
 }
 
 function reopen() {
@@ -519,7 +581,7 @@ export default { name: 'OnlinePlanPanel' }
 </script>
 
 <template>
-  <!-- parked 角标（可拖；单击未移动则重新打开） -->
+  <!-- parked 角标（可拖；单击未移动则重新打开；× 关闭会话） -->
   <Teleport to="body">
     <div
       v-if="isParked && pendingCount > 0"
@@ -539,6 +601,16 @@ export default { name: 'OnlinePlanPanel' }
     >
       <span class="ops-dock-grip" aria-hidden="true" />
       {{ ONLINE_PLAN_COPY.parkedDock(pendingCount) }}
+      <button
+        type="button"
+        class="ops-dock-close"
+        :aria-label="ONLINE_PLAN_COPY.closeDockAria"
+        title="关闭"
+        @pointerdown.stop
+        @click.stop.prevent="dismiss"
+      >
+        ×
+      </button>
     </div>
   </Teleport>
 
@@ -561,6 +633,9 @@ export default { name: 'OnlinePlanPanel' }
           <div class="ops-header-actions">
             <AppButton variant="ghost" size="xs" type="button" @click="park">{{
               ONLINE_PLAN_COPY.parkCta
+            }}</AppButton>
+            <AppButton variant="ghost" size="xs" type="button" @click="dismiss">{{
+              ONLINE_PLAN_COPY.closeCta
             }}</AppButton>
           </div>
         </header>
@@ -585,12 +660,32 @@ export default { name: 'OnlinePlanPanel' }
           <p class="ops-summary">{{ failSummary }}</p>
 
           <div class="ops-section">
-            <h3 class="ops-section-title">时段</h3>
+            <h3 class="ops-section-title">
+              时段
+              <span v-if="activeTabTemporalMode.mode === 'range'" class="ops-temporal-badge">
+                时段型 ({{ temporalModeLabel }})
+              </span>
+            </h3>
             <div class="ops-row">
               <label class="ops-label">
                 日期 / timeKey
-                <input v-model="draftDate" class="ops-input" type="text" placeholder="YYYY-MM-DD" />
+                <input
+                  v-model="draftDate"
+                  class="ops-input"
+                  type="text"
+                  :placeholder="timeKeyPlaceholder"
+                />
               </label>
+              <AppButton
+                v-if="activeTabTemporalMode.mode === 'range'"
+                variant="ghost"
+                size="xs"
+                type="button"
+                :title="'按' + temporalModeLabel + '对齐'"
+                @click="quickAlignDraftRange"
+              >
+                {{ quickAlignBtnLabel }}
+              </AppButton>
               <AppButton
                 variant="secondary"
                 size="xs"
@@ -643,6 +738,9 @@ export default { name: 'OnlinePlanPanel' }
           <p v-if="confirmError" class="ops-error" role="alert">{{ confirmError }}</p>
 
           <footer class="ops-footer">
+            <AppButton variant="ghost" size="sm" type="button" @click="dismiss">{{
+              ONLINE_PLAN_COPY.closeCta
+            }}</AppButton>
             <AppButton variant="secondary" size="sm" type="button" @click="park">{{
               ONLINE_PLAN_COPY.parkCta
             }}</AppButton>
@@ -682,7 +780,7 @@ export default { name: 'OnlinePlanPanel' }
   touch-action: none;
   user-select: none;
   box-shadow: var(--elevation-2, 0 4px 14px var(--shadow-ambient));
-  animation: ops-dock-in 0.28s ease-out;
+  animation: ops-dock-in var(--motion-slow) var(--ease-decelerate);
 }
 
 .ops-dock.is-placed {
@@ -704,6 +802,26 @@ export default { name: 'OnlinePlanPanel' }
   flex-shrink: 0;
 }
 
+.ops-dock-close {
+  margin-left: 0.15rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.ops-dock-close:hover,
+.ops-dock-close:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text-strong) 12%, transparent);
+  outline: none;
+}
+
 .ops-dock:hover {
   background: var(--surface-hover, var(--surface-2));
 }
@@ -718,7 +836,7 @@ export default { name: 'OnlinePlanPanel' }
   padding: 0.75rem;
   background: color-mix(in srgb, var(--shadow-ambient, #000) 28%, transparent);
   pointer-events: auto;
-  animation: ops-backdrop-in 0.2s ease-out;
+  animation: ops-backdrop-in var(--motion-surface-duration) var(--motion-surface-ease)-out;
 }
 
 .ops-panel {
@@ -731,7 +849,7 @@ export default { name: 'OnlinePlanPanel' }
   border: 1px solid var(--border-strong);
   box-shadow: var(--elevation-3, 0 8px 28px var(--shadow-ambient));
   color: var(--text-strong);
-  animation: ops-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: ops-slide-in var(--motion-slow) var(--ease-emphasized);
 }
 
 .ops-panel.is-placed {
@@ -850,10 +968,10 @@ export default { name: 'OnlinePlanPanel' }
   font-size: 0.72rem;
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.12s ease;
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .ops-chip:hover {
@@ -970,6 +1088,18 @@ export default { name: 'OnlinePlanPanel' }
   margin: 0;
   font-size: 0.75rem;
   color: var(--danger);
+}
+
+.ops-temporal-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--accent-surface, var(--surface-3));
+  color: var(--accent-strong, var(--text-strong));
+  border: 1px solid var(--accent-border, var(--border-subtle));
 }
 
 .ops-footer {

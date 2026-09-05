@@ -638,11 +638,7 @@ onMounted(() => {
     />
 
     <!-- ── Footer ─────────────────────────────────────────────────────── -->
-    <p class="panel-footnote">
-      <template v-if="sidebarView === 'active'">{{ LAYERS_COPY.footerActive }}</template>
-      <template v-else-if="sidebarView === 'library'">选择图层添加到地图</template>
-      <template v-else></template>
-    </p>
+    <p v-if="sidebarView === 'library'" class="panel-footnote">选择图层添加到地图</p>
 
     <!-- ── 右键上下文菜单 ──────────────────────────────────────────────── -->
     <LayerSidebarContextMenu

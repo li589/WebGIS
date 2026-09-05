@@ -33,6 +33,15 @@ describe('time-key-coverage', () => {
     expect(isPlausiblePlanTimeKey('not-a-date')).toBe(false)
     expect(isPlausiblePlanTimeKey('')).toBe(false)
   })
+
+  it('isPlausiblePlanTimeKey accepts period/range formats', () => {
+    expect(isPlausiblePlanTimeKey('2026-07-01_2026-07-08')).toBe(true)
+    expect(isPlausiblePlanTimeKey('20260701_20260708')).toBe(true)
+    expect(isPlausiblePlanTimeKey('2026-07-01 ~ 2026-07-08')).toBe(true)
+    expect(isPlausiblePlanTimeKey('2026-07-01 to 2026-07-08')).toBe(true)
+    // 逆序起止被拒绝
+    expect(isPlausiblePlanTimeKey('2026-07-08_2026-07-01')).toBe(false)
+  })
 })
 
 describe('resolveAlignPolicyMode', () => {

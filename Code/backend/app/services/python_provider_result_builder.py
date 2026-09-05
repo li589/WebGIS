@@ -84,12 +84,19 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "vmin": 0.0,
         "vmax": 0.5,
     },
+    "ndvi_daily_dir": {
+        "variable": "NDVI",
+        "grid_preset": "ease2-global-9km",
+        "label": "NDVI",
+        "palette": "ndvi-ramp",
+        "from_block_dir": True,
+        "vmin": 0.0,
+        "vmax": 1.0,
+    },
 }
 
 
-def _legend_ticks_from_range(
-    vmin: object | None, vmax: object | None
-) -> list[float]:
+def _legend_ticks_from_range(vmin: object | None, vmax: object | None) -> list[float]:
     if not isinstance(vmin, (int, float)) or not isinstance(vmax, (int, float)):
         return []
     lo = float(vmin)
@@ -97,6 +104,7 @@ def _legend_ticks_from_range(
     if not (lo < hi):
         return []
     return [lo, (lo + hi) / 2.0, hi]
+
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
 _FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
@@ -214,26 +222,63 @@ def _resolve_product_display_label(
     tags: dict[str, Any],
     product: dict[str, Any],
     local_path: Path,
+    workflow_id: str | None = None,
 ) -> str:
-    """产物图层显示名：目录 descriptor 显示名 > tags.layer > 产物名（剥扩展名）> stem。
+    """产物图层显示名：目录 descriptor/种子 output_labels > descriptor 显示名 > tags.layer > 产物名（剥扩展名）> stem。
 
-    2026-08-24 三联报障（续）：product.name 常为源文件名（如 landcover_025.mat），
-    前端 normalizeProductTag 全串大写 + productTagLabel 未知 tag 透传后，
-    文件名会整体泄漏成图层显示名（「LANDCOVER_025.MAT」）。descriptor
-    显示名优先从根上消除技术文件名；产物名/stem 兜底时一律剥数据扩展名。
+    消除技术文件名及「产出变量」等模糊标签，与前端 layer-naming 规范严格对齐。
     """
+    tag_keys = [
+        str(tags.get("layer") or "").strip(),
+        str(product.get("variable") or "").strip(),
+        "result",
+    ]
     if raw_layer_id:
         try:
             from app.services.layer_catalog import get_layer_descriptor
 
             descriptor = get_layer_descriptor(raw_layer_id)
-            display_name = (
-                getattr(descriptor, "display_name", None) if descriptor else None
-            )
-            if display_name and str(display_name).strip():
-                return str(display_name).strip()[:64]
+            if descriptor:
+                extra = getattr(descriptor, "workflow_extra", None)
+                if isinstance(extra, dict):
+                    output_labels = extra.get("output_labels")
+                    if isinstance(output_labels, dict):
+                        for k in tag_keys:
+                            if (
+                                k
+                                and k in output_labels
+                                and str(output_labels[k]).strip()
+                            ):
+                                return str(output_labels[k]).strip()[:64]
+                display_name = getattr(descriptor, "display_name", None)
+                if display_name and str(display_name).strip():
+                    return str(display_name).strip()[:64]
         except Exception:
             logger.debug("layer descriptor lookup failed for %s", raw_layer_id)
+
+    if workflow_id:
+        try:
+            from app.services.workflow_definition_service import get_definition
+
+            wdef = get_definition(workflow_id)
+            if isinstance(wdef, dict):
+                extra = wdef.get("extra")
+                if isinstance(extra, dict):
+                    output_labels = extra.get("output_labels")
+                    if isinstance(output_labels, dict):
+                        for k in tag_keys:
+                            if (
+                                k
+                                and k in output_labels
+                                and str(output_labels[k]).strip()
+                            ):
+                                return str(output_labels[k]).strip()[:64]
+                    group_title = extra.get("group_title")
+                    if group_title and str(group_title).strip():
+                        return str(group_title).strip()[:64]
+        except Exception:
+            logger.debug("workflow definition lookup failed for %s", workflow_id)
+
     for candidate in (tags.get("layer"), product.get("name")):
         if candidate and str(candidate).strip():
             name = re.sub(
@@ -841,12 +886,22 @@ class PythonProviderResultBuilder:
             and product.get("type") == "omega_sf_omega_block_dir"
             for product in products
         )
+        has_ndvi_block_series = any(
+            isinstance(product, dict) and product.get("type") == "ndvi_daily_dir"
+            for product in products
+        )
         for idx, product in enumerate(products):
             if not isinstance(product, dict):
                 continue
             # SF workflow 的 omega_pixel 是静态诊断产物；存在块级 OMEGA
             # 时间序列时不可再发布一次同标签地图层，否则一个 run 会变成四层。
             if has_omega_block_series and product.get("type") == "omega_sf_omega_pixel":
+                continue
+            # NDVI 类似：存在 ndvi_daily_dir 块级时序时，跳过 32 个逐日静态 raster 产物
+            if has_ndvi_block_series and (
+                product.get("type") in {"raster", "daily_ndvi_mat"}
+                or str(product.get("name", "")).startswith("ndvi_20")
+            ):
                 continue
             ref = self._build_product_map_layer_ref(
                 run_id=run_id,
@@ -1246,7 +1301,10 @@ class PythonProviderResultBuilder:
         tags = as_dict(product.get("tags"))
         variable = str(product.get("variable") or tags.get("variable") or "raster")
         raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
-        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
+        workflow_id = str(getattr(payload, "workflow_id", "") or "").strip()
+        label = _resolve_product_display_label(
+            raw_layer_id, tags, product, local_path, workflow_id=workflow_id
+        )
         # 2026-08-24 三联报障 A：产物 overlay id 稳定化。此前恒为
         # imported-gis-{run_id[-8:]}-{index}——每次运行生成新 id，前端
         # syncOverlays 视为"旧层移除+新层添加"，两次网络往返之间存在空窗
@@ -1343,7 +1401,9 @@ class PythonProviderResultBuilder:
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,
-                    "product_tag": label,
+                    "product_tag": str(
+                        tags.get("layer") or product.get("variable") or label
+                    ),
                     "source_path": str(local_path),
                     "time_list": registered.get("time_list") or [],
                     "default_time": registered.get("default_time"),
@@ -1376,7 +1436,10 @@ class PythonProviderResultBuilder:
         """
         tags = as_dict(product.get("tags"))
         raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
-        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
+        workflow_id = str(getattr(payload, "workflow_id", "") or "").strip()
+        label = _resolve_product_display_label(
+            raw_layer_id, tags, product, local_path, workflow_id=workflow_id
+        )
         variable = str(product.get("variable") or tags.get("variable") or "").strip()
         if not variable and local_path.suffix.lower() == ".mat":
             variable = _infer_mat_data_variable(local_path) or local_path.stem
@@ -1470,7 +1533,9 @@ class PythonProviderResultBuilder:
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,
-                    "product_tag": label,
+                    "product_tag": str(
+                        tags.get("layer") or product.get("variable") or label
+                    ),
                     "source_path": str(local_path),
                     "time_list": registered.get("time_list") or [],
                     "default_time": registered.get("default_time"),
@@ -1584,7 +1649,50 @@ class PythonProviderResultBuilder:
             if end_at is not None:
                 time_end = str(end_at).replace("-", "")[:8]
 
-        # Prefer explicit products when present
+        # Prefer explicit products when present; 自愈：若存在 ndvi_daily 块目录且当前 run 确属 NDVI/日均工作流但旧 run 产物未登记，自动补全
+        target_layer = str(run_status.layer_id or "").lower()
+        cmd_label = str(run_status.command_label or "").lower()
+        executor_meta = getattr(run_status, "executor_metadata", None) or {}
+        workflow_kind = str(executor_meta.get("workflow_kind") or "").lower()
+
+        # 保护：资产工作流（asset_bake）或非 NDVI 任务绝对不自愈注入 NDVI 产物
+        is_asset_bake = workflow_kind == "asset_bake"
+        is_ndvi_eligible = (
+            not is_asset_bake
+            and (
+                "ndvi" in target_layer
+                or "ndvi" in cmd_label
+                or "omega_avg_daily" in cmd_label
+            )
+        )
+
+        ndvi_dir: Path | None = None
+        data_root = Path(getattr(settings, "data_root", "") or "")
+        workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
+        if is_ndvi_eligible:
+            for base in (workspace, data_root / "_runtime" / "python_provider"):
+                cand = base / "products" / "ndvi_daily"
+                if cand.is_dir() and any(cand.glob("????????.mat")):
+                    ndvi_dir = cand
+                    break
+        if ndvi_dir is not None and not any(
+            isinstance(p, dict) and p.get("type") == "ndvi_daily_dir"
+            for p in (result_dto.get("products") or [])
+        ):
+            if "products" not in result_dto or not isinstance(
+                result_dto["products"], list
+            ):
+                result_dto["products"] = []
+            result_dto["products"].append(
+                {
+                    "name": "ndvi_daily",
+                    "type": "ndvi_daily_dir",
+                    "uri": str(ndvi_dir),
+                    "variable": "NDVI",
+                    "tags": {"module": "ndvi_daily", "layer": "NDVI"},
+                }
+            )
+
         if result_dto.get("products"):
             payload = WorkflowSubmitRequest(
                 command_type=run_status.command_type,
@@ -1651,16 +1759,45 @@ class PythonProviderResultBuilder:
             data_root = Path(getattr(settings, "data_root", "") or "")
             workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
             runtime_candidates: list[Path] = []
-            if workspace.parts:
-                runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
-            if data_root.parts:
-                runtime_candidates.append(
-                    data_root
-                    / "_runtime"
-                    / "python_provider"
-                    / "products"
-                    / "omega_sf_fenkuai"
+            # 保护：仅当图层确属反演类任务时，才允许扫描全局 omega_sf_fenkuai 运行时目录
+            is_inversion_eligible = (
+                not is_asset_bake
+                and (
+                    any(
+                        keyword in target_layer
+                        for keyword in (
+                            "omega",
+                            "soil_moisture",
+                            "soil-moisture",
+                            "vod",
+                            "inversion",
+                            "fenkuai",
+                        )
+                    )
+                    or any(
+                        keyword in cmd_label
+                        for keyword in (
+                            "omega",
+                            "soil_moisture",
+                            "soil-moisture",
+                            "vod",
+                            "inversion",
+                            "fenkuai",
+                        )
+                    )
                 )
+            )
+            if is_inversion_eligible:
+                if workspace.parts:
+                    runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
+                if data_root.parts:
+                    runtime_candidates.append(
+                        data_root
+                        / "_runtime"
+                        / "python_provider"
+                        / "products"
+                        / "omega_sf_fenkuai"
+                    )
             for path in [*candidates, *runtime_candidates]:
                 block_dirs: list[Path] = []
                 if path.is_dir():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,23 +23,115 @@ def extract_date_from_ndvi_filename(file_path: str | Path) -> datetime:
     return datetime.strptime(match.group(1), "%Y%m%d")
 
 
+def _parse_ndvi_time(t: datetime | str) -> datetime:
+    if isinstance(t, datetime):
+        return t
+    s = str(t).strip()
+    if len(s) == 8 and s.isdigit():
+        return datetime.strptime(s, "%Y%m%d")
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
 def discover_ndvi_rasters(
     input_dir: str | Path,
-    start_time: datetime,
-    end_time: datetime,
+    start_time: datetime | str,
+    end_time: datetime | str,
     pattern: str = "*.tif",
+    composite_days: int = 16,
 ) -> list[NdviRasterRecord]:
     input_dir = Path(input_dir)
-    records: list[NdviRasterRecord] = []
-    for file_path in sorted(input_dir.glob(pattern)):
-        date = extract_date_from_ndvi_filename(file_path)
-        if start_time <= date <= end_time:
-            records.append(NdviRasterRecord(file_path=file_path, date=date))
-    if not records:
+    if not input_dir.exists():
         raise FileNotFoundError(
-            f"No NDVI rasters found in {input_dir} for {start_time:%Y-%m-%d} to {end_time:%Y-%m-%d}"
+            f"NDVI directory does not exist: {input_dir} (error_code=coverage_gap)"
+        )
+
+    start_dt = _parse_ndvi_time(start_time)
+    end_dt = _parse_ndvi_time(end_time)
+
+    # 优先检测 pattern (默认 *.tif)；若为默认 tif 模式则同时包含 *.mat
+    if pattern in ("*.tif", "*.tiff"):
+        files = sorted(
+            set(
+                list(input_dir.glob("*.tif"))
+                + list(input_dir.glob("*.tiff"))
+                + list(input_dir.glob("*.mat"))
+            )
+        )
+    else:
+        files = sorted(input_dir.glob(pattern))
+
+    records: list[NdviRasterRecord] = []
+    all_dates: list[datetime] = []
+    for file_path in files:
+        try:
+            date = extract_date_from_ndvi_filename(file_path)
+            all_dates.append(date)
+            # 兼容 16 天合成产品：若文件代表合成周期，周期 [date, date + composite_days] 与 [start_dt, end_dt] 存在重叠即可入选
+            if (date <= end_dt) and (
+                date + timedelta(days=max(0, composite_days)) >= start_dt
+            ):
+                records.append(NdviRasterRecord(file_path=file_path, date=date))
+        except ValueError:
+            continue
+
+    if not records:
+        if all_dates:
+            min_date = min(all_dates)
+            max_date = max(all_dates)
+            raise FileNotFoundError(
+                f"No NDVI rasters found in {input_dir} for {start_dt:%Y-%m-%d} to {end_dt:%Y-%m-%d}. "
+                f"Available date range in directory is {min_date:%Y-%m-%d} to {max_date:%Y-%m-%d}. (error_code=coverage_gap)"
+            )
+        raise FileNotFoundError(
+            f"No NDVI rasters found in {input_dir} for {start_dt:%Y-%m-%d} to {end_dt:%Y-%m-%d}. (error_code=coverage_gap)"
         )
     return records
+
+
+def _read_ndvi_array_from_file(file_path: Path) -> tuple[Any, Any, Any]:
+    """读取单个栅格或 MAT 文件中的 NDVI 数组，返回 (array, transform, crs)。"""
+    import numpy as np
+
+    suffix = file_path.suffix.lower()
+    if suffix in (".tif", ".tiff", ".geotiff", ".cog"):
+        import rasterio
+
+        with rasterio.open(file_path) as dataset:
+            arr = dataset.read(1).astype(np.float64)
+            return arr, dataset.transform, dataset.crs
+
+    if suffix == ".mat":
+        import rasterio
+        from rasterio.transform import from_bounds
+        from scipy.io import loadmat
+
+        mat_data = loadmat(str(file_path))
+        data_arr = None
+        if "NDVI" in mat_data and isinstance(mat_data["NDVI"], np.ndarray):
+            data_arr = mat_data["NDVI"]
+        else:
+            for k, v in mat_data.items():
+                if not k.startswith("__") and isinstance(v, np.ndarray) and v.ndim == 2:
+                    data_arr = v
+                    break
+        if data_arr is None:
+            raise ValueError(f"No 2D NDVI array found in MAT file: {file_path}")
+
+        arr = data_arr.astype(np.float64)
+        height, width = arr.shape
+        if (height, width) == (1624, 3856):
+            from data_access.ease_grid_constants import EASE2_GLOBAL_BOUNDS
+
+            transform = from_bounds(*EASE2_GLOBAL_BOUNDS, width, height)
+            crs = rasterio.crs.CRS.from_epsg(6933)
+            return arr, transform, crs
+
+        # 中国区域默认 9km / 0.05° 常用参考边界
+        transform = from_bounds(73.0, 18.0, 135.0, 53.0, width, height)
+        crs = rasterio.crs.CRS.from_epsg(4326)
+        return arr, transform, crs
+
+    raise ValueError(f"Unsupported NDVI raster file format: {file_path}")
 
 
 def load_ndvi_stack(
@@ -49,25 +141,19 @@ def load_ndvi_stack(
     pattern: str = "*.tif",
 ) -> tuple[Any, list[datetime]]:
     """
-    加载指定时间范围内的 NDVI 栅格堆叠数据。
+    加载指定时间范围内的 NDVI 栅格堆叠数据。支持 GeoTIFF (*.tif) 与 MATLAB (*.mat)。
 
     返回：(stack, dates)
         - stack: numpy 数组，shape (height, width, time)
         - dates: 对应的时间戳列表
-
-    地理参考通过 discover_ndvi_rasters 打开第一个文件时获取。
     """
     import numpy as np
-    import rasterio
 
     records = discover_ndvi_rasters(input_dir, start_time, end_time, pattern=pattern)
     arrays: list[np.ndarray] = []
-    first_transform = None
     for record in records:
-        with rasterio.open(record.file_path) as dataset:
-            arrays.append(dataset.read(1).astype(np.float64))
-            if first_transform is None:
-                first_transform = dataset.transform
+        arr, _, _ = _read_ndvi_array_from_file(record.file_path)
+        arrays.append(arr)
     stack = np.stack(arrays, axis=2)
     return stack, [record.date for record in records]
 
@@ -91,29 +177,23 @@ def load_ndvi_stack_full(
     pattern: str = "*.tif",
 ) -> NdviStackInfo:
     """
-    加载 NDVI 栅格堆叠数据，返回完整的地理参考信息。
-
-    适用于需要输出 COG/GeoTIFF 的场景。
-
-    返回 NdviStackInfo，其中 transform 和 crs 来自第一景影像。
+    加载 NDVI 栅格堆叠数据，返回完整的地理参考信息。支持 GeoTIFF (*.tif) 与 MATLAB (*.mat)。
     """
-    records = discover_ndvi_rasters(input_dir, start_time, end_time, pattern=pattern)
     import numpy as np
-    import rasterio
 
+    records = discover_ndvi_rasters(input_dir, start_time, end_time, pattern=pattern)
     arrays: list[np.ndarray] = []
     first_transform = None
     first_crs = None
     first_height = 0
     first_width = 0
     for record in records:
-        with rasterio.open(record.file_path) as dataset:
-            arrays.append(dataset.read(1).astype(np.float64))
-            if first_transform is None:
-                first_transform = dataset.transform
-                first_crs = dataset.crs
-                first_height = dataset.height
-                first_width = dataset.width
+        arr, transform, crs = _read_ndvi_array_from_file(record.file_path)
+        arrays.append(arr)
+        if first_transform is None:
+            first_transform = transform
+            first_crs = crs
+            first_height, first_width = arr.shape
     stack = np.stack(arrays, axis=2)
     return NdviStackInfo(
         stack=stack,

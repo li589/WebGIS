@@ -415,7 +415,7 @@ def test_mock_legacy_migrates_to_demo_only(tmp_path, monkeypatch):
 
     from app.services.agent import config_service as cs
 
-    monkeypatch.setattr(cs, "settings", cfg_mod.settings)
+
     dest = data / "_runtime" / "agent" / "global_profiles.json"
     assert not dest.exists()
     cs._ensure_global_migrated()
@@ -739,7 +739,7 @@ def test_run_workflow_creates_confirmation_ticket(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(ac, "settings", cfg_mod.settings)
+
 
     class _Cred:
         role = "admin"
@@ -786,7 +786,7 @@ def test_agent_confirm_approve_reject_and_expire(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(ac, "settings", cfg_mod.settings)
+
 
     ticket = ac.create_confirmation(
         action="run_workflow",
@@ -844,9 +844,7 @@ def test_agent_chat_run_workflow_confirmation_and_confirm_api(
     new_settings = replace(cfg_mod.settings, data_root=str(data))
     cfg_mod.settings = new_settings
     monkeypatch.setattr("app.core.config.settings", new_settings)
-    monkeypatch.setattr(cs, "settings", new_settings)
-    monkeypatch.setattr(ac, "settings", new_settings)
-    monkeypatch.setattr(ss, "settings", new_settings)
+
     cs._save_store_unlocked(cs._global_profiles_path(), cs._empty_store())
 
     _login(agent_client, "testadmin", "test-pass-123")
@@ -899,6 +897,38 @@ def test_agent_chat_run_workflow_confirmation_and_confirm_api(
     assert ok.json()["run_id"] == "run-testapprove01"
 
 
+def test_agent_sessions_list_get_delete(agent_client: TestClient, tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data"))
+    from app.services.agent import session_store as ss
+
+    _login(agent_client, "stduser", "std-pass-123")
+    # Seed via chat so user_id matches session cookie
+    r = agent_client.post(
+        "/agent/chat",
+        json={"message": "有哪些活动图层", "session_id": "sess-api-1"},
+    )
+    assert r.status_code == 200, r.text
+    sid = r.json()["session_id"]
+    assert sid
+
+    listed = agent_client.get("/agent/sessions")
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert body["count"] >= 1
+    assert any(s["session_id"] == sid for s in body["sessions"])
+
+    got = agent_client.get(f"/agent/sessions/{sid}")
+    assert got.status_code == 200, got.text
+    assert got.json()["session_id"] == sid
+    assert isinstance(got.json()["messages"], list)
+    assert len(got.json()["messages"]) >= 1
+
+    deleted = agent_client.delete(f"/agent/sessions/{sid}")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["ok"] is True
+    assert agent_client.get(f"/agent/sessions/{sid}").status_code == 404
+
+
 def test_mock_orchestrator_unit():
     from app.services.agent.mock_orchestrator import mock_chat
 
@@ -906,6 +936,301 @@ def test_mock_orchestrator_unit():
         "定位到降水", client_context={"active_catalog_ids": ["cmfd-precip-cn"]}
     )
     assert out["ui_intents"][0]["name"] == "fit_layer"
+
+
+def test_mock_orchestrator_fit_china_and_basemap_and_locate():
+    from app.services.agent.mock_orchestrator import mock_chat
+
+    china = mock_chat("缩放到中国全境")
+    assert china["ui_intents"][0]["name"] == "fit_china"
+
+    basemap = mock_chat("切换为天地图影像")
+    assert basemap["ui_intents"][0]["name"] == "switch_basemap"
+    assert basemap["ui_intents"][0]["args"]["basemap_id"] == "tianditu-img"
+
+    city = mock_chat("定位到北京")
+    assert city["ui_intents"][0]["name"] == "locate_coordinate"
+    assert city["ui_intents"][0]["args"]["lng"] == pytest.approx(116.4074)
+    assert city["ui_intents"][0]["args"]["lat"] == pytest.approx(39.9042)
+
+    coord = mock_chat("定位到 116.4, 39.9")
+    assert coord["ui_intents"][0]["name"] == "locate_coordinate"
+    assert coord["ui_intents"][0]["args"]["lng"] == pytest.approx(116.4)
+
+
+def test_mock_orchestrator_p1_timeline_remove_reorder():
+    from app.services.agent.mock_orchestrator import mock_chat
+
+    tl = mock_chat("时间设为 8 点")
+    assert tl["ui_intents"][0]["name"] == "set_timeline"
+    assert tl["ui_intents"][0]["args"]["hour"] == 8
+
+    pause = mock_chat("暂停时间轴播放")
+    assert pause["ui_intents"][0]["name"] == "set_timeline_playing"
+    assert pause["ui_intents"][0]["args"]["playing"] is False
+
+    rem = mock_chat(
+        "移除图层降水",
+        client_context={"active_catalog_ids": ["cmfd-precip-cn"]},
+    )
+    assert rem["ui_intents"][0]["name"] == "remove_layer"
+
+    front = mock_chat(
+        "将降水置顶",
+        client_context={"active_catalog_ids": ["cmfd-precip-cn"]},
+    )
+    assert front["ui_intents"][0]["name"] == "reorder_layer"
+    assert front["ui_intents"][0]["args"]["action"] == "front"
+
+
+def test_normalize_intents_allows_map_viewport_aliases():
+    from app.services.agent.orchestrator import _normalize_intents
+
+    raw = [
+        {"name": "fit_china", "args": {}},
+        {"name": "zoom_to_china", "args": {}},
+        {"name": "locate_coordinate", "args": {"lng": 1, "lat": 2}},
+        {"name": "fly_to", "args": {"lng": 3, "lat": 4}},
+        {"name": "switch_basemap", "args": {"basemap_id": "tianditu-img"}},
+        {"name": "set_basemap", "args": {"source_id": "gaode-street"}},
+        {"name": "set_timeline", "args": {"hour": 1}},
+        {"name": "remove_layer", "args": {"catalog_id": "x"}},
+        {"name": "not_a_real_intent", "args": {}},
+    ]
+    out = _normalize_intents(raw)
+    names = [i["name"] for i in out]
+    assert names == [
+        "fit_china",
+        "zoom_to_china",
+        "locate_coordinate",
+        "fly_to",
+        "switch_basemap",
+        "set_basemap",
+        "set_timeline",
+        "remove_layer",
+    ]
+
+
+def test_load_ui_intent_tools_includes_map_viewport():
+    from app.services.agent.orchestrator import load_ui_intent_tools_openai
+
+    tools = load_ui_intent_tools_openai()
+    names = {t["function"]["name"] for t in tools}
+    assert "fit_china" in names
+    assert "locate_coordinate" in names
+    assert "switch_basemap" in names
+    assert "fit_layer" in names
+    assert "set_timeline" in names
+    assert "remove_layer" in names
+    assert "set_layer_symbology" in names
+
+
+def test_server_tools_p2_read_wrappers():
+    from app.services.agent.server_tools_runtime import (
+        ALLOWED_SERVER_TOOLS,
+        execute_server_tool,
+    )
+
+    assert "list_workflow_runs" in ALLOWED_SERVER_TOOLS
+    assert "get_workflow_run" in ALLOWED_SERVER_TOOLS
+    assert "get_layer_coverage" in ALLOWED_SERVER_TOOLS
+    assert "list_workflow_timers" in ALLOWED_SERVER_TOOLS
+
+    # Non-admin without user → empty runs list (fail-closed)
+    runs = execute_server_tool("list_workflow_runs", {"limit": 5}, cred=None)
+    assert runs.get("ok") is True
+    assert runs.get("runs") == []
+
+    timers = execute_server_tool("list_workflow_timers", {}, cred=None)
+    assert timers.get("ok") is False
+
+
+def test_prepare_run_workflow_maps_time_range(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services.agent import server_tools_runtime as runtime
+
+    class Cred:
+        user_id = 1
+        role = "admin"
+
+    monkeypatch.setattr(
+        runtime,
+        "_filter_ids",
+        lambda ids, cred: list(ids),
+    )
+
+    def fake_desc(cid: str):
+        return SimpleNamespace(
+            display_name="Demo",
+            workflow_id="wf-demo",
+            workflow_variants={
+                "online": SimpleNamespace(workflow_id="wf-demo-online"),
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.services.layer_catalog.get_layer_descriptor",
+        fake_desc,
+    )
+
+    captured: dict = {}
+
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return {
+            "confirmation_id": "cid-test-12345678",
+            "expires_at": "2099-01-01T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(
+        "app.services.agent.agent_confirm.create_confirmation",
+        fake_create,
+    )
+
+    out = runtime.execute_server_tool(
+        "run_workflow",
+        {
+            "catalog_id": "cmfd-precip-cn",
+            "time_range": {
+                "start": "2024-01-01T00:00:00+00:00",
+                "end": "2024-01-02T00:00:00+00:00",
+            },
+            "workflow_variant": "online",
+        },
+        cred=Cred(),
+    )
+    assert out.get("needs_confirmation") is True
+    assert "time_range" in (out.get("summary") or {})
+    assert (out.get("summary") or {}).get("workflow_id") == "wf-demo-online"
+    payload = captured.get("submit_payload") or {}
+    assert payload.get("time_range") is not None
+
+
+def test_prepare_run_workflow_rejects_bad_time_range_and_online(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services.agent import server_tools_runtime as runtime
+
+    class Cred:
+        user_id = 1
+        role = "admin"
+
+    monkeypatch.setattr(runtime, "_filter_ids", lambda ids, cred: list(ids))
+
+    def fake_desc(_cid: str):
+        return SimpleNamespace(
+            display_name="Demo",
+            workflow_id="wf-demo",
+            workflow_variants={},
+        )
+
+    monkeypatch.setattr(
+        "app.services.layer_catalog.get_layer_descriptor",
+        fake_desc,
+    )
+
+    created = {"n": 0}
+
+    def fake_create(**_kwargs):
+        created["n"] += 1
+        return {
+            "confirmation_id": "cid-should-not",
+            "expires_at": "2099-01-01T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(
+        "app.services.agent.agent_confirm.create_confirmation",
+        fake_create,
+    )
+
+    incomplete = runtime.execute_server_tool(
+        "run_workflow",
+        {
+            "catalog_id": "cmfd-precip-cn",
+            "time_range": {"start": "2024-01-01T00:00:00+00:00"},
+        },
+        cred=Cred(),
+    )
+    assert incomplete.get("ok") is False
+    assert "time_range" in str(incomplete.get("error") or "")
+    assert created["n"] == 0
+
+    bad_iso = runtime.execute_server_tool(
+        "run_workflow",
+        {
+            "catalog_id": "cmfd-precip-cn",
+            "time_range": {"start": "not-a-date", "end": "also-bad"},
+        },
+        cred=Cred(),
+    )
+    assert bad_iso.get("ok") is False
+    assert created["n"] == 0
+
+    online_missing = runtime.execute_server_tool(
+        "run_workflow",
+        {
+            "catalog_id": "cmfd-precip-cn",
+            "workflow_variant": "online",
+        },
+        cred=Cred(),
+    )
+    assert online_missing.get("ok") is False
+    assert "online" in str(online_missing.get("error") or "").lower()
+    assert created["n"] == 0
+
+
+def test_get_workflow_run_fail_closed_without_uid(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services.agent import server_tools_runtime as runtime
+    from app.services.workflow import service_container as sc
+
+    class CredNoUid:
+        user_id = None
+        role = "standard"
+
+    monkeypatch.setattr(
+        sc.submission_service,
+        "get_workflow_run",
+        lambda _rid: SimpleNamespace(
+            run_id="run-1",
+            status=SimpleNamespace(value="succeeded"),
+            layer_id="cmfd-precip-cn",
+            command_label="x",
+            progress=1.0,
+            message=None,
+            created_at=None,
+            updated_at=None,
+        ),
+    )
+
+    out = runtime.execute_server_tool(
+        "get_workflow_run", {"run_id": "run-1"}, cred=CredNoUid()
+    )
+    assert out.get("ok") is False
+    assert "未找到" in str(out.get("error") or "")
+
+
+def test_agent_session_invalid_id_returns_404(agent_client: TestClient, tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data"))
+    _login(agent_client, "stduser", "std-pass-123")
+    # Illegal chars must 404 (not 500)
+    bad = agent_client.get("/agent/sessions/bad!id")
+    assert bad.status_code == 404, bad.text
+    bad_del = agent_client.delete("/agent/sessions/bad!id")
+    assert bad_del.status_code == 422, bad_del.text
+
+
+def test_session_store_anon_and_invalid_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data"))
+    from app.services.agent import session_store as ss
+
+    assert ss.list_sessions(user_id=None) == []
+    assert ss.get_session_messages(user_id=None, session_id="sess-1") is None
+    assert ss.delete_session(user_id=None, session_id="sess-1") is False
+    assert ss.get_session_messages(user_id=1, session_id="bad!id") is None
+    assert ss.delete_session(user_id=1, session_id="bad!id") is False
 
 
 def test_should_rate_limit_agent_chat():
@@ -1028,7 +1353,7 @@ def test_leaving_demo_revalidates_base_url(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(cs, "settings", cfg_mod.settings)
+
 
     store = {
         "active_profile_id": "demo",
@@ -1080,7 +1405,7 @@ def test_session_store_ttl_and_cap(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(ss, "settings", cfg_mod.settings)
+
 
     uid = 42
     ss.append_turn(user_id=uid, session_id="s1", user_message="a", assistant_message="a1")

@@ -1,7 +1,7 @@
 import json
 
 import pytest
-
+from webgis_gee.accounts.pool import InMemoryAccountPool
 from webgis_gee.api.contracts import (
     ExportTaskStatusResponse,
     WorkflowContractAdapter,
@@ -16,9 +16,10 @@ from webgis_gee.config.settings import Settings
 from webgis_gee.runtime.exceptions import WorkflowValidationError
 
 
-def _create_handlers(tmp_path) -> WorkflowApiHandlers:
+def _create_handlers(tmp_path, account_pool=None) -> WorkflowApiHandlers:
     service = WorkflowService(
-        settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)),
+        account_pool=account_pool or InMemoryAccountPool(["test-account"]),
     )
     facade = WorkflowApiFacade(adapter=WorkflowContractAdapter(service))
     return WorkflowApiHandlers(facade=facade)

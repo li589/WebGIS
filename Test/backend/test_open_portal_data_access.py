@@ -43,7 +43,7 @@ def test_applies_http_headers_and_cache_hit() -> None:
         mock_resp.__exit__ = MagicMock(return_value=False)
 
         with patch(
-            "data_access.sources.http.urlopen", return_value=mock_resp
+            "urllib.request.OpenerDirector.open", return_value=mock_resp
         ) as urlopen_mock:
             resource = source.locate(uri, metadata={"http_headers": headers})
             out = source.materialize(resource, target_dir=target)
@@ -62,7 +62,7 @@ def test_applies_http_headers_and_cache_hit() -> None:
         mock_304.__enter__ = lambda s: s
         mock_304.__exit__ = MagicMock(return_value=False)
 
-        with patch("data_access.sources.http.urlopen", return_value=mock_304):
+        with patch("urllib.request.OpenerDirector.open", return_value=mock_304):
             out2 = source.materialize(
                 source.locate(uri, metadata={"http_headers": headers}),
                 target_dir=target,
@@ -88,7 +88,7 @@ def test_force_refresh_redownloads() -> None:
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("data_access.sources.http.urlopen", return_value=mock_resp):
+        with patch("urllib.request.OpenerDirector.open", return_value=mock_resp):
             r1 = source.materialize(source.locate(uri), target_dir=target)
             assert Path(r1.local_path).read_bytes() == b"v1", 'Path(r1.local_path).read_bytes() == b"v1"'
             r2 = source.materialize(

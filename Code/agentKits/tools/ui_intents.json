@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 3,
   "intents": [
     {
       "name": "set_layer_visibility",
@@ -41,6 +41,102 @@
       "name": "list_active_layers",
       "description": "List currently active map layers from the client. Prefer answering the user in Chinese with the layer names; this tool confirms the client-side list.",
       "args": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "fit_china",
+      "description": "Zoom the map viewport to China national extent. Use when the user asks for 中国全境/全国范围/缩放到中国. Alias zoom_to_china is also accepted by the client.",
+      "args": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "locate_coordinate",
+      "description": "Fly the map to a WGS84 longitude/latitude. Prefer lng+lat; longitude/lon and latitude aliases accepted. Optional zoom (typical city ~10–12).",
+      "args": {
+        "type": "object",
+        "required": ["lng", "lat"],
+        "properties": {
+          "lng": { "type": "number", "description": "Longitude WGS84 (−180…180)" },
+          "lat": { "type": "number", "description": "Latitude WGS84 (−90…90)" },
+          "longitude": { "type": "number" },
+          "lon": { "type": "number" },
+          "latitude": { "type": "number" },
+          "zoom": { "type": "number", "minimum": 1, "maximum": 22 }
+        }
+      }
+    },
+    {
+      "name": "switch_basemap",
+      "description": "Switch the active basemap tile source. Common ids: tianditu-img, tianditu-vec, gaode-street, gaode-satellite, esri-imagery, osm-standard. Prefer basemap_id; source_id/id also accepted.",
+      "args": {
+        "type": "object",
+        "required": ["basemap_id"],
+        "properties": {
+          "basemap_id": { "type": "string" },
+          "source_id": { "type": "string" },
+          "id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "set_timeline",
+      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
+          "date": { "type": "string", "description": "ISO date YYYY-MM-DD" }
+        }
+      }
+    },
+    {
+      "name": "set_timeline_playing",
+      "description": "Start or pause timeline playback.",
+      "args": {
+        "type": "object",
+        "required": ["playing"],
+        "properties": {
+          "playing": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "remove_layer",
+      "description": "Remove an active map layer by catalog_id or instance_id. Fails if the layer has a running/queued workflow.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "instance_id": { "type": "string" }
+        },
+        "anyOf": [{ "required": ["catalog_id"] }, { "required": ["instance_id"] }]
+      }
+    },
+    {
+      "name": "reorder_layer",
+      "description": "Bring a layer to front or send to back in the stack.",
+      "args": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "instance_id": { "type": "string" },
+          "action": { "type": "string", "enum": ["front", "back"] }
+        }
+      }
+    },
+    {
+      "name": "set_layer_symbology",
+      "description": "Set palette and/or value range (vmin/vmax) for a recolor-capable layer.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "instance_id": { "type": "string" },
+          "palette": { "type": "string" },
+          "vmin": { "type": "number" },
+          "vmax": { "type": "number" }
+        },
+        "anyOf": [{ "required": ["catalog_id"] }, { "required": ["instance_id"] }]
+      }
     }
   ]
 }

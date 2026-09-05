@@ -16,5 +16,7 @@ export const ONLINE_PLAN_COPY = {
   confirmNeedTime: '请先填写并套用有效时段再确认',
   confirmCta: '确认并在线重跑',
   parkCta: '收起',
+  closeCta: '关闭',
+  closeDockAria: '关闭在线计划会话',
   submittingCta: '提交中…',
 } as const

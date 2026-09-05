@@ -4,10 +4,7 @@
  * 相机联动星空 + 时间轴联动太阳盘；不拦截指针；晨昏线仍由 night-mask 负责。
  */
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import {
-  paintSolarSystemBackdrop,
-  type SolarSystemCamera,
-} from './globe-solar-system'
+import { paintSolarSystemBackdrop, type SolarSystemCamera } from './globe-solar-system'
 import { resolveReducedMotionPreference } from '../../services/motion-preference'
 
 const props = defineProps<{
@@ -112,13 +109,32 @@ watch(
   },
 )
 
+function handleResize() {
+  paint(performance.now())
+}
+
+function handleVisibilityChange() {
+  if (typeof document === 'undefined') return
+  if (document.visibilityState === 'visible') {
+    if (props.active) {
+      startMs = performance.now()
+      startLoop()
+    }
+  } else {
+    stopLoop()
+  }
+}
+
 onMounted(() => {
   if (props.active) startLoop()
-  window.addEventListener('resize', () => paint(performance.now()))
+  window.addEventListener('resize', handleResize)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
   stopLoop()
+  window.removeEventListener('resize', handleResize)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 

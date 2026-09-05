@@ -561,7 +561,17 @@
       "isAdminBoundary": false,
       "dataOwner": "NOAA/NESDIS",
       "temporalCoverage": "2000-01 to 2025-06 (Monthly)",
-      "sourceReference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php"
+      "sourceReference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php",
+      "workflowExtra": {
+        "group_title": "植被指数 NDVI",
+        "outputs": [
+          "NDVI"
+        ],
+        "output_labels": {
+          "NDVI": "植被指数 NDVI",
+          "result": "植被指数 NDVI"
+        }
+      }
     },
     {
       "catalogId": "biomass-cn",
@@ -1230,7 +1240,7 @@
     },
     {
       "catalogId": "method-smap-omega-doy-dynamic",
-      "name": "SMAP 动态 散射约束产品",
+      "name": "SMAP 动态散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1244,7 +1254,7 @@
       "sources": [
         {
           "id": "method-smap-omega-doy-dynamic",
-          "name": "SMAP 动态 散射约束产品",
+          "name": "SMAP 动态散射约束产品",
           "description": "SMAP 亮温与多源辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1270,7 +1280,7 @@
     },
     {
       "catalogId": "method-fy-omega-doy-dynamic",
-      "name": "风云卫星 动态 散射约束产品",
+      "name": "风云卫星 动态散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1284,7 +1294,7 @@
       "sources": [
         {
           "id": "method-fy-omega-doy-dynamic",
-          "name": "风云卫星 动态 散射约束产品",
+          "name": "风云卫星 动态散射约束产品",
           "description": "风云卫星亮温与 SMAP 辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1310,7 +1320,7 @@
     },
     {
       "catalogId": "method-smap-omega-doy-avg",
-      "name": "SMAP 平均 散射约束产品",
+      "name": "SMAP 平均散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1324,8 +1334,8 @@
       "sources": [
         {
           "id": "method-smap-omega-doy-avg",
-          "name": "SMAP 平均 散射约束产品",
-          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 散射约束产品。",
+          "name": "SMAP 平均散射约束产品",
+          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均散射约束产品。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1350,7 +1360,7 @@
     },
     {
       "catalogId": "method-fy-omega-doy-avg",
-      "name": "风云卫星 平均 散射约束产品",
+      "name": "风云卫星 平均散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1364,8 +1374,8 @@
       "sources": [
         {
           "id": "method-fy-omega-doy-avg",
-          "name": "风云卫星 平均 散射约束产品",
-          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 散射约束产品。",
+          "name": "风云卫星 平均散射约束产品",
+          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均散射约束产品。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1788,7 +1798,7 @@
       "sources": [
         {
           "id": "method-fy-omega-doy-dynamic",
-          "name": "风云卫星 动态 散射约束产品",
+          "name": "风云卫星 动态散射约束产品",
           "description": "风云 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1798,7 +1808,7 @@
         },
         {
           "id": "method-fy-omega-doy-avg",
-          "name": "风云卫星 平均 散射约束产品",
+          "name": "风云卫星 平均散射约束产品",
           "description": "风云 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1830,7 +1840,7 @@
       "sources": [
         {
           "id": "method-smap-omega-doy-dynamic",
-          "name": "SMAP 动态 散射约束产品",
+          "name": "SMAP 动态散射约束产品",
           "description": "SMAP 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1840,7 +1850,7 @@
         },
         {
           "id": "method-smap-omega-doy-avg",
-          "name": "SMAP 平均 散射约束产品",
+          "name": "SMAP 平均散射约束产品",
           "description": "SMAP 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,

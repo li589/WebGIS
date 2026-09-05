@@ -180,17 +180,12 @@ const browserEngine = detectBrowserEngine()
     <section class="settings-section">
       <h3 class="section-title">系统架构图</h3>
       <p class="section-hint">
-        从上到下是一次请求怎么走：入口 → 网关 → 服务 → 引擎 → 数据。色点表示相关能力是否已配好（悬停可看说明）。
+        从上到下是一次请求怎么走：入口 → 网关 → 服务 → 引擎 →
+        数据。色点表示相关能力是否已配好（悬停可看说明）。
       </p>
       <div class="arch-stack">
         <template v-for="(layer, idx) in archLayers" :key="layer.id">
-          <div
-            v-if="idx > 0"
-            class="arch-flow"
-            aria-hidden="true"
-          >
-            ↓
-          </div>
+          <div v-if="idx > 0" class="arch-flow" aria-hidden="true">↓</div>
           <Tooltip :text="statusTooltip(layer.title, layer.statusKey)" block>
             <div
               class="arch-layer"
@@ -221,10 +216,7 @@ const browserEngine = detectBrowserEngine()
                   :key="item.title"
                   :text="statusTooltip(item.title, item.statusKey)"
                 >
-                  <div
-                    class="arch-item"
-                    :class="statusOfKey(item.statusKey) ?? ''"
-                  >
+                  <div class="arch-item" :class="statusOfKey(item.statusKey) ?? ''">
                     <span class="arch-item-title">{{ item.title }}</span>
                     <span v-if="item.tech" class="arch-item-tech">{{ item.tech }}</span>
                     <span

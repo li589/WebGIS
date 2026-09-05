@@ -634,8 +634,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   background: var(--surface-sunken);
   border: 1px solid var(--border-subtle);
   transition:
-    opacity 0.2s ease,
-    border-color 0.2s ease;
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .provider-card.disabled {
@@ -1027,7 +1027,13 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
   white-space: nowrap;
 }
 
@@ -1093,8 +1099,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   cursor: pointer;
   padding: 0;
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
+    background var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease);
   flex: none;
 }
 
@@ -1118,8 +1124,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   background: var(--surface-3);
   transform: translateY(-50%);
   transition:
-    left 0.2s ease,
-    background 0.2s ease;
+    left var(--motion-surface-duration) var(--motion-surface-ease),
+    background var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .toggle-switch.on .toggle-knob {

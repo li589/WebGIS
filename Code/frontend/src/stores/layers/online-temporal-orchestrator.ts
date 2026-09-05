@@ -16,6 +16,7 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type { LayerOnlineSyncResponse, OnlineTemporalCapability } from '../../services/runtime-api'
 import type { TimeGranularity } from '../../utils/layer-timeline'
 import { parseTimeStep, type TimeStep } from '../../utils/temporal-interval'
+import { parsePlanTimeRange } from '../../utils/time-key-coverage'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,17 @@ export function buildTimeRangeFromKey(
   nativeStep: string,
   granularity: TimeGranularity,
 ): { start_at: string; end_at: string; granularity: TimeGranularity } | null {
+  // 0. 若 timeKey 本身是显式时段格式（如 20260701_20260708 或 2026-07-01 ~ 2026-07-08），优先直接解包
+  const parsedRange = parsePlanTimeRange(timeKey)
+  if (parsedRange) {
+    const gran = (granularity === 'static' ? 'day' : granularity) as TimeGranularity
+    return {
+      start_at: parsedRange.start_at,
+      end_at: parsedRange.end_at,
+      granularity: gran,
+    }
+  }
+
   const step = parseTimeStep(nativeStep)
   if (!step) return null
 

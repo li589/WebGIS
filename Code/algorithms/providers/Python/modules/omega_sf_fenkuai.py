@@ -185,8 +185,12 @@ def _try_hydrate_blocks_from_sibling_cache(
     preferred = [output_root / cache_key]
     siblings = [
         p
-        for p in sorted(output_root.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)
-        if p.is_dir() and p.resolve() != output_dir.resolve() and not p.name.startswith(".")
+        for p in sorted(
+            output_root.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True
+        )
+        if p.is_dir()
+        and p.resolve() != output_dir.resolve()
+        and not p.name.startswith(".")
     ]
     search_dirs = preferred + [p for p in siblings if p not in preferred]
 
@@ -574,7 +578,9 @@ class OmegaSfFenkuaiModule(BaseModule):
             import numpy as np
             from algorithms.omega_sf import OmegaSfResult
 
-            n_blocks = sum(1 for k in cached_paths if k.startswith("block_") and k != "block_dir")
+            n_blocks = sum(
+                1 for k in cached_paths if k.startswith("block_") and k != "block_dir"
+            )
             # 成功像元数用占位（产品已可用）；避免 0 触发 coverage_gap
             result = OmegaSfResult(
                 omega_pft=np.array([]),

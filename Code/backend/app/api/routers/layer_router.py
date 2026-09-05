@@ -138,7 +138,9 @@ def _edit_scope_for_theme(theme_id: int):
     return CatalogGroupScope.shared()
 
 
-def _category_response_after_write(admin, theme_id: int | None) -> LayerCategoryResponse:
+def _category_response_after_write(
+    admin, theme_id: int | None
+) -> LayerCategoryResponse:
     if theme_id is not None:
         return get_layer_category_response(_edit_scope_for_theme(int(theme_id)))
     return get_layer_category_response(_scope_for_cred(admin))
@@ -266,7 +268,9 @@ def list_layer_categories(
         return get_layer_category_response(_edit_scope_for_theme(tid))
     # Consumer path: hide top-level groups marked hidden (admin edit uses theme_id).
     response = get_layer_category_response(_scope_for_cred(cred))
-    return LayerCategoryResponse(items=[item for item in response.items if not item.hidden])
+    return LayerCategoryResponse(
+        items=[item for item in response.items if not item.hidden]
+    )
 
 
 # ── 图层分组管理（主题预设直写为主；省略 theme_id 时兼容个人工作区） ────────
@@ -337,9 +341,7 @@ def reorder_layer_groups(
                 tid, payload.order, updated_by_user_id=_owner_user_id(admin)
             )
         else:
-            repo.reorder_groups(
-                payload.order, owner_user_id=_owner_user_id(admin)
-            )
+            repo.reorder_groups(payload.order, owner_user_id=_owner_user_id(admin))
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
     return _category_response_after_write(admin, theme_id)
@@ -368,8 +370,7 @@ def _seed_display_name_map() -> dict[str, str]:
     from app.services.layer_catalog import _load_seed_descriptors
 
     return {
-        d.layer_id: (d.display_name or d.layer_id)
-        for d in _load_seed_descriptors()
+        d.layer_id: (d.display_name or d.layer_id) for d in _load_seed_descriptors()
     }
 
 

@@ -79,13 +79,10 @@ export function reorderLayerGroups(
   payload: LayerGroupReorderRequest,
   themeId?: number | null,
 ): Promise<LayerCategoryListResponse> {
-  return requestJson<LayerCategoryListResponse>(
-    `/layers/categories/order${themeQuery(themeId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    },
-  )
+  return requestJson<LayerCategoryListResponse>(`/layers/categories/order${themeQuery(themeId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 }
 
 /** 全量替换分组内图层成员。 */
@@ -126,9 +123,7 @@ export function syncLayerGroupsToTheme(themeId: number): Promise<ThemeLayerGroup
 }
 
 /** 读取主题图层分组预设详情（无预设时 groups=种子基线，has_preset=false）。 */
-export function fetchThemeLayerGroupPreset(
-  themeId: number,
-): Promise<ThemeLayerGroupPresetDetail> {
+export function fetchThemeLayerGroupPreset(themeId: number): Promise<ThemeLayerGroupPresetDetail> {
   return requestJson<ThemeLayerGroupPresetDetail>(
     `/layers/categories/theme-preset/${encodeURIComponent(String(themeId))}`,
     { sensitiveGet: true },

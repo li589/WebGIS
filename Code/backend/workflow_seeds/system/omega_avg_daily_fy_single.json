@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "风云 平均 散射约束产品反演（本地）",
+    "name": "风云 平均散射约束产品反演（本地）",
     "description": "目的：D2 avg-omega 逐日反演（FY3D/FY3B TB + ORIG_TS 单温度方案，含 FY3B→FY3D 时空匹配）。前置：D1 omega_block 已产出（tb_source=FY）；FY3B/FY3D 逐日 .mat 已落盘。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：tb_source=FY, fy_platform=3D/3B。",
     "author": "system",
     "readonly": true,
@@ -15,7 +15,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_fy_single",
-  "name": "风云 平均 散射约束产品反演（本地）",
+  "name": "风云 平均散射约束产品反演（本地）",
   "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（FY 亮温 + ORIG_TS 单温度，FY3B→FY3D 时空匹配）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。",
   "nodes": [
     {
@@ -145,7 +145,7 @@
       ],
       "properties": {
         "layer_id": "method-fy-omega-doy-avg",
-        "display_name": "风云 平均 散射约束产品反演（本地）"
+        "display_name": "风云 平均散射约束产品反演（本地）"
       }
     }
   ],

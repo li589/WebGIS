@@ -86,7 +86,7 @@ const iconSize = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
+  gap: var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-family: inherit;
@@ -100,11 +100,12 @@ const iconSize = computed(() => {
   position: relative;
   overflow: hidden;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft),
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--ease-spring-snappy),
+    scale var(--motion-press) var(--ease-spring-snappy);
 }
 
 .app-btn:focus-visible {
@@ -123,22 +124,22 @@ const iconSize = computed(() => {
 /* 尺寸体系（4px 网格） */
 .app-btn--xs {
   height: 26px;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-3);
   font-size: var(--font-size-caption);
 }
 .app-btn--sm {
   height: 28px;
-  padding: 0 0.6rem;
+  padding: 0 var(--space-3);
   font-size: var(--font-size-caption);
 }
 .app-btn--md {
   height: 36px;
-  padding: 0 0.85rem;
+  padding: 0 var(--space-4);
   font-size: var(--font-size-body);
 }
 .app-btn--lg {
   height: 44px;
-  padding: 0 1.2rem;
+  padding: 0 var(--space-5);
   font-size: var(--font-size-body);
 }
 
@@ -153,40 +154,20 @@ const iconSize = computed(() => {
   width: 100%;
 }
 
-/* 变体：primary */
+/* 变体：primary（采用精密微质感与物理抬升，去除 AI 廉价扫光与霓虹 glow） */
 .app-btn--primary {
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   color: var(--surface-base);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
     0 1px 2px var(--surface-sunken),
     0 0 0 1px var(--accent-border);
-}
-.app-btn--primary::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    100deg,
-    transparent 30%,
-    rgba(255, 255, 255, 0.12) 50%,
-    transparent 70%
-  );
-  background-size: 200% 100%;
-  background-position: 200% 0;
-  transition: background-position var(--motion-slow) var(--ease-soft);
-  pointer-events: none;
 }
 .app-btn--primary:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.22) inset,
-    var(--elevation-2),
-    var(--accent-glow-sm);
-}
-.app-btn--primary:hover:not(:disabled)::after {
-  background-position: -200% 0;
+    0 1px 0 rgba(255, 255, 255, 0.28) inset,
+    var(--elevation-2);
 }
 .app-btn--primary:active:not(:disabled) {
   transform: translateY(1px);
@@ -276,10 +257,15 @@ const iconSize = computed(() => {
   }
 }
 
+.app-btn:active:not(:disabled) {
+  scale: 0.985;
+}
+
 /* 设置开关 html.reduce-motion 优先；保留颜色过渡，去掉位移与扫光 */
 html.reduce-motion .app-btn:hover:not(:disabled),
 html.reduce-motion .app-btn:active:not(:disabled) {
   transform: none;
+  scale: 1;
   box-shadow: none;
 }
 
@@ -288,11 +274,6 @@ html.reduce-motion .app-btn--primary:hover:not(:disabled) {
     0 1px 0 rgba(255, 255, 255, 0.18) inset,
     0 1px 2px var(--surface-sunken),
     0 0 0 1px var(--accent-border);
-}
-
-html.reduce-motion .app-btn--primary:hover:not(:disabled)::after {
-  background-position: 200% 0;
-  transition: none;
 }
 
 html.reduce-motion .app-btn-spinner {

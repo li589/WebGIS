@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "SMAP 平均 散射约束产品反演（本地）",
+    "name": "SMAP 平均散射约束产品反演（本地）",
     "description": "目的：D2 avg-omega 逐日反演主链路（SMAP TB + ORIG_TS 单温度方案）。前置：D1 omega_block 已产出 omega_block_*.mat + daily_omega/。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：algorithm_params.target_year 指定目标年；avg_build_start_year/avg_build_end_year 指定 DOY 气候态构建年份范围。",
     "author": "system",
     "readonly": true,
@@ -15,7 +15,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_smap_single",
-  "name": "SMAP 平均 散射约束产品反演（本地）",
+  "name": "SMAP 平均散射约束产品反演（本地）",
   "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP 本地亮温 + ORIG_TS 单温度）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。",
   "nodes": [
     {
@@ -135,7 +135,7 @@
       ],
       "properties": {
         "layer_id": "method-smap-omega-doy-avg",
-        "display_name": "SMAP 平均 散射约束产品反演（本地）"
+        "display_name": "SMAP 平均散射约束产品反演（本地）"
       }
     }
   ],

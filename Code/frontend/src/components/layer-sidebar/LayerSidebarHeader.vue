@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { LayoutGrid } from '../ui/icons'
 import Tooltip from '../ui/Tooltip.vue'
+import AnimatedNumber from '../ui/AnimatedNumber.vue'
 
 defineProps<{
   sidebarViewLabel: string
@@ -34,7 +35,7 @@ const emit = defineEmits<{
             aria-label="查看已添加图层"
             @click="emit('openActive')"
           >
-            {{ activeLayerCount }}
+            <AnimatedNumber :value="activeLayerCount" />
           </button>
         </Tooltip>
         <div class="view-tabs" role="tablist">

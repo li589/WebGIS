@@ -219,7 +219,7 @@ class FyCommandPlanFileTests(unittest.TestCase):
 
 
 class FyCanonicalMatNamingTests(unittest.TestCase):
-    """M3：单轨道日落盘规范名 YYYYMMDD.mat（omega_sf_fenkuai fy3d/fy3b_folder
+    r"""M3：单轨道日落盘规范名 YYYYMMDD.mat（omega_sf_fenkuai fy3d/fy3b_folder
     要求 \d{8} 命名）；Both 模式同日双轨道回落 mat/YYYYMMDD_<orbit>.mat。"""
 
     def _run(self, tmp_dir: Path, out_root: Path, plans: list) -> None:

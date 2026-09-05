@@ -11,6 +11,7 @@ import {
   buildTimeKey,
   buildTimeRangeFromKey,
 } from '../../stores/layers/online-temporal-orchestrator'
+import { resolveLayerTemporalMode, alignDateToTemporalRange } from '../../utils/temporal-mode'
 import type { TimeGranularity } from '../../utils/layer-timeline'
 import {
   INPUT_KEY_TIME_WINDOW_ALIGN,
@@ -75,6 +76,15 @@ export function useTimelineActionConfirm(deps: {
   function currentTimeKey(): string | null {
     const gran = (deps.activeLayerGranularity.value || 'day') as TimeGranularity
     if (gran === 'static') return null
+    const primaryId = deps.selectedCatalogId.value || collectTargetCatalogIds()[0]
+    if (primaryId) {
+      const desc = deps.workspace.resolveEffectiveDescriptor?.(primaryId)
+      const tempMode = resolveLayerTemporalMode(desc as never)
+      if (tempMode.mode === 'range') {
+        const aligned = alignDateToTemporalRange(deps.currentDate.value, tempMode)
+        return aligned.timeKey
+      }
+    }
     return buildTimeKey(deps.currentDate.value, deps.currentHour.value, gran)
   }
 
@@ -510,12 +520,14 @@ export function useTimelineActionConfirm(deps: {
             [INPUT_KEY_TIME_WINDOW_ALIGN]: true,
           }
         }
+        const desc = deps.workspace.resolveEffectiveDescriptor?.(catalogId)
+        const isRange = resolveLayerTemporalMode(desc as never).mode === 'range'
         await deps.workflowRun.runWorkflowForCatalog(catalogId, {
           timeRange,
           algorithmRequest: Object.keys(algorithmParams).length
             ? { algorithm_params: algorithmParams }
             : undefined,
-          commandLabel: `按时间轴重跑 ${timeKey}`,
+          commandLabel: `${isRange ? '按时段重跑' : '按时间轴重跑'} ${timeKey}`,
         })
         deps.uiStore.rememberLayerTime(catalogId, { force: true })
         deps.logOperation(

@@ -2,10 +2,7 @@
  * Cesium 底图适配：复用前端 TileSourceConfig（经 /unified-tiles 同源代理）。
  * 与 MapLibre basemap-module 同一 URL 模板，后续可再接故障转移。
  */
-import {
-  TILE_SOURCE_MAP,
-  type TileSourceId,
-} from '../../../../services/api-config'
+import { TILE_SOURCE_MAP, type TileSourceId } from '../../../../services/api-config'
 
 export interface CesiumBasemapSpec {
   /** 主影像 URL 模板（{z}/{x}/{y}）；null 表示空白球 */

@@ -1,0 +1,99 @@
+/**
+ * 原生表单控件主题基线
+ *
+ * 目标：裸 <select> / date / checkbox / radio 与自定深浅主题一致，
+ * 避免 Windows UA 弹出层（浅色面板 + 浅色字）或强制 dark 日历撕裂视觉。
+ *
+ * 优先使用 AppSelect / TextField / DateInputField；本文件兜底未迁移站点。
+ * Login 独立壳（login-chrome-tokens）不受此处浅色规则影响（其自身强制 dark）。
+ */
+
+/* ── Select：关闭态 + option 面板 ── */
+.cgda-native-select,
+select.field-input,
+select.src-select,
+select.fb-select,
+select.ops-input,
+select.key-input,
+select.param-input,
+select.form-select,
+.table-select select,
+.field select,
+.key-input select,
+.tile-field select,
+.policy-table select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: dark;
+  background-color: var(--surface-1);
+  color: var(--text-strong);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+}
+
+html[data-theme='light'] .cgda-native-select,
+html[data-theme='light'] select.field-input,
+html[data-theme='light'] select.src-select,
+html[data-theme='light'] select.fb-select,
+html[data-theme='light'] select.ops-input,
+html[data-theme='light'] select.key-input,
+html[data-theme='light'] select.param-input,
+html[data-theme='light'] select.form-select,
+html[data-theme='light'] .table-select select,
+html[data-theme='light'] .field select,
+html[data-theme='light'] .key-input select,
+html[data-theme='light'] .tile-field select,
+html[data-theme='light'] .policy-table select {
+  color-scheme: light;
+}
+
+.cgda-native-select option,
+select.field-input option,
+select.src-select option,
+select.fb-select option,
+select.ops-input option,
+select.key-input option,
+select.param-input option,
+select.form-select option,
+.table-select select option,
+.field select option,
+.key-input select option,
+.tile-field select option,
+.policy-table select option {
+  background-color: var(--select-panel-bg) !important;
+  color: var(--select-panel-text) !important;
+}
+
+.cgda-native-select option:disabled,
+select.field-input option:disabled,
+select.src-select option:disabled,
+select.fb-select option:disabled,
+select.ops-input option:disabled,
+select.key-input option:disabled,
+select.param-input option:disabled,
+select.form-select option:disabled {
+  color: var(--text-disabled) !important;
+}
+
+/* ── Date / month：跟随主题，禁止写死 dark ── */
+.cgda-native-date,
+input[type='date'],
+input[type='datetime-local'],
+input[type='month'] {
+  color-scheme: dark;
+}
+
+html[data-theme='light'] .cgda-native-date,
+html[data-theme='light'] input[type='date'],
+html[data-theme='light'] input[type='datetime-local'],
+html[data-theme='light'] input[type='month'] {
+  color-scheme: light;
+}
+
+/* ── Checkbox / radio 默认 accent（局部可覆盖）── */
+input[type='checkbox']:not([style*='accent-color']),
+input[type='radio']:not([style*='accent-color']) {
+  accent-color: var(--accent);
+}

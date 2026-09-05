@@ -35,7 +35,7 @@ describe('inversion-catalog', () => {
 
   it('sanitizes run group titles that leak English technical ids', () => {
     expect(sanitizeRunGroupTitle('omega_sf_fenkuai_smap_online')).toBe('反演产物')
-    expect(sanitizeRunGroupTitle('SMAP 动态 散射约束产品')).toBe('SMAP 动态 散射约束产品')
+    expect(sanitizeRunGroupTitle('SMAP 动态散射约束产品')).toBe('SMAP 动态散射约束产品')
     expect(sanitizeRunGroupTitle('')).toBe('反演产物')
     expect(sanitizeRunGroupTitle(null, '自定义兜底')).toBe('自定义兜底')
   })

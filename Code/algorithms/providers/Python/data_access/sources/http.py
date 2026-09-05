@@ -7,9 +7,10 @@ import os
 import ssl
 import time
 from pathlib import Path
+import urllib.request
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from data_access.contracts import DataRequestV2, ResourceRef, build_resource_ref
 from path_utils import local_path_to_uri
@@ -64,6 +65,38 @@ def ssl_context_for(
         )
         return _insecure_ssl_context()
     return None
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """安全重定向处理器：
+
+    跨主机重定向（特别是 NASA Earthdata 门户重定向至 AWS S3 / CloudFront 预签名 CDN）时，
+    剥离旧主机专用的 Authorization 头，防止 Amazon 403 Forbidden（预签名 URL 不允许携带非 AWS Authorization 头）。
+    """
+
+    def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, hdrs, newurl)
+        if new_req is None:
+            return None
+        orig_host = (urlparse(req.full_url).hostname or "").lower()
+        new_host = (urlparse(newurl).hostname or "").lower()
+        if (
+            orig_host != new_host
+            or "amazonaws.com" in new_host
+            or "cloudfront.net" in new_host
+        ):
+            for auth_header in ("Authorization", "authorization"):
+                if auth_header in new_req.headers:
+                    del new_req.headers[auth_header]
+        return new_req
+
+
+def _open_http_request(req: Request, *, timeout: float, ssl_ctx: ssl.SSLContext | None):
+    handlers: list[urllib.request.BaseHandler] = [_SafeRedirectHandler()]
+    if ssl_ctx is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=ssl_ctx))
+    opener = urllib.request.build_opener(*handlers)
+    return opener.open(req, timeout=timeout)
 
 
 # 下载重试（指数退避 2s/4s；.part 半成品保留供 Range 续传）
@@ -358,8 +391,8 @@ class HttpSource:
         req = Request(uri, headers=headers)
         timeout = _timeout_seconds(meta)
         try:
-            with urlopen(
-                req, timeout=timeout, context=ssl_context_for(uri, meta)
+            with _open_http_request(
+                req, timeout=timeout, ssl_ctx=ssl_context_for(uri, meta)
             ) as resp:
                 status = getattr(resp, "status", None) or resp.getcode()
                 if int(status) == 304:
@@ -410,7 +443,7 @@ class HttpSource:
             req = Request(uri, headers=headers)
             ssl_ctx = ssl_context_for(uri, meta)
             try:
-                with urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
+                with _open_http_request(req, timeout=timeout, ssl_ctx=ssl_ctx) as resp:
                     status = int(
                         getattr(resp, "status", None)
                         or getattr(resp, "getcode", lambda: 0)()

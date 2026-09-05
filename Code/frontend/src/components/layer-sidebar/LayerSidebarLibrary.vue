@@ -163,13 +163,15 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
           }}图层
         </div>
         <div
-          v-for="item in group.items"
+          v-for="(item, index) in group.items"
           :key="item.catalogId"
-          class="library-card"
+          v-spotlight="{ color: item.accentGlow || 'rgba(56, 189, 248, 0.08)' }"
+          class="library-card cgda-stagger-item"
           :class="{ added: isAdded(effectiveSourceId(item)) }"
           :style="{
             '--accent': item.accentColor,
             '--glow': item.accentGlow,
+            '--stagger-i': index,
           }"
         >
           <div class="card-top">
@@ -267,6 +269,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
                     <span class="src-dot" :style="{ background: item.accentColor }"></span>
                     <AppSelect
                       :model-value="effectiveSourceId(item)"
+                      size="sm"
                       block
                       @change="(val: string) => selectSource(item.catalogId, val)"
                     >

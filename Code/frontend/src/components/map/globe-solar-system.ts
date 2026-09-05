@@ -195,13 +195,18 @@ export function moonDirectionApprox(hour: number, date?: Date): Vec3 {
   })
 }
 
-const PLANETS: Array<{ name: string; lonOffset: number; lat: number; color: string; size: number }> =
-  [
-    { name: 'Venus', lonOffset: 48, lat: 2, color: 'rgba(255,230,180,0.95)', size: 2.2 },
-    { name: 'Mars', lonOffset: -75, lat: -4, color: 'rgba(255,140,90,0.9)', size: 1.8 },
-    { name: 'Jupiter', lonOffset: 130, lat: 1, color: 'rgba(255,210,150,0.85)', size: 2.6 },
-    { name: 'Saturn', lonOffset: -155, lat: 3, color: 'rgba(240,220,170,0.8)', size: 2.0 },
-  ]
+const PLANETS: Array<{
+  name: string
+  lonOffset: number
+  lat: number
+  color: string
+  size: number
+}> = [
+  { name: 'Venus', lonOffset: 48, lat: 2, color: 'rgba(255,230,180,0.95)', size: 2.2 },
+  { name: 'Mars', lonOffset: -75, lat: -4, color: 'rgba(255,140,90,0.9)', size: 1.8 },
+  { name: 'Jupiter', lonOffset: 130, lat: 1, color: 'rgba(255,210,150,0.85)', size: 2.6 },
+  { name: 'Saturn', lonOffset: -155, lat: 3, color: 'rgba(240,220,170,0.8)', size: 2.0 },
+]
 
 function spectralColor(spectral: string): string {
   switch (spectral[0]) {

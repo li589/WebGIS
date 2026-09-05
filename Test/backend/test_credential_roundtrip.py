@@ -15,10 +15,10 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from app.services import portal_catalog as portal_catalog_mod
 from app.services import portal_credentials as portal_mod
 from app.services.api_keys_repository import ApiKeysRepository
+from app.services.gee_credentials_repository import GeeCredentialsRepository
 
 _VALID_KEY = "a" * 64  # 32 bytes, valid hex
 _OTHER_KEY = "b" * 64
@@ -347,3 +347,158 @@ def test_portal_catalog_reports_credentials_for_alias_stored_entry():
         object.__setattr__(settings, "gee_credentials_encryption_key", prev_key)
     assert entries["esa_copernicus"]["has_credentials"] is True
     assert entries["esa_download"]["has_credentials"] is True
+
+
+def test_api_key_upsert_resets_test_status_on_secret_change(tmp_path):
+    repo = _make_repo(tmp_path, _VALID_KEY)
+    try:
+        repo.upsert_key(key_name="test_svc", key_value="val1", display_name="Test Svc")
+        repo.update_test_status("test_svc", "ok")
+        info = repo.get_key_info("test_svc")
+        assert info["last_test_status"] == "ok"
+        assert info["last_tested_at"] is not None
+
+        # 1) Metadata only update: test status is preserved
+        repo.upsert_key(
+            key_name="test_svc",
+            key_value="val1",
+            display_name="Updated Test Svc",
+            description="some desc",
+        )
+        info = repo.get_key_info("test_svc")
+        assert info["display_name"] == "Updated Test Svc"
+        assert info["last_test_status"] == "ok"
+
+        # 2) Secret value update: test status is reset to None
+        repo.upsert_key(
+            key_name="test_svc",
+            key_value="val2_new_secret",
+            display_name="Updated Test Svc",
+        )
+        info = repo.get_key_info("test_svc")
+        assert info["last_test_status"] is None
+        assert info["last_tested_at"] is None
+
+        # Check history contains original version
+        history = repo.list_history("test_svc")
+        assert len(history) == 1
+        assert history[0]["created_at"] is not None
+    finally:
+        repo.close()
+
+
+def test_api_key_delete_purges_history(tmp_path):
+    repo = _make_repo(tmp_path, _VALID_KEY)
+    try:
+        repo.upsert_key(key_name="k_del", key_value="val1", display_name="Del")
+        repo.upsert_key(key_name="k_del", key_value="val2", display_name="Del")
+        assert len(repo.list_history("k_del")) == 1
+
+        repo.delete_key("k_del", purge_history=True)
+        assert repo.get_key_info("k_del") is None
+        assert len(repo.list_history("k_del")) == 0
+    finally:
+        repo.close()
+
+
+def _make_gee_repo(tmp_path, key: str) -> GeeCredentialsRepository:
+    db_parent = tmp_path / "state"
+    db_parent.mkdir(parents=True, exist_ok=True)
+    return GeeCredentialsRepository(
+        str(db_parent / "gee_credentials.sqlite3"), encryption_key=key
+    )
+
+
+def test_gee_credentials_encrypt_decrypt_roundtrip(tmp_path):
+    repo = _make_gee_repo(tmp_path, _VALID_KEY)
+    sa_data = {
+        "client_email": "sa@example.com",
+        "private_key": "mock_sa_private_key_secret_for_tests",
+        "private_key_id": "key123",
+        "project_id": "demo-gee-project",
+    }
+    try:
+        info = repo.upsert_account(
+            account_id="acc_main",
+            service_account_json=sa_data,
+            display_name="Main GEE Account",
+        )
+        assert info is not None
+        assert info["account_id"] == "acc_main"
+        assert info["display_name"] == "Main GEE Account"
+        assert info["project_id"] == "demo-gee-project"
+        assert info["enabled"] is True
+        # 敏感信息绝不在 info 字典中泄露
+        assert "private_key" not in info
+        assert "credentials_encrypted" not in info
+
+        # 解密回环：get_account_credentials 恢复完整数据
+        plain_creds = repo.get_account_credentials("acc_main")
+        assert plain_creds is not None
+        assert plain_creds["client_email"] == "sa@example.com"
+        assert plain_creds["private_key"] == sa_data["private_key"]
+        assert plain_creds["project_id"] == "demo-gee-project"
+
+        # list_accounts 列表包含该账号且脱敏
+        accounts = repo.list_accounts()
+        assert len(accounts) == 1
+        assert accounts[0]["account_id"] == "acc_main"
+        assert "private_key" not in accounts[0]
+        assert "credentials_encrypted" not in accounts[0]
+    finally:
+        repo.close()
+
+
+def test_gee_credentials_rotation_breaks_old_ciphertext(tmp_path):
+    repo1 = _make_gee_repo(tmp_path, _VALID_KEY)
+    sa_data = {
+        "client_email": "rot@example.com",
+        "private_key": "some-secret-key",
+        "private_key_id": "k1",
+    }
+    try:
+        repo1.upsert_account(account_id="acc_rot", service_account_json=sa_data)
+    finally:
+        repo1.close()
+
+    # 使用不同密钥重新打开同一个数据库，解密必须失败
+    repo2 = _make_gee_repo(tmp_path, _OTHER_KEY)
+    try:
+        with pytest.raises((RuntimeError, ValueError, Exception)):
+            repo2.get_account_credentials("acc_rot")
+    finally:
+        repo2.close()
+
+
+def test_gee_credentials_toggle_and_filtering(tmp_path):
+    repo = _make_gee_repo(tmp_path, _VALID_KEY)
+    sa_data = {
+        "client_email": "toggle@example.com",
+        "private_key": "key",
+        "private_key_id": "k1",
+        "project_id": "proj1",
+    }
+    try:
+        repo.upsert_account(account_id="acc_tog", service_account_json=sa_data)
+        assert len(repo.list_enabled_accounts_with_credentials()) == 1
+
+        # 禁用
+        repo.set_enabled("acc_tog", False)
+        assert len(repo.list_enabled_accounts_with_credentials()) == 0
+        assert repo.get_account_credentials("acc_tog") is None
+
+        # include_disabled=True 仍能查到脱敏信息
+        disabled_list = repo.list_accounts(include_disabled=True)
+        assert len(disabled_list) == 1
+        assert disabled_list[0]["enabled"] is False
+
+        # 重新启用
+        repo.set_enabled("acc_tog", True)
+        assert len(repo.list_enabled_accounts_with_credentials()) == 1
+
+        # 删除
+        assert repo.delete_account("acc_tog") is True
+        assert repo.get_account("acc_tog") is None
+        assert len(repo.list_accounts()) == 0
+    finally:
+        repo.close()

@@ -30,9 +30,7 @@ export function isOverallProgressStage(nodeIdOrStage: string | null | undefined)
 }
 
 /** Weighted overall bar only — excludes lifecycle bookend ``workflow_dispatch``. */
-export function isWeightedOverallProgressStage(
-  nodeIdOrStage: string | null | undefined,
-): boolean {
+export function isWeightedOverallProgressStage(nodeIdOrStage: string | null | undefined): boolean {
   return String(nodeIdOrStage ?? '').trim() === 'workflow.dispatch'
 }
 
@@ -250,9 +248,7 @@ export function resolveJobOverallProgress(opts: {
   snapshot?: number | null
   nodeProgress?: WorkflowProgressNodeLike[] | null
 }): number {
-  const weighted = (opts.nodeProgress ?? []).filter((n) =>
-    isWeightedOverallProgressStage(n.nodeId),
-  )
+  const weighted = (opts.nodeProgress ?? []).filter((n) => isWeightedOverallProgressStage(n.nodeId))
   if (weighted.length) {
     return Math.max(...weighted.map((n) => normalizeWorkflowProgress(n.progress)))
   }

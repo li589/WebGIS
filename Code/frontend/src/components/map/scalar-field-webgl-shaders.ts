@@ -58,8 +58,19 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
   ${MERCATOR_INVERSE_GLSL}
 
   vec2 fieldUv(float lon, float lat) {
+    float lonU = lon;
+    float west = u_bounds.x;
+    float east = u_bounds.z;
+    float span = east - west;
+    // 与 unwrapLonIntoGridFrame 一致：以网格中心 ±180 解包连续经度，
+    // 避免跨日界线视口中负经度片元计算出负 UV 导致被整片丢弃。
+    if (span < 359.0 && (east > 180.0 || west < -180.0 || span > 180.0)) {
+      float center = (west + east) * 0.5;
+      if (lonU < center - 180.0) lonU += 360.0;
+      if (lonU > center + 180.0) lonU -= 360.0;
+    }
     return vec2(
-      (lon - u_bounds.x) / (u_bounds.z - u_bounds.x),
+      (lonU - west) / span,
       (u_bounds.w - lat) / (u_bounds.w - u_bounds.y)
     );
   }

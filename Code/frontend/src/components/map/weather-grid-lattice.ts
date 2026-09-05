@@ -107,9 +107,11 @@ export function unwrapLonsToMinimalSpan(lons: readonly number[]): number[] {
 export function unwrapLonIntoGridFrame(lon: number, west: number, east: number): number {
   if (!(east > west)) return lon
   let x = lon
-  // 仅解包框（east>180 或跨度很大）才 ±360 卷入；普通区域略越界交给 clamp，
-  // 避免 lon 稍小于 west 时跳到 west+360 采样到错误边缘。
-  if (east > 180 || east - west > 180) {
+  const span = east - west
+  // 仅解包框（east>180、west<-180 或跨度很大）才 ±360 卷入；普通区域略越界交给 clamp，
+  // 避免 lon 稍小于 west 时跳到 west+360 采样到错误边缘。对全球全幅网格（span>=359）
+  // 不做 ±180 翻转，避免边缘浮点微差（如 180.0001）反转为 -179.9999 导致纹理反卷。
+  if (span < 359 && (east > 180 || west < -180 || span > 180)) {
     // 以网格中心为参考：将 x 解包到 [center-180, center+180] 范围内，
     // 即取距网格中心最近的等价经度。旧逻辑 `while(x<west) x+=360` 会把
     // 仅略偏 grid.west 西侧的经度（如 150° vs west=160°）跳到 510°，

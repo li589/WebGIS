@@ -481,6 +481,8 @@ def test_unified_tile_returns_404_for_unknown_layer() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
 
     response = client.get("/unified-tiles/totally-unknown-layer-id/5/25/12")
@@ -496,6 +498,8 @@ def test_weather_tile_validates_hour_parameter() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
 
     response = client.get("/weather/tiles/wind-field/5/25/12?hour=-1")
@@ -523,6 +527,8 @@ def test_weather_tile_data_empty_returns_422_not_503() -> None:
     )
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
     with patch(
         "app.api.weather_tile_routes.get_weather_tile_service",
@@ -545,6 +551,8 @@ def test_weather_tile_generic_error_still_503() -> None:
     failing_service.get_tile = AsyncMock(side_effect=RuntimeError("upstream boom"))
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
     with patch(
         "app.api.weather_tile_routes.get_weather_tile_service",
@@ -560,6 +568,8 @@ def test_unified_tile_returns_correct_content_type_for_basemap() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
 
     with patch(
@@ -720,6 +730,8 @@ def test_legacy_tiles_pixel_endpoint_removed() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
     response = client.get("/tiles/esri-street/5/25/12")
     assert response.status_code == 404, 'response.status_code == 404'
@@ -730,6 +742,8 @@ def test_unified_tiles_validates_zoom_range() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
     assert client.get("/unified-tiles/esri-street/-1/25/12").status_code == 400, 'client.get("/unified-tiles/esri-street/-1/25/12").status_code == 400'
     assert client.get("/unified-tiles/esri-street/19/25/12").status_code == 400, 'client.get("/unified-tiles/esri-street/19/25/12").status_code == 400'
@@ -740,6 +754,8 @@ def test_unified_tiles_rejects_weather_layer_id() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
     response = client.get("/unified-tiles/wind-field/5/25/12")
     assert response.status_code == 404, 'response.status_code == 404'

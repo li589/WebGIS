@@ -199,8 +199,12 @@ class FailureClassifier:
                 "no fy hdf",
                 "hdf files found",
                 "files found in",
+                "rasters found in",
+                "no ndvi rasters",
                 "no matching files",
                 "no files found",
+                "no data links",
+                "hits=0",
                 # data/source 本地路径缺失（universal_reader / local_fs）
                 # 例如「文件不存在: I:\…\FY」——须在泛化 not_found 之前命中，
                 # 才能触发前端源路由切在线。

@@ -16,7 +16,7 @@ const mode = toRef(uiLoading, 'mode')
 <template>
   <Teleport to="body">
     <!-- 全屏地球 + 卫星 -->
-    <Transition name="loading-fade">
+    <Transition name="cgda-fade">
       <div
         v-if="isVisible && mode === 'hero'"
         class="loading-overlay hero"
@@ -58,7 +58,7 @@ const mode = toRef(uiLoading, 'mode')
     </Transition>
 
     <!-- 轻量顶栏 -->
-    <Transition name="loading-fade">
+    <Transition name="cgda-fade">
       <div
         v-if="isVisible && mode === 'compact'"
         class="loading-compact"
@@ -447,13 +447,13 @@ const mode = toRef(uiLoading, 'mode')
   }
 }
 
-.loading-fade-enter-active,
-.loading-fade-leave-active {
+.cgda-fade-enter-active,
+.cgda-fade-leave-active {
   transition: opacity var(--motion-modal, var(--motion-base)) var(--ease-standard);
 }
 
-.loading-fade-enter-from,
-.loading-fade-leave-to {
+.cgda-fade-enter-from,
+.cgda-fade-leave-to {
   opacity: 0;
 }
 

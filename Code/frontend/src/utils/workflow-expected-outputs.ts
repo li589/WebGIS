@@ -105,16 +105,40 @@ export function outputLabelsFromDefinition(
   return {}
 }
 
-/** 产出标签 + 显示名（extra.output_labels 优先，productTagLabel 兜底） */
+export interface ExpectedOutputContext {
+  fallbackName?: string
+  fallbackTags?: string[]
+}
+
+/** 产出标签 + 显示名（extra.output_labels 优先，context.fallbackName / productTagLabel 兜底） */
 export function expectedOutputTargets(
   def: WorkflowDefLike | null | undefined,
+  context?: ExpectedOutputContext,
 ): Array<{ name: string; productTag: string }> {
-  const tags = explicitExpectedOutputTags(def)
+  const explicit = explicitExpectedOutputTags(def)
+  const effectiveTags =
+    explicit.length > 0
+      ? explicit
+      : context?.fallbackTags?.length
+        ? context.fallbackTags
+        : context
+          ? ['result']
+          : []
+  if (!effectiveTags.length) return []
   const labels = outputLabelsFromDefinition(def)
-  return tags.map((tag) => ({
-    productTag: tag,
-    name: labels[tag] ?? productTagLabel(tag),
-  }))
+  const groupTitle = groupTitleFromDefinition(def)
+  const fallback = context?.fallbackName?.trim() || groupTitle || '分析结果'
+
+  return effectiveTags.map((tag) => {
+    let name = labels[tag]
+    if (!name && tag === 'result') {
+      name = labels['result'] ?? (effectiveTags.length === 1 ? fallback : productTagLabel('result'))
+    }
+    return {
+      productTag: tag,
+      name: name ?? productTagLabel(tag),
+    }
+  })
 }
 
 /**
@@ -127,16 +151,29 @@ export function resolveExpectedOutputTags(def: WorkflowDefLike | null | undefine
 export function defaultProductLayerNames(
   tags: string[],
   _prefix?: string,
+  context?: ExpectedOutputContext & { labels?: Record<string, string> },
 ): Array<{ name: string; productTag: string }> {
-  return tags.map((tag) => ({
-    productTag: tag,
-    name: productTagLabel(tag),
-  }))
+  return tags.map((tag) => {
+    const label = context?.labels?.[tag]
+    if (label) return { productTag: tag, name: label }
+    if (tag === 'result') {
+      const fb = context?.fallbackName?.trim()
+      return {
+        productTag: tag,
+        name:
+          context?.labels?.['result'] ?? (fb && tags.length === 1 ? fb : productTagLabel('result')),
+      }
+    }
+    return {
+      productTag: tag,
+      name: productTagLabel(tag),
+    }
+  })
 }
 
 /**
  * 产物标签 → 图层短显示名（单一事实来源）。
- * 内部 productTag 仍用 SM/VOD/OMEGA 原文；全称见 PRODUCT_TAG_DESCRIPTIONS。
+ * 内部 productTag 仍用 SM/VOD/OMEGA/NDVI 原文；全称见 PRODUCT_TAG_DESCRIPTIONS。
  * 见 Docs/03-规范协议/layer-naming.md
  *
  * 2026-08-24 三联报障（续）：未知 tag 透传前剥数据扩展名——normalizeProductTag
@@ -147,7 +184,8 @@ export const PRODUCT_TAG_LABELS: Record<string, string> = {
   SM: 'SM',
   VOD: 'VOD',
   OMEGA: 'ω',
-  result: '产出变量',
+  NDVI: '植被指数 NDVI',
+  result: '分析结果',
 }
 
 /** 变量层全称（InfoPanel / tooltip；不进 TOC） */
@@ -155,7 +193,8 @@ export const PRODUCT_TAG_DESCRIPTIONS: Record<string, string> = {
   SM: '土壤水分',
   VOD: '植被光学厚度',
   OMEGA: '反演参数 ω',
-  result: '工作流产出变量',
+  NDVI: '植被指数 NDVI',
+  result: '工作流分析结果',
 }
 
 /** 剥常见数据文件扩展名（大写/小写均匹配） */

@@ -587,8 +587,20 @@ class GeeBridgeService:
             metadata["layer_id"] = payload.layer_id
         if payload.correlation_id:
             metadata["correlation_id"] = payload.correlation_id
+        workflow_obj = gee_request.get("workflow")
+        workflow_id = (
+            gee_request.get("workflow_id")
+            or (
+                workflow_obj.get("workflow_id")
+                if isinstance(workflow_obj, dict)
+                else getattr(workflow_obj, "workflow_id", None)
+            )
+            or payload.workflow_id
+            or run_id
+        )
+
         context = {
-            "workflow_id": gee_request.get("workflow_id"),
+            "workflow_id": str(workflow_id),
             "account_id": None,
             "storage_backend": settings.gee_storage_backend,
             "metadata": metadata,

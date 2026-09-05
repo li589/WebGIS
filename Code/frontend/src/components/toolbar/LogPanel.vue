@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ClipboardList, X } from '../ui/icons'
 import { useLogStore, type LogCategory } from '../../stores/log'
+import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 
 const emit = defineEmits<{
   close: []
@@ -53,11 +54,129 @@ function toggleExpand(id: string) {
 function handleExport() {
   logStore.downloadExport()
 }
+
+/** 系统日志侧栏：左缘拖动加宽（面板贴右，向左拖 = 变宽） */
+const LOG_WIDTH_DEFAULT_PX = Math.round(26 * 16)
+const LOG_WIDTH_MIN_PX = Math.round(22 * 16)
+const LOG_WIDTH_MAX_CAP_PX = Math.round(56 * 16)
+
+function clampLogPanelWidth(px: number): number {
+  const maxByViewport = Math.floor(window.innerWidth * 0.92)
+  const max = Math.min(LOG_WIDTH_MAX_CAP_PX, Math.max(LOG_WIDTH_MIN_PX, maxByViewport))
+  return Math.min(max, Math.max(LOG_WIDTH_MIN_PX, Math.round(px)))
+}
+
+const savedWidth = loadSettingsUiLocal().logPanelWidthPx
+const logPanelWidthPx = ref(
+  clampLogPanelWidth(
+    typeof savedWidth === 'number' && Number.isFinite(savedWidth)
+      ? savedWidth
+      : LOG_WIDTH_DEFAULT_PX,
+  ),
+)
+const panelStyle = computed(() => ({ width: `${logPanelWidthPx.value}px` }))
+
+let resizeStartX = 0
+let resizeStartWidth = 0
+const isResizing = ref(false)
+let suppressOverlayClose = false
+let suppressOverlayCloseTimer: ReturnType<typeof setTimeout> | null = null
+let resizeCaptureEl: Element | null = null
+let resizePointerId: number | null = null
+
+function onOverlayClick() {
+  if (suppressOverlayClose || isResizing.value) return
+  emit('close')
+}
+
+function armOverlayCloseSuppress() {
+  suppressOverlayClose = true
+  if (suppressOverlayCloseTimer !== null) clearTimeout(suppressOverlayCloseTimer)
+  suppressOverlayCloseTimer = setTimeout(() => {
+    suppressOverlayClose = false
+    suppressOverlayCloseTimer = null
+  }, 100)
+}
+
+function onResizePointerMove(event: PointerEvent) {
+  if (!isResizing.value) return
+  const next = resizeStartWidth + (resizeStartX - event.clientX)
+  logPanelWidthPx.value = clampLogPanelWidth(next)
+}
+
+function stopResize() {
+  if (!isResizing.value) return
+  isResizing.value = false
+  if (resizeCaptureEl && resizePointerId !== null) {
+    try {
+      resizeCaptureEl.releasePointerCapture(resizePointerId)
+    } catch {
+      /* capture 可能已释放 */
+    }
+  }
+  resizeCaptureEl = null
+  resizePointerId = null
+  window.removeEventListener('pointermove', onResizePointerMove)
+  window.removeEventListener('pointerup', stopResize)
+  window.removeEventListener('pointercancel', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  armOverlayCloseSuppress()
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), logPanelWidthPx: logPanelWidthPx.value })
+}
+
+function onResizePointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  isResizing.value = true
+  resizeStartX = event.clientX
+  resizeStartWidth = logPanelWidthPx.value
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+  const target = event.currentTarget
+  if (target instanceof Element) {
+    resizeCaptureEl = target
+    resizePointerId = event.pointerId
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      resizeCaptureEl = null
+      resizePointerId = null
+    }
+  }
+  window.addEventListener('pointermove', onResizePointerMove)
+  window.addEventListener('pointerup', stopResize)
+  window.addEventListener('pointercancel', stopResize)
+}
+
+function onWindowResize() {
+  logPanelWidthPx.value = clampLogPanelWidth(logPanelWidthPx.value)
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onWindowResize)
+})
+
+onUnmounted(() => {
+  stopResize()
+  if (suppressOverlayCloseTimer !== null) clearTimeout(suppressOverlayCloseTimer)
+  window.removeEventListener('resize', onWindowResize)
+})
 </script>
 
 <template>
-  <div class="log-panel-overlay" @click.self="emit('close')">
-    <div class="log-panel">
+  <div class="log-panel-overlay" @click.self="onOverlayClick">
+    <div class="log-panel" :class="{ 'log-panel--resizing': isResizing }" :style="panelStyle">
+      <div
+        class="log-resize-handle"
+        title="向左拖动加宽"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整系统日志面板宽度"
+        @pointerdown="onResizePointerDown"
+        @click.stop
+      />
       <div class="panel-header">
         <ClipboardList :size="16" class="panel-icon" aria-hidden="true" />
         <span class="panel-title">系统日志</span>
@@ -156,23 +275,63 @@ function handleExport() {
   display: flex;
   justify-content: flex-end;
   background: var(--surface-raised);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .log-panel {
+  position: relative;
   width: 26rem;
   max-width: 92vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
-  border-left: 1px solid var(--accent-surface);
+  background: var(--surface-2);
+  border-left: 1px solid var(--border-default);
   box-shadow:
     -16px 0 48px rgba(1, 8, 16, 0.4),
     inset 1px 0 0 rgba(136, 223, 255, 0.06);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  transition: width var(--motion-surface-duration) var(--motion-surface-ease);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+.log-panel--resizing {
+  transition: none;
+  will-change: width;
+  cursor: ew-resize;
+}
+
+.log-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0.5rem;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.log-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.18rem;
+  height: 2.4rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--border-default);
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft);
+}
+
+.log-resize-handle:hover::after,
+.log-panel--resizing .log-resize-handle::after {
+  opacity: 1;
+  background: var(--accent);
 }
 
 .panel-header {
@@ -227,8 +386,8 @@ function handleExport() {
   align-items: center;
   justify-content: center;
   transition:
-    background-color var(--motion-fast) ease,
-    color var(--motion-fast) ease;
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 .close-btn:hover {
   background: var(--surface-hover);
@@ -262,9 +421,9 @@ function handleExport() {
   font-family: inherit;
   font-size: var(--font-size-caption);
   transition:
-    background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease,
-    color var(--motion-fast) ease;
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 
 .filter-tab:hover {
@@ -299,7 +458,7 @@ function handleExport() {
   cursor: pointer;
   font-family: inherit;
   font-size: var(--font-size-caption);
-  transition: background-color var(--motion-fast) ease;
+  transition: background-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 .clear-btn:hover {
   background: var(--danger-surface);
@@ -314,7 +473,7 @@ function handleExport() {
   cursor: pointer;
   font-family: inherit;
   font-size: var(--font-size-caption);
-  transition: background-color var(--motion-fast) ease;
+  transition: background-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .export-btn:hover {
@@ -342,7 +501,7 @@ function handleExport() {
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   cursor: pointer;
-  transition: background-color var(--motion-fast) ease;
+  transition: background-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .log-entry:hover {

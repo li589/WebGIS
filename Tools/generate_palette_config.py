@@ -172,6 +172,13 @@ def main() -> None:
 
     GENERATED_TS.parent.mkdir(parents=True, exist_ok=True)
     GENERATED_TS.write_text(generate_ts(data), encoding="utf-8")
+    import subprocess
+    subprocess.run(
+        ["npx", "prettier", "--write", str(GENERATED_TS)],
+        cwd=str(ROOT / "Code" / "frontend"),
+        shell=True,
+        capture_output=True
+    )
     exposed = sum(1 for p in data["palettes"].values() if p.get("exposed"))
     print(f"weather-palettes-generated.ts 生成完成（exposed {exposed}/{len(data['palettes'])}）")
 

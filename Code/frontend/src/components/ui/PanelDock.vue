@@ -91,6 +91,7 @@ const {
   visible,
   collapsed,
   dragging,
+  resizing,
   resizeEnabled,
   frameStyle,
   panelSizeStyle,
@@ -175,7 +176,6 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
       {
         'panel-anchor--hidden': !visible,
         'cgda-dragging': dragging || resizing,
-        'cgda-drag-lift': dragging,
       },
     ]"
     :style="effectiveFrameStyle"
@@ -205,7 +205,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
         v-else
         key="frame"
         class="panel-dock__frame"
-        :class="dockClass"
+        :class="[dockClass, { 'cgda-drag-lift': dragging && !resizing }]"
         :style="effectivePanelSizeStyle"
       >
         <!-- 标题栏 -->
@@ -297,11 +297,10 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   --panel-collapsed-height: 2.9rem;
   --panel-scrollbar-track: var(--surface-hover);
   --panel-scrollbar-thumb: var(--border-strong);
-  --panel-backdrop-blur: 12px;
 
   position: relative;
   pointer-events: auto;
-  transition: transform var(--motion-base) var(--ease-standard);
+  transition: transform var(--motion-surface-duration) var(--motion-surface-ease);
   width: fit-content;
   height: fit-content;
   max-width: 100%;
@@ -329,6 +328,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
    使 dock-right 面板的胶囊右缘与顶栏右缘对齐、dock-left 的胶囊左缘与顶栏左缘对齐 */
 .panel-anchor--hidden {
   min-width: 0;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 .panel-anchor--dock-right :deep(.panel-dock__frame) {
@@ -350,27 +351,31 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   font-size: var(--font-size-caption);
   box-shadow: var(--elevation-2);
   opacity: 0.72;
-  backdrop-filter: blur(var(--panel-backdrop-blur));
-  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   user-select: none;
   touch-action: none;
   transition:
-    opacity var(--motion-base) var(--ease-standard),
-    border-color var(--motion-base) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard);
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease),
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .restore-pill:hover {
   opacity: 1;
   border-color: var(--border-strong);
-  box-shadow:
-    var(--elevation-3),
-    0 0 12px var(--accent-surface);
+  box-shadow: var(--elevation-3);
 }
 
 .restore-pill--dragging {
   cursor: grabbing;
   opacity: 1;
+  border-color: var(--accent);
+  box-shadow:
+    var(--elevation-3),
+    0 0 14px color-mix(in srgb, var(--accent) 30%, transparent) !important;
+  transform: scale(1.04);
 }
 
 .restore-pill svg {
@@ -390,35 +395,18 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   display: flex;
   flex-direction: column;
   transition:
-    opacity var(--motion-slow) var(--ease-decelerate),
-    transform var(--motion-slow) var(--ease-standard),
-    box-shadow var(--motion-slow) var(--ease-standard);
+    opacity var(--motion-sheet-duration) var(--ease-decelerate),
+    transform var(--motion-sheet-duration) var(--motion-sheet-ease),
+    box-shadow var(--motion-sheet-duration) var(--motion-surface-ease);
   overflow: visible;
   min-height: 0;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background:
-    linear-gradient(180deg, var(--surface-2), var(--surface-1)),
-    radial-gradient(circle at top left, var(--surface-hover), transparent 34%),
-    radial-gradient(circle at bottom right, var(--accent-surface), transparent 42%);
+  background: var(--surface-panel);
   box-shadow: var(--elevation-2);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   contain: layout paint;
-}
-
-/* 顶部高光条 */
-.panel-dock__frame::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 12%;
-  right: 12%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 3;
 }
 
 .panel-dock__frame:hover {
@@ -449,9 +437,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   opacity: 1;
   transform: translateY(-2px);
   border-color: var(--border-strong);
-  box-shadow:
-    var(--elevation-3),
-    0 0 14px var(--accent-surface);
+  box-shadow: var(--elevation-3);
 }
 
 /* 位置修饰 */
@@ -501,12 +487,10 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   border: 1px solid var(--border-subtle);
   border-bottom-color: var(--border-subtle);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
   min-height: var(--panel-title-height);
-  backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
-  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 var(--inner-highlight),
     var(--elevation-1);
 }
 
@@ -515,15 +499,12 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   background: linear-gradient(180deg, var(--surface-hover), var(--surface-2));
   border-color: var(--border-accent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    var(--elevation-2),
-    0 0 0 1px var(--accent-surface);
+    inset 0 1px 0 var(--inner-highlight-strong),
+    var(--elevation-2);
 }
 
 .panel-anchor--interacting .panel-dock__frame {
-  box-shadow:
-    var(--elevation-3),
-    0 0 18px var(--accent-surface);
+  box-shadow: var(--elevation-3);
   border-color: var(--border-accent);
 }
 
@@ -542,8 +523,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   touch-action: none;
   flex: 0 0 auto;
   transition:
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft);
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .panel-dock__grip:hover {
@@ -599,10 +580,10 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   font-size: var(--font-size-caption);
   flex: 0 0 auto;
   transition:
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    background-color var(--motion-fast) var(--ease-soft),
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--motion-interactive-ease);
 }
 
 .panel-dock__btn:hover {
@@ -685,8 +666,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   background: transparent;
   opacity: 0;
   transition:
-    opacity var(--motion-fast) var(--ease-soft),
-    transform var(--motion-fast) var(--ease-soft);
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
   z-index: 10;
   padding: 0;
   display: grid;

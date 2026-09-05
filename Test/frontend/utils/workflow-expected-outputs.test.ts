@@ -43,15 +43,21 @@ describe('workflow-expected-outputs', () => {
       { productTag: 'VOD', name: 'VOD' },
     ])
     expect(defaultProductLayerNames(['OMEGA'])).toEqual([{ productTag: 'OMEGA', name: 'ω' }])
+    expect(defaultProductLayerNames(['NDVI'])).toEqual([{ productTag: 'NDVI', name: '植被指数 NDVI' }])
     expect(defaultProductLayerNames(['result'], 'my_wf')).toEqual([
-      { productTag: 'result', name: '产出变量' },
+      { productTag: 'result', name: '分析结果' },
     ])
+    expect(
+      defaultProductLayerNames(['result'], 'my_wf', { fallbackName: '植被指数 NDVI' }),
+    ).toEqual([{ productTag: 'result', name: '植被指数 NDVI' }])
   })
 
   it('exposes geo-worker descriptions for product tags', () => {
     expect(productTagDescription('SM')).toBe('土壤水分')
     expect(productTagDescription('VOD')).toBe('植被光学厚度')
     expect(productTagDescription('OMEGA')).toBe('反演参数 ω')
+    expect(productTagDescription('NDVI')).toBe('植被指数 NDVI')
+    expect(productTagDescription('result')).toBe('工作流分析结果')
   })
 
   it('extracts module name prefix', () => {

@@ -54,9 +54,16 @@ export function validateOverlayBounds(
   if (!Array.isArray(raw) || raw.length !== 4) {
     return { ok: false, reason: `bounds 不是 4 元素数组（实际: ${JSON.stringify(raw)}）` }
   }
-  const [w0, s0, e0, n0] = raw as number[]
-  if (![w0, s0, e0, n0].every(Number.isFinite)) {
-    return { ok: false, reason: `bounds 含非有限值: [${w0}, ${s0}, ${e0}, ${n0}]` }
+  const [rawW0, s0, rawE0, n0] = raw as number[]
+  if (![rawW0, s0, rawE0, n0].every(Number.isFinite)) {
+    return { ok: false, reason: `bounds 含非有限值: [${rawW0}, ${s0}, ${rawE0}, ${n0}]` }
+  }
+  let w0 = rawW0
+  let e0 = rawE0
+  // 全球近全幅图层容差清洗（如 3857 反算 4326 的浮点微小外溢 -179.9998 或 180.00017）
+  if (Math.abs(w0 - -180) < 0.05 && Math.abs(e0 - 180) < 0.05) {
+    w0 = -180.0
+    e0 = 180.0
   }
   if (s0 < -90 || s0 > 90 || n0 < -90 || n0 > 90) {
     return { ok: false, reason: `bounds 超出 WGS84 范围: [${w0}, ${s0}, ${e0}, ${n0}]` }
@@ -430,7 +437,14 @@ export function createOverlayImageModule(
   function _boundsToCoordinates(
     bounds: [number, number, number, number],
   ): [[number, number], [number, number], [number, number], [number, number]] {
-    const [west, south, east, north] = bounds
+    const [rawWest, south, rawEast, north] = bounds
+    let west = rawWest
+    let east = rawEast
+    // 全球近全幅图层强制锁定精确 [-180, south, 180, north]，杜绝多世界渲染时的亚像素重叠接缝
+    if (Math.abs(west - -180) < 0.05 && Math.abs(east - 180) < 0.05) {
+      west = -180.0
+      east = 180.0
+    }
     return [
       [west, north],
       [east, north],
@@ -538,12 +552,7 @@ export function createOverlayImageModule(
     options.map.addSource(sourceId, {
       type: 'image',
       url,
-      coordinates: [
-        [bounds[0], bounds[3]],
-        [bounds[2], bounds[3]],
-        [bounds[2], bounds[1]],
-        [bounds[0], bounds[1]],
-      ],
+      coordinates: _boundsToCoordinates(bounds),
     } as ImageSourceSpecification)
   }
 

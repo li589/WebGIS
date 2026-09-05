@@ -204,7 +204,9 @@ def append_turn(
             if path.exists():
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
-                    if isinstance(data, dict) and isinstance(data.get("messages"), list):
+                    if isinstance(data, dict) and isinstance(
+                        data.get("messages"), list
+                    ):
                         updated = _parse_updated_at(data.get("updated_at"))
                         if updated is None:
                             try:
@@ -232,3 +234,115 @@ def append_turn(
             )
             tmp.replace(path)
             _enforce_session_quota(user_key, keep_path=path)
+
+
+def list_sessions(*, user_id: int | None, limit: int = 40) -> list[dict[str, Any]]:
+    """List non-expired sessions for a user (newest first).
+
+    Fail-closed: anonymous / missing user_id yields an empty list (no shared anon bucket listing).
+    """
+    if user_id is None:
+        return []
+    user_key = str(user_id)
+    folder = _user_session_dir(user_key)
+    now = datetime.now(UTC)
+    limit = max(1, min(100, int(limit)))
+    items: list[dict[str, Any]] = []
+    with _lock:
+        for path in folder.glob("*.json"):
+            if not path.is_file():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            updated = _parse_updated_at(data.get("updated_at"))
+            if updated is None:
+                try:
+                    updated = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                except OSError:
+                    continue
+            if _is_expired(updated, now=now):
+                continue
+            sid = path.stem
+            if not _SAFE_SESSION.match(sid):
+                continue
+            messages = (
+                data.get("messages") if isinstance(data.get("messages"), list) else []
+            )
+            preview = ""
+            for m in reversed(messages):
+                if isinstance(m, dict) and str(m.get("role")) == "user":
+                    preview = str(m.get("content") or "").strip()[:80]
+                    if preview:
+                        break
+            items.append(
+                {
+                    "session_id": sid,
+                    "updated_at": updated.isoformat(),
+                    "preview": preview,
+                    "message_count": len(messages),
+                }
+            )
+    items.sort(key=lambda x: str(x.get("updated_at") or ""), reverse=True)
+    return items[:limit]
+
+
+def get_session_messages(
+    *, user_id: int | None, session_id: str
+) -> dict[str, Any] | None:
+    """Return session payload or None if missing/expired/unauthorized/invalid id.
+
+    Fail-closed for anonymous callers (no shared anon bucket reads).
+    """
+    if user_id is None:
+        return None
+    try:
+        history = load_history(user_id=user_id, session_id=session_id)
+    except ValueError:
+        return None
+    user_key = str(user_id)
+    try:
+        path = _session_path(user_key, session_id)
+    except ValueError:
+        return None
+    if not history and not path.exists():
+        return None
+    updated_at = ""
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                updated_at = str(data.get("updated_at") or "")
+        except (OSError, json.JSONDecodeError):
+            pass
+    return {
+        "session_id": session_id,
+        "updated_at": updated_at,
+        "messages": history,
+    }
+
+
+def delete_session(*, user_id: int | None, session_id: str) -> bool:
+    """Delete one session file. Returns True if removed or already gone.
+
+    Anonymous callers cannot delete (fail-closed).
+    """
+    if user_id is None:
+        return False
+    user_key = str(user_id)
+    try:
+        path = _session_path(user_key, session_id)
+    except ValueError:
+        return False
+    with _lock:
+        if not path.exists():
+            return True
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError as exc:
+            logger.warning("Failed to delete agent session %s: %s", path, exc)
+            return False

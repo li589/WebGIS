@@ -311,6 +311,65 @@ describe('提交路径 ensureRestoredRunGroup（source=submit）', () => {
     expect(groups[0]!.runId).toBe('run-sub')
     expect(groups[0]!.groupId).toBe(pendingGroupId)
   })
+
+  it('submit 重跑复用同 source 已结束组：不新建第二组，重绑 runId 并回到 computing', async () => {
+    const deps = makeDeps()
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['method-fy-omega-doy-dynamic'] = {
+      layer_id: 'method-fy-omega-doy-dynamic',
+      dataset_key: 'ds-fy',
+      display_name: '风云卫星 动态散射约束产品',
+      description: '',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 70, south: 15, east: 140, north: 55 },
+      workflow_id: 'omega_sf_fenkuai_fy_online',
+      workflow_definition: { extra: { outputs: ['SM', 'VOD', 'OMEGA'] }, nodes: [] },
+    } as LayerDescriptor
+
+    const readyGroupId = 'grp-ready-fy'
+    const memberLayer: ActiveLayer = {
+      instanceId: 'inst-ready-sm',
+      catalogId: 'wf-run-grp-ready-sm',
+      name: 'SM',
+      visible: true,
+      opacity: 1,
+      order: 0,
+      isAdminBoundary: false,
+      dataState: 'catalog',
+      runGroupId: readyGroupId,
+      runGroupProductTag: 'SM',
+      runGroupLocked: false,
+    }
+    deps.getActiveLayers().push(memberLayer)
+    deps.getRunLayerGroups().push({
+      groupId: readyGroupId,
+      runId: 'run-old-failed',
+      title: '风云卫星 动态散射约束产品',
+      status: 'failed',
+      memberInstanceIds: [memberLayer.instanceId],
+      dissolvable: true,
+      sourceLayerId: 'method-fy-omega-doy-dynamic',
+      workflowId: 'omega_sf_fenkuai_fy_online',
+      progress: 0,
+      message: 'coverage_gap',
+    } as ActiveRunLayerGroup)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.runWorkflowForCatalog('method-fy-omega-doy-dynamic', {
+      commandLabel: '按时段重跑 20250701_20250708',
+    })
+
+    expect(deps.createRunLayerGroup).not.toHaveBeenCalled()
+    const groups = deps.getRunLayerGroups()
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.groupId).toBe(readyGroupId)
+    expect(groups[0]!.runId).toBe('run-sub')
+    expect(groups[0]!.status).toBe('computing')
+    expect(groups[0]!.dissolvable).toBe(false)
+  })
 })
 
 // ── ② autoAttachProductsForNewLayer 仅当 supportsMapLayerResult 才执行 ─────

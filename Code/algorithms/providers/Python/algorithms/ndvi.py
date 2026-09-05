@@ -123,8 +123,9 @@ def _apply_range_masking(
     observation_days: Any,
     valid_mask: Any,
     output_days: Any,
+    composite_days: int = 16,
 ) -> Any:
-    """将超出有效观测范围的 output_days 位置设为 NaN。
+    """将超出有效观测范围（含合成周期延伸）的 output_days 位置设为 NaN。
 
     量纲: daily_values/output_days 为 ordinal 日数，observation_days 为 ordinal 日数。
     valid_mask 为布尔 1D 数组，标识有效观测位置。
@@ -135,7 +136,8 @@ def _apply_range_masking(
     if valid_obs_days.size == 0:
         return daily_values
     first_obs_day = valid_obs_days.min()
-    last_obs_day = valid_obs_days.max()
+    # 考虑合成产品：末尾观测日的有效覆盖向后延伸合成周期
+    last_obs_day = valid_obs_days.max() + max(0, composite_days - 1)
     daily_values[(output_days < first_obs_day) | (output_days > last_obs_day)] = np.nan
     return daily_values
 
@@ -148,35 +150,59 @@ def vi_sg_interpolate(
     gap_threshold_days: int = _SG_DEFAULT_GAP_THRESHOLD_DAYS,
     sg_polyorder: int = _SG_DEFAULT_POLYORDER,
     sg_window_length: int = _SG_DEFAULT_WINDOW_LENGTH,
+    composite_days: int = 16,
 ) -> Any:
     """Savitzky-Golay 滤波插值，将观测 NDVI 序列重建为连续日序列。
 
     量纲: data 无量纲（NDVI 0-1），observation_days/sg_days/output_days 为 ordinal 日数。
-    有效观测点少于 _SG_MIN_VALID_POINTS 时返回全 NaN。观测间隔超过 gap_threshold_days 的区段设为 NaN。
-    超出有效观测范围的 output_days 位置设为 NaN（范围掩膜）。
+    有效观测少于 _SG_MIN_VALID_POINTS 时平滑降级为线性插值或单观测周期保持。
+    观测间隔超过 gap_threshold_days 的区段设为 NaN。
+    超出有效观测范围（含合成周期延伸）的 output_days 位置设为 NaN（范围掩膜）。
     """
     import numpy as np
     from scipy.signal import savgol_filter
 
     valid_mask = ~np.isnan(data)
     valid_count = int(valid_mask.sum())
-    if valid_count <= _SG_MIN_VALID_POINTS:
+    if valid_count == 0:
         return np.full(output_days.shape, np.nan, dtype=np.float64)
 
-    # savgol_filter 要求 window_length <= len(data)；sg_days 过短时降级为线性插值
-    if sg_days.size < sg_window_length:
-        if valid_count < 2:
-            return np.full(output_days.shape, np.nan, dtype=np.float64)
+    # 单点观测（如仅检索到一个 16 天合成颗粒）：在合成周期内保持常数观测，超出设为 NaN
+    if valid_count == 1:
+        obs_idx = np.where(valid_mask)[0][0]
+        obs_day = observation_days[obs_idx]
+        val = data[obs_idx]
+        daily_values = np.full(output_days.shape, np.nan, dtype=np.float64)
+        in_coverage = (output_days >= obs_day) & (
+            output_days <= obs_day + max(0, composite_days - 1)
+        )
+        daily_values[in_coverage] = val
+        return daily_values
+
+    # 观测点数少于 SG 滤波阈值，或时间跨度短于滤波窗口：平滑降级为线性插值
+    if valid_count < _SG_MIN_VALID_POINTS or sg_days.size < sg_window_length:
         daily_values = _linear_interp_with_nan(
             observation_days[valid_mask],
             data[valid_mask],
             output_days,
         )
+        if composite_days > 1:
+            last_idx = np.where(valid_mask)[0][-1]
+            last_day = observation_days[last_idx]
+            last_val = data[last_idx]
+            tail_coverage = (output_days > last_day) & (
+                output_days <= last_day + max(0, composite_days - 1)
+            )
+            daily_values[tail_coverage & np.isnan(daily_values)] = last_val
         daily_values = _apply_gap_masking(
             daily_values, observation_days, valid_mask, output_days, gap_threshold_days
         )
         return _apply_range_masking(
-            daily_values, observation_days, valid_mask, output_days
+            daily_values,
+            observation_days,
+            valid_mask,
+            output_days,
+            composite_days=composite_days,
         )
 
     interpolated_8day = _linear_interp_with_nan(
@@ -191,6 +217,15 @@ def vi_sg_interpolate(
     )
     daily_values = _linear_interp_with_nan(sg_days, sg_filtered, output_days)
 
+    if composite_days > 1:
+        last_idx = np.where(valid_mask)[0][-1]
+        last_day = observation_days[last_idx]
+        last_val = data[last_idx]
+        tail_coverage = (output_days > last_day) & (
+            output_days <= last_day + max(0, composite_days - 1)
+        )
+        daily_values[tail_coverage & np.isnan(daily_values)] = last_val
+
     daily_values = _apply_gap_masking(
         daily_values,
         observation_days,
@@ -199,7 +234,13 @@ def vi_sg_interpolate(
         gap_threshold_days,
     )
     # 显式范围掩膜：超出有效观测范围的 output_days 设为 NaN（替代原隐式 NaN 传播）
-    return _apply_range_masking(daily_values, observation_days, valid_mask, output_days)
+    return _apply_range_masking(
+        daily_values,
+        observation_days,
+        valid_mask,
+        output_days,
+        composite_days=composite_days,
+    )
 
 
 def _apply_gap_masking(
@@ -270,8 +311,8 @@ def process_ndvi_stack_to_daily(
 
     # 像素级有效观测数 (shape: (n_pixels,))
     valid_counts = (~np.isnan(flattened)).sum(axis=1)
-    # savgol_filter 批量路径要求 sg_days 长度 >= window_length，且像素有效点 > _SG_MIN_VALID_POINTS
-    sg_capable_mask = (valid_counts > _SG_MIN_VALID_POINTS) & (
+    # savgol_filter 批量路径要求 sg_days 长度 >= window_length，且像素有效点 >= _SG_MIN_VALID_POINTS
+    sg_capable_mask = (valid_counts >= _SG_MIN_VALID_POINTS) & (
         sg_days.size >= sg_window_length
     )
 
@@ -314,7 +355,11 @@ def process_ndvi_stack_to_daily(
                 gap_threshold_days,
             )
             daily_values = _apply_range_masking(
-                daily_values, observation_days, pixel_valid, output_days
+                daily_values,
+                observation_days,
+                pixel_valid,
+                output_days,
+                composite_days=16,
             )
             daily_flattened[pixel_idx] = daily_values
 
@@ -328,6 +373,7 @@ def process_ndvi_stack_to_daily(
             gap_threshold_days=gap_threshold_days,
             sg_polyorder=sg_polyorder,
             sg_window_length=sg_window_length,
+            composite_days=16,
         )
 
     daily_stack = daily_flattened.reshape(rows, cols, output_days.size)

@@ -121,14 +121,15 @@ export const WIND_TEXTURE_SAMPLE_GLSL = /* glsl */ `
     float lonU = lon;
     float west = u_windBounds.x;
     float east = u_windBounds.z;
+    float span = east - west;
     // 与 TS unwrapLonIntoGridFrame 一致：以网格中心 ±180 解包，勿用 lon<west 无脑 +360
-    if (east > 180.0 || (east - west) > 180.0) {
+    if (span < 359.0 && (east > 180.0 || west < -180.0 || span > 180.0)) {
       float center = (west + east) * 0.5;
       if (lonU < center - 180.0) lonU += 360.0;
       if (lonU > center + 180.0) lonU -= 360.0;
     }
     return vec2(
-      (lonU - west) / (east - west),
+      (lonU - west) / span,
       (u_windBounds.w - lat) / (u_windBounds.w - u_windBounds.y)
     );
   }

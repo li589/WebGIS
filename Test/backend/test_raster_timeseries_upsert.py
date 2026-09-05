@@ -254,3 +254,51 @@ def test_upsert_default_time_skips_all_nodata_trailing_day(
         (imports / out["layer_id"] / "bounds.json").read_text(encoding="utf-8")
     )
     assert bounds["meta"]["default_time"] == "20251230_20251230"
+
+
+def test_upsert_ndvi_daily_dir_timeseries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ndvi_daily_dir maps 32 daily mats into unified time-series layer."""
+    from app.services.overlay_registry import get_overlay_spec
+    from app.services.python_provider_result_builder import _MAPPABLE_PRODUCTS
+
+    assert "ndvi_daily_dir" in _MAPPABLE_PRODUCTS
+    assert _MAPPABLE_PRODUCTS["ndvi_daily_dir"]["from_block_dir"] is True
+    assert _MAPPABLE_PRODUCTS["ndvi_daily_dir"]["palette"] == "ndvi-ramp"
+
+    imports = tmp_path / "imports"
+    imports.mkdir()
+    monkeypatch.setattr(
+        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
+        imports,
+    )
+
+    block_dir = tmp_path / "ndvi_daily"
+    block_dir.mkdir()
+    for day in ("20260701", "20260702", "20260703"):
+        arr = np.full((8, 8), 0.5, dtype=np.float32)
+        savemat(str(block_dir / f"{day}.mat"), {"NDVI": arr})
+
+    out = upsert_block_dir_timeseries(
+        block_dir,
+        variable_id="NDVI",
+        label="NDVI",
+        run_id="run-ndvi-test",
+        layer_key="ndvi",
+        grid_preset="ease2-global-9km",
+        palette="ndvi-ramp",
+        vmin=0.0,
+        vmax=1.0,
+        native_step="1d",
+    )
+    assert out["time_list"] == [
+        "20260701_20260701",
+        "20260702_20260702",
+        "20260703_20260703",
+    ]
+    spec = get_overlay_spec(out["layer_id"])
+    assert spec is not None
+    # 验证单日 8 位时间对 YYYYMMDD_YYYYMMDD 的自动匹配容错
+    assert spec._assert_time_available("20260702") == "20260702_20260702"
+    assert spec._assert_time_available("2026-07-02") == "20260702_20260702"

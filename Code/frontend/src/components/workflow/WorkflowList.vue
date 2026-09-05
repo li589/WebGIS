@@ -211,9 +211,9 @@ function formatTime(iso: string | null): string {
       </button>
     </div>
 
-    <InlineLoader v-if="loading" label="加载中..." size="sm" />
+    <InlineLoader v-if="loading && summaries.length === 0" label="加载中..." size="sm" />
 
-    <div v-else class="list-content">
+    <div class="list-content" :class="{ 'list-content--refreshing': loading }">
       <!-- 分类过滤栏 -->
       <div v-if="availableCategories.length > 0" class="category-filter">
         <button
@@ -540,7 +540,7 @@ function formatTime(iso: string | null): string {
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 600;
-  transition: background 0.16s ease;
+  transition: background var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .new-btn:hover {
@@ -570,6 +570,12 @@ function formatTime(iso: string | null): string {
   padding: 0.42rem 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border-accent) transparent;
+  transition: opacity var(--motion-interactive-duration) var(--motion-interactive-ease);
+}
+
+.list-content--refreshing {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 /* ── 分类过滤栏 ──────────────────────────────────────────────────── */
@@ -592,7 +598,13 @@ function formatTime(iso: string | null): string {
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
   white-space: nowrap;
 }
 
@@ -691,8 +703,8 @@ function formatTime(iso: string | null): string {
   font: inherit;
   text-align: left;
   transition:
-    border-color 0.16s ease,
-    background 0.16s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .workflow-item:hover {
@@ -746,7 +758,13 @@ function formatTime(iso: string | null): string {
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .action-btn:hover {
@@ -844,7 +862,13 @@ function formatTime(iso: string | null): string {
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .dialog-btn:disabled {
@@ -933,8 +957,8 @@ function formatTime(iso: string | null): string {
   justify-content: center;
   gap: 0.22rem;
   transition:
-    background 0.16s ease,
-    border-color 0.16s ease;
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .use-template-btn:hover {

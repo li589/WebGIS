@@ -29,6 +29,8 @@ export interface SettingsUiLocal {
   mapDistributionChrome?: boolean
   /** 设置侧栏宽度（px）；未设则用默认 38rem */
   panelWidthPx?: number
+  /** 系统日志侧栏宽度（px）；未设则用默认 26rem */
+  logPanelWidthPx?: number
   /** 分析工具运行成功后是否在地图显示新图层（默认开启） */
   showAnalysisResultOnMap?: boolean
   /** 「远程与存储」二级 tab：storage（远程存储）| portals（开放门户） */
@@ -263,7 +265,12 @@ export type GlobeRenderEngine = 'maplibre' | 'cesium'
 /** 3D 背景默认 auto（跟随主题：暗色=星图 / 浅色=淡化微尘）。 */
 export function getGlobeBackgroundMode(): GlobeBackgroundMode {
   const value = loadSettingsUiLocal().globeBackground
-  if (value === 'starfield' || value === 'minimal' || value === 'solar_system' || value === 'auto') {
+  if (
+    value === 'starfield' ||
+    value === 'minimal' ||
+    value === 'solar_system' ||
+    value === 'auto'
+  ) {
     return value
   }
   return 'auto'

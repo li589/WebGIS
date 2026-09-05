@@ -161,11 +161,14 @@ class LayerGroupRepository:
     def _migrate_legacy_schema(self, conn: Any) -> None:
         """Upgrade pre-owner-scoped tables in place when needed."""
         group_cols = {
-            str(r["name"]) for r in conn.execute("PRAGMA table_info(layer_groups)").fetchall()
+            str(r["name"])
+            for r in conn.execute("PRAGMA table_info(layer_groups)").fetchall()
         }
         assign_cols = {
             str(r["name"])
-            for r in conn.execute("PRAGMA table_info(layer_group_assignments)").fetchall()
+            for r in conn.execute(
+                "PRAGMA table_info(layer_group_assignments)"
+            ).fetchall()
         }
 
         # Fresh installs already have the new schema via CREATE IF NOT EXISTS.
@@ -246,7 +249,8 @@ class LayerGroupRepository:
 
         # Visibility flags (theme/group hide). Re-read cols after possible rebuild.
         group_cols = {
-            str(r["name"]) for r in conn.execute("PRAGMA table_info(layer_groups)").fetchall()
+            str(r["name"])
+            for r in conn.execute("PRAGMA table_info(layer_groups)").fetchall()
         }
         if "hidden" not in group_cols:
             conn.execute(
@@ -339,9 +343,7 @@ class LayerGroupRepository:
             "FROM layer_groups"
         )
 
-    def list_groups(
-        self, owner_user_id: int = OWNER_SHARED
-    ) -> list[LayerGroupRecord]:
+    def list_groups(self, owner_user_id: int = OWNER_SHARED) -> list[LayerGroupRecord]:
         """Seed ⊕ personal overrides/customs for *owner_user_id*.
 
         ``owner_user_id=0`` returns shared seeds + legacy shared customs only.
@@ -358,8 +360,7 @@ class LayerGroupRepository:
             legacy_custom = []
             if owner_user_id and owner_user_id != OWNER_SHARED:
                 personal_rows = conn.execute(
-                    self._select_sql()
-                    + " WHERE owner_user_id=? ORDER BY position, id",
+                    self._select_sql() + " WHERE owner_user_id=? ORDER BY position, id",
                     (int(owner_user_id),),
                 ).fetchall()
             else:
@@ -396,8 +397,7 @@ class LayerGroupRepository:
         with self._pool.connection() as conn:
             if owner_user_id and owner_user_id != OWNER_SHARED:
                 row = conn.execute(
-                    self._select_sql()
-                    + " WHERE owner_user_id=? AND group_id=?",
+                    self._select_sql() + " WHERE owner_user_id=? AND group_id=?",
                     (int(owner_user_id), gid),
                 ).fetchone()
                 if row is not None:
@@ -590,9 +590,13 @@ class LayerGroupRepository:
         display_name_count = 0
         try:
             payload = json.loads(str(row["payload"]))
-            if isinstance(payload, dict) and isinstance(payload.get("display_names"), dict):
+            if isinstance(payload, dict) and isinstance(
+                payload.get("display_names"), dict
+            ):
                 display_name_count = sum(
-                    1 for k, v in payload["display_names"].items() if str(k).strip() and str(v).strip()
+                    1
+                    for k, v in payload["display_names"].items()
+                    if str(k).strip() and str(v).strip()
                 )
         except Exception:
             display_name_count = 0
@@ -760,7 +764,11 @@ class LayerGroupRepository:
             theme_id, updated_by_user_id=updated_by_user_id
         )
         groups = list(payload.get("groups") or [])
-        if any(str(g.get("id") or "").strip().lower() == gid for g in groups if isinstance(g, dict)):
+        if any(
+            str(g.get("id") or "").strip().lower() == gid
+            for g in groups
+            if isinstance(g, dict)
+        ):
             raise LayerGroupError(f"分组 id 已存在: {gid}")
         max_pos = 0.0
         for g in groups:
@@ -1126,13 +1134,13 @@ class LayerGroupRepository:
                 raise LayerGroupError("分组名称不能为空")
             fields.append("name=?")
             values.append(name)
-        for field, value in (
+        for col_name, value in (
             ("icon", icon),
             ("accent_color", accent_color),
             ("chip_tone", chip_tone),
         ):
             if value is not None:
-                fields.append(f"{field}=?")
+                fields.append(f"{col_name}=?")
                 values.append(value)
         if sub_categories is not None:
             fields.append("sub_categories=?")
@@ -1244,9 +1252,7 @@ class LayerGroupRepository:
         assert updated is not None
         return updated
 
-    def delete_group(
-        self, group_id: str, *, owner_user_id: int = OWNER_SHARED
-    ) -> None:
+    def delete_group(self, group_id: str, *, owner_user_id: int = OWNER_SHARED) -> None:
         owner = int(owner_user_id or OWNER_SHARED)
         # Seed ids are never deletable (even when a personal override exists).
         shared = self.get_by_group_id(group_id, owner_user_id=OWNER_SHARED)
@@ -1294,7 +1300,9 @@ class LayerGroupRepository:
         if unknown:
             raise LayerGroupError(f"未知分组 id: {', '.join(unknown)}")
         tail = [
-            g.group_id for g in known.values() if g.group_id not in set(ordered_group_ids)
+            g.group_id
+            for g in known.values()
+            if g.group_id not in set(ordered_group_ids)
         ]
         full_order = list(ordered_group_ids) + tail
         now = datetime.now(UTC).isoformat()
@@ -1317,9 +1325,7 @@ class LayerGroupRepository:
                 record.owner_user_id == OWNER_SHARED
                 and record.source == _GROUP_SOURCE_SEED
             ):
-                self._upsert_seed_override(
-                    record, owner_user_id=owner, position=pos
-                )
+                self._upsert_seed_override(record, owner_user_id=owner, position=pos)
             else:
                 with self._pool.connection() as conn:
                     conn.execute(

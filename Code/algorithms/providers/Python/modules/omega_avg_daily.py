@@ -225,11 +225,16 @@ class OmegaAvgDailyModule(BaseModule):
         # 解析输出目录：显式 reuse_output_dir（失败重试复用）优先，
         # 其次节点属性 output_dir、request output_spec_extra，缺省 run 工作区。
         # 按 tb_source 分目录，避免 FY 误 resume SMAP 旧日产物（地图空白 / 点查 N/A）。
-        tb_source = str(
-            getattr(daily_bundle_config, "tb_source", None)
-            or algorithm_params.get("tb_source")
+        tb_source = (
+            str(
+                getattr(daily_bundle_config, "tb_source", None)
+                or algorithm_params.get("tb_source")
+                or "SMAP"
+            )
+            .strip()
+            .upper()
             or "SMAP"
-        ).strip().upper() or "SMAP"
+        )
         product_subdir = f"omega_avg_daily_{tb_source.lower()}"
         reuse_output_dir = algorithm_params.get("reuse_output_dir")
         if isinstance(reuse_output_dir, str) and reuse_output_dir.strip():

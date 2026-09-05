@@ -67,8 +67,8 @@ def reproject_to_mercator_linear(
         west_m, south_m = fwd.transform(west, max(south, -MERCATOR_MAX_LAT))
         east_m, north_m = fwd.transform(east, min(north, MERCATOR_MAX_LAT))
 
-    width = max(1, int(round((east_m - west_m) / res_m)))
-    height = max(1, int(round((north_m - south_m) / res_m)))
+    width = max(1, round((east_m - west_m) / res_m))
+    height = max(1, round((north_m - south_m) / res_m))
     dst_transform = from_origin(west_m, north_m, res_m, res_m)
 
     dst_data = np.full((height, width), np.nan, dtype=np.float64)
@@ -88,7 +88,30 @@ def reproject_to_mercator_linear(
         dst_nodata=np.nan,
     )
 
-    inv = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    w, s = inv.transform(west_m, south_m)
-    e, n = inv.transform(east_m, north_m)
-    return dst_data, (float(w), float(s), float(e), float(n))
+    if clip_bounds is None:
+        # 全球全幅网格边界严格锁定，避免 3857 反算 4326 带来的微小浮点外溢 (如 180.00017)
+        bounds = (-180.0, -MERCATOR_MAX_LAT, 180.0, MERCATOR_MAX_LAT)
+        # IDL 边缘经线连续性协调 (Harmonization across 180° Meridian):
+        # 列 0 与最后一列在地理上无限接近同一条经线 (±180°)。
+        # 若一侧为 NaN 另一侧有有效值，或两侧均为有效值但存在重采样离散阶跃，
+        # 同步协调两端边缘列，彻底消除跨日界线陆地 (如楚科奇半岛) 的断崖与单侧绿线
+        col_left = dst_data[:, 0]
+        col_right = dst_data[:, -1]
+        valid_left = ~np.isnan(col_left)
+        valid_right = ~np.isnan(col_right)
+        both_valid = valid_left & valid_right
+        only_left = valid_left & ~valid_right
+        only_right = ~valid_left & valid_right
+
+        dst_data[both_valid, 0] = dst_data[both_valid, -1] = 0.5 * (
+            col_left[both_valid] + col_right[both_valid]
+        )
+        dst_data[only_left, -1] = dst_data[only_left, 0]
+        dst_data[only_right, 0] = dst_data[only_right, -1]
+    else:
+        inv = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        w, s = inv.transform(west_m, south_m)
+        e, n = inv.transform(east_m, north_m)
+        bounds = (float(w), float(s), float(e), float(n))
+
+    return dst_data, bounds

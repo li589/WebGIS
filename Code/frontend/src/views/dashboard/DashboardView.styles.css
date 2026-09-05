@@ -232,6 +232,84 @@
     transform: rotate(36deg) scale(1.02);
   }
 }
+
+/* ── 3D 占位 · 浅色主题覆盖 ─────────────────────────────────────── */
+[data-theme='light'] .view-placeholder-3d {
+  background:
+    radial-gradient(
+      circle at 50% 46%,
+      color-mix(in srgb, var(--accent) 8%, transparent),
+      transparent 26%
+    ),
+    radial-gradient(
+      ellipse at 50% 80%,
+      color-mix(in srgb, #d0dce8 72%, var(--surface-base)),
+      var(--surface-base) 68%
+    );
+}
+
+[data-theme='light'] .view-placeholder-3d::before {
+  opacity: 0.18;
+}
+
+[data-theme='light'] .placeholder-3d-stars i {
+  background: color-mix(in srgb, var(--accent) 60%, #7ba7cc);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+[data-theme='light'] .placeholder-3d-orbit {
+  border-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  opacity: 0.52;
+}
+
+[data-theme='light'] .placeholder-3d-orbit::after {
+  background: color-mix(in srgb, var(--accent) 70%, #7ba7cc);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+[data-theme='light'] .placeholder-3d-planet {
+  background: radial-gradient(
+    circle at 34% 28%,
+    color-mix(in srgb, var(--accent) 22%, #8cb4d8),
+    #a7c4dd 42%,
+    #c4d8e8 64%,
+    #dce8f2 82%
+  );
+  box-shadow:
+    inset -20px -16px 42px rgb(120 160 200 / 0.24),
+    0 0 60px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+[data-theme='light'] .planet-grid {
+  opacity: 0.16;
+}
+
+[data-theme='light'] .planet-glow {
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+[data-theme='light'] .placeholder-3d-inner {
+  background: color-mix(in srgb, var(--surface-base) 68%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--border-default) 50%, transparent);
+  border-radius: 1rem;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 0.06);
+}
+
+[data-theme='light'] .placeholder-3d-icon {
+  background: color-mix(in srgb, var(--accent-surface) 90%, white);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+[data-theme='light'] .placeholder-3d-title {
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .placeholder-3d-desc {
+  color: var(--text-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .placeholder-3d-stars i,
   .placeholder-3d-orbit {

@@ -3,14 +3,15 @@
     "kind": "system",
     "engine": "python_provider",
     "name": "本地 FY MWRI 亮温（硬盘路径）",
-    "description": "目的：读取本机已落盘的 FY-3 MWRI 亮温产品（path 使用 {DATA_ROOT}/FY，由 BACKEND_DATA_ROOT 展开）。不访问开放门户。提取多波段亮温变量并转换为 .mat 格式供后续反演使用。",
+    "description": "目的：读取本机已落盘的 FY-3 MWRI 亮温产品（path 使用 {DATA_ROOT}/Satellite/FY3/FY3D/MWRI/L1，由 BACKEND_DATA_ROOT 展开）。不访问开放门户。提取多波段亮温变量并转换为 .mat 格式供后续反演使用。",
     "author": "system",
     "readonly": true,
     "is_template": true,
     "linked_layer_id": "ref-fy-tb-202512-mwri",
     "tags": [
       "sample",
-      "local"
+      "local",
+      "temporal:range"
     ],
     "category": "data_access"
   },
@@ -26,7 +27,7 @@
         140
       ],
       "properties": {
-        "path": "{DATA_ROOT}/FY",
+        "path": "{DATA_ROOT}/Satellite/FY3/FY3D/MWRI/L1",
         "dataset_key": "FY_MWRI_HDF"
       }
     },

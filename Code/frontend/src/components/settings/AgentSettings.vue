@@ -440,9 +440,7 @@ onUnmounted(() => {
             <span class="chip-main">
               <span class="chip-name-row">
                 <span class="chip-name">{{ p.name }}</span>
-                <span
-                  v-if="p.id === activeProfileId && activeScope === 'global'"
-                  class="chip-badge"
+                <span v-if="p.id === activeProfileId && activeScope === 'global'" class="chip-badge"
                   >启用中</span
                 >
               </span>

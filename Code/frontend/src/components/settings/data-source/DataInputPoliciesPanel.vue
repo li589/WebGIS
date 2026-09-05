@@ -205,7 +205,7 @@ onMounted(() => {
               <input v-model="p.id" :disabled="!authStore.isAdmin || originLabel(p) === 'seed'" />
             </td>
             <td>
-              <select v-model="p.scope" :disabled="!authStore.isAdmin">
+              <select v-model="p.scope" class="cgda-native-select" :disabled="!authStore.isAdmin">
                 <option v-for="s in SCOPE_OPTIONS" :key="s.value" :value="s.value">
                   {{ s.label }}
                 </option>
@@ -219,7 +219,7 @@ onMounted(() => {
               />
             </td>
             <td>
-              <select v-model="p.mode" :disabled="!authStore.isAdmin">
+              <select v-model="p.mode" class="cgda-native-select" :disabled="!authStore.isAdmin">
                 <option v-for="m in MODE_OPTIONS" :key="m.value" :value="m.value">
                   {{ m.label }}
                 </option>
@@ -273,7 +273,7 @@ onMounted(() => {
               <input v-model="p.id" :disabled="!authStore.isAdmin || originLabel(p) === 'seed'" />
             </td>
             <td>
-              <select v-model="p.scope" :disabled="!authStore.isAdmin">
+              <select v-model="p.scope" class="cgda-native-select" :disabled="!authStore.isAdmin">
                 <option v-for="s in SCOPE_OPTIONS" :key="s.value" :value="s.value">
                   {{ s.label }}
                 </option>
@@ -287,7 +287,7 @@ onMounted(() => {
               />
             </td>
             <td>
-              <select v-model="p.mode" :disabled="!authStore.isAdmin">
+              <select v-model="p.mode" class="cgda-native-select" :disabled="!authStore.isAdmin">
                 <option v-for="m in MODE_OPTIONS" :key="m.value" :value="m.value">
                   {{ m.label }}
                 </option>

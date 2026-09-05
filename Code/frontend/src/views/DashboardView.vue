@@ -26,13 +26,14 @@ import DrawSessionExitModal from '../components/map/DrawSessionExitModal.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import { useGlobeRenderEngine } from '../components/map/globe-engine/use-globe-render-engine'
 import { resolveLayerExtentBounds } from '../components/map/globe-engine/layer-extent'
-import type { TileSourceId } from '../services/api-config'
+import { resolveKnownTileSourceId, type TileSourceId } from '../services/api-config'
 import {
   is3DViewExperimentalEnabled,
   isAgentCompanionEnabled,
   subscribe3DViewExperimental,
   subscribeAgentCompanion,
 } from '../services/settings-local'
+import { isReducedMotionActive } from '../services/motion-preference'
 import { importLazyChunk } from '../utils/lazy-chunk'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
@@ -154,6 +155,7 @@ const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const cesiumHostRef = ref<{
+  flyTo?: (lng: number, lat: number, heightMeters?: number) => void
   flyToBounds: (b: [number, number, number, number]) => void
   getCanvas: () => HTMLCanvasElement | null
   capturePngDataUrl?: () => string | null
@@ -242,14 +244,10 @@ const showMapLibreCanvas = computed(
 )
 /** Cesium 实验 3D：与 MapCanvas 互斥 */
 const showCesiumHost = computed(
-  () =>
-    uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'cesium',
+  () => uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'cesium',
 )
 const globeProjectionOn = computed(
-  () =>
-    uiStore.viewMode === '3d' &&
-    enable3DView.value &&
-    globeRenderEngine.value === 'maplibre',
+  () => uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'maplibre',
 )
 
 const CesiumGlobeHost = defineAsyncComponent(() =>
@@ -455,7 +453,8 @@ function handleZoomToLayer(instanceId: string): boolean {
         importedVectorBounds: layer?.importedVector?.bounds,
         importedRasterBounds: layer?.importedRaster?.bounds ?? display?.importedRasterBounds,
         importedBounds: display?.importedBounds,
-        overlayLayerId: layer?.importedRaster?.overlayLayerId ?? display?.importedRasterOverlayLayerId,
+        overlayLayerId:
+          layer?.importedRaster?.overlayLayerId ?? display?.importedRasterOverlayLayerId,
         catalogId: layer?.catalogId ?? display?.catalogId,
       },
       overlayTimeStates.value.map((s) => ({ layerId: s.layerId, bounds: s.bounds ?? null })),
@@ -468,6 +467,46 @@ function handleZoomToLayer(instanceId: string): boolean {
   const ok = Boolean(mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
   if (ok) logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
   return ok
+}
+
+function handleFitChina(): boolean {
+  const chinaBounds: [number, number, number, number] = [73.5, 18.0, 135.0, 53.5]
+  if (showCesiumHost.value) {
+    cesiumHostRef.value?.flyToBounds(chinaBounds)
+    logStore.logOperation('map-zoom', '缩放到中国全境范围(Cesium)')
+    return true
+  }
+  if (mapCanvasRef.value?.fitBounds) {
+    const duration = isReducedMotionActive() ? 0 : 1000
+    mapCanvasRef.value.fitBounds(chinaBounds, { padding: 40, duration })
+    logStore.logOperation('map-zoom', '缩放到中国全境范围')
+    return true
+  }
+  return false
+}
+
+function handleLocateCoordinate(lng: number, lat: number, zoom = 10): boolean {
+  if (Number.isNaN(lng) || Number.isNaN(lat)) return false
+  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return false
+  if (showCesiumHost.value) {
+    cesiumHostRef.value?.flyTo?.(lng, lat)
+    logStore.logOperation('map-locate', `定位坐标(Cesium): ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
+    return true
+  }
+  if (mapCanvasRef.value?.flyTo) {
+    const duration = isReducedMotionActive() ? 0 : 1200
+    mapCanvasRef.value.flyTo({ center: [lng, lat], zoom, duration })
+    logStore.logOperation('map-locate', `定位坐标: ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
+    return true
+  }
+  return false
+}
+
+function handleSetBasemap(sourceId: string): boolean {
+  const resolved = resolveKnownTileSourceId(sourceId)
+  if (!resolved || resolved === 'none') return false
+  handleTileSourceChange(resolved)
+  return true
 }
 
 async function captureActiveMapCanvas(): Promise<string | null> {
@@ -705,7 +744,13 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         </TimelinePanel>
       </div>
 
-      <AgentCompanion v-if="agentCompanionEnabled" :fit-to-layer-extent="handleZoomToLayer" />
+      <AgentCompanion
+        v-if="agentCompanionEnabled"
+        :fit-to-layer-extent="handleZoomToLayer"
+        :fit-china="handleFitChina"
+        :locate-coordinate="handleLocateCoordinate"
+        :set-basemap="handleSetBasemap"
+      />
     </section>
 
     <ScreenshotExport

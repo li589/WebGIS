@@ -53,6 +53,7 @@ import {
   isTileSourceUsable,
   type TileSourceId,
 } from '../services/api-config'
+import { isReducedMotionActive } from '../services/motion-preference'
 import { isGlobalMapViewport } from '../utils/map-viewport'
 import {
   isMapDistributionChromeEnabled,
@@ -154,6 +155,36 @@ const exposeBridge = createMapCanvasExposeBridge({
   fitToLayerExtent: (instanceId: string) => fitToLayerExtent(instanceId),
   setOverlayTime: (layerId: string, time: string) => {
     void overlayImageModule?.setOverlayTime(layerId, time)
+  },
+  flyTo: (options: {
+    center: [number, number]
+    zoom?: number
+    duration?: number
+    curve?: number
+  }) => {
+    const duration =
+      options.duration !== undefined ? (isReducedMotionActive() ? 0 : options.duration) : undefined
+    state.resources.map?.flyTo({ ...options, duration, curve: options.curve ?? 1.42 })
+  },
+  fitBounds: (
+    bounds: [number, number, number, number],
+    options?: { padding?: number; maxZoom?: number; duration?: number },
+  ) => {
+    const [w, s, e, n] = bounds
+    const baseOptions = options ?? { padding: 48, duration: 1000 }
+    const duration =
+      baseOptions.duration !== undefined
+        ? isReducedMotionActive()
+          ? 0
+          : baseOptions.duration
+        : undefined
+    state.resources.map?.fitBounds(
+      [
+        [w, s],
+        [e, n],
+      ],
+      { ...baseOptions, duration },
+    )
   },
 })
 
@@ -1119,7 +1150,8 @@ async function handleLocateMe() {
       mapInstance.flyTo({
         center: [longitude, latitude],
         zoom: Math.max(mapInstance.getZoom(), 12),
-        duration: 1500,
+        duration: isReducedMotionActive() ? 0 : 1500,
+        curve: 1.42,
       })
 
       // 添加定位标记 (持续保留在地图上，直至再次点击消除)

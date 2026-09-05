@@ -14,10 +14,7 @@ import {
 import { useLayerWorkspace } from '../../../stores/layers/selectors'
 import { collectCesiumOverlayTileSpecs } from './cesium/overlay-tiles-adapter'
 import { createCesiumViewer, type CesiumViewerHandle } from './cesium/create-viewer'
-import {
-  consumeGlobeViewSnapshot,
-  setGlobeViewSnapshot,
-} from './view-bridge'
+import { consumeGlobeViewSnapshot, setGlobeViewSnapshot } from './view-bridge'
 import type { LngLatBoundsTuple } from './layer-extent'
 
 const props = defineProps<{
@@ -135,12 +132,9 @@ watch(
   },
 )
 
-watch(
-  [daylightMode, () => props.hour, () => props.currentDate],
-  ([mode, hour, date]) => {
-    handle.value?.setDaylight(mode, hour, parseDate(date))
-  },
-)
+watch([daylightMode, () => props.hour, () => props.currentDate], ([mode, hour, date]) => {
+  handle.value?.setDaylight(mode, hour, parseDate(date))
+})
 
 watch(overlaySpecs, () => {
   syncOverlays()

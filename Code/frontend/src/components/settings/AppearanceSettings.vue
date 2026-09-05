@@ -134,8 +134,8 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">主题模式</h3>
       <p class="section-hint">
-        切换深色或浅色界面。选「跟随系统」则跟操作系统外观一致。若浏览器装了 Dark
-        Reader 等扩展，请对本站关闭，以免和内置主题叠在一起发灰发褐。
+        切换深色或浅色界面。选「跟随系统」则跟操作系统外观一致。若浏览器装了 Dark Reader
+        等扩展，请对本站关闭，以免和内置主题叠在一起发灰发褐。
       </p>
       <div class="theme-selector">
         <SegmentedControl
@@ -174,7 +174,8 @@ function onReducedMotionChange(event: Event) {
         <span>启用三维地球视图（实验）</span>
       </label>
       <p class="section-hint hint-3d">
-        开启后，顶栏切到「3D」会把地图画成地球，并显示已有图层。实验功能：个别叠加层在球面上可能异常，可随时关掉本项回到平面 2D。
+        开启后，顶栏切到「3D」会把地图画成地球，并显示已有图层。实验功能：个别叠加层在球面上可能异常，可随时关掉本项回到平面
+        2D。
       </p>
 
       <!-- 3D 场景偏好（仅在启用 3D 视图时展示） -->
@@ -189,7 +190,8 @@ function onReducedMotionChange(event: Event) {
           />
         </div>
         <p class="section-hint">
-          「MapLibre」为默认：地球投影 + 现有天气/风场叠加。「Cesium」为实验：已接底图、导入栅格瓦片与日夜光影；风场粒子等尚未接入。
+          「MapLibre」为默认：地球投影 +
+          现有天气/风场叠加。「Cesium」为实验：已接底图、导入栅格瓦片与日夜光影；风场粒子等尚未接入。
         </p>
         <div class="scene-option" :class="{ 'scene-option--disabled': !mapLibreSceneOnly }">
           <span class="scene-option-label">三维背景</span>
@@ -225,7 +227,7 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">动效偏好</h3>
       <p class="section-hint">
-        开启后会缩短按钮、对话框、面板打开与拖拽等过渡动画；顶栏进度与启动动画仍保留一点动效，避免看起来像卡住。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
+        开启后将大跨度地图运镜降为瞬时直达（防眩晕），去除弹窗位移、卡片交错延迟与晃动反馈；保留进度条真实推进与低频加载指示，避免界面假死。适合敏感体质或低功耗设备。未手动设置时跟随系统「减少动画」偏好。
       </p>
       <label class="toggle-row">
         <input type="checkbox" :checked="prefersReducedMotion" @change="onReducedMotionChange" />

@@ -204,9 +204,7 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
   } else {
     const join = baseUrl.includes('?') ? '&' : '?'
     const rangeQs =
-      minValue != null && maxValue != null
-        ? `&min_value=${minValue}&max_value=${maxValue}`
-        : ''
+      minValue != null && maxValue != null ? `&min_value=${minValue}&max_value=${maxValue}` : ''
     previewUrl = `${baseUrl}${join}palette=${encodeURIComponent(overlayState.renderHint.palette)}${rangeQs}&width=768&height=768`
   }
   const coordinates = [

@@ -216,7 +216,7 @@ async function saveTileSource() {
         </label>
         <label class="tile-field">
           <span>服务类型</span>
-          <select v-model="tileForm.serviceType">
+          <select v-model="tileForm.serviceType" class="cgda-native-select">
             <option value="xyz">XYZ</option>
             <option value="wmts">WMTS</option>
           </select>

@@ -93,14 +93,15 @@ const emit = defineEmits<{
 
       <!-- 图层列表：组头 + 成员；按内容高度排列 -->
       <ul class="layer-list" role="listbox" aria-label="已添加图层">
-        <template v-for="row in activeTocRows" :key="row.key">
+        <template v-for="(row, index) in activeTocRows" :key="row.key">
           <li
             v-if="row.kind === 'group'"
-            class="layer-group-header"
+            class="layer-group-header cgda-stagger-item"
             :class="{
               'drag-over': row.groupId === dragOverGroupId,
               computing: runGroupOf(row.groupId)?.status === 'computing',
             }"
+            :style="{ '--stagger-i': index }"
             @dragover="emit('onGroupDragOver', row.groupId, $event)"
             @drop="emit('onGroupDrop', row.groupId)"
             @dragend="emit('onDragEnd')"
@@ -140,7 +141,7 @@ const emit = defineEmits<{
           </li>
           <li
             v-else
-            class="layer-item"
+            class="layer-item cgda-stagger-item"
             :class="{
               active: row.layer.instanceId === selectedInstanceId,
               hidden: !row.layer.visible,
@@ -151,6 +152,7 @@ const emit = defineEmits<{
             :style="{
               '--accent': row.layer.accentColor,
               '--glow': row.layer.accentGlow,
+              '--stagger-i': index,
             }"
             role="option"
             :aria-selected="row.layer.instanceId === selectedInstanceId"
@@ -184,6 +186,7 @@ const emit = defineEmits<{
               </button>
               <span
                 class="layer-color-dot"
+                :class="{ 'cgda-readiness-wave': row.layer.availabilityState === 'ready' }"
                 :style="{ background: row.layer.accentColor }"
                 aria-hidden="true"
               ></span>

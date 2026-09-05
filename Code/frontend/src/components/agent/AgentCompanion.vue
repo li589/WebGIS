@@ -12,6 +12,9 @@ import AgentChatPanel from './AgentChatPanel.vue'
 
 defineProps<{
   fitToLayerExtent?: (instanceId: string) => boolean
+  fitChina?: () => boolean
+  locateCoordinate?: (lng: number, lat: number, zoom?: number) => boolean
+  setBasemap?: (sourceId: string) => boolean
 }>()
 
 const open = ref(false)
@@ -25,16 +28,26 @@ const clickPulse = ref(false)
 const stageOffset = ref({ left: 0, top: 0 })
 
 const rootRef = ref<HTMLElement | null>(null)
-const wrapRef = ref<HTMLElement | null>(null)
 let dragMoved = false
 let pointerId: number | null = null
 let startClientX = 0
 let startClientY = 0
 let originX = 0
 let originY = 0
+let cachedStageWidth = 1200
+let cachedStageHeight = 800
+let companionDragRaf: number | null = null
+let pendingCompanionX = 0
+let pendingCompanionY = 0
 let greetingTimer: number | null = null
 let clickPulseTimer: number | null = null
 let hoverLeaveTimer: number | null = null
+
+function flushCompanionDrag() {
+  companionDragRaf = null
+  x.value = pendingCompanionX
+  y.value = pendingCompanionY
+}
 
 function resolveStageEl(): HTMLElement | null {
   return (
@@ -155,7 +168,9 @@ function onPointerDown(ev: PointerEvent) {
   startClientY = ev.clientY
   originX = x.value
   originY = y.value
-  stageSize()
+  const stage = stageSize()
+  cachedStageWidth = stage.width
+  cachedStageHeight = stage.height
   if (dock.value !== 'none') {
     dock.value = 'none'
   }
@@ -166,17 +181,24 @@ function onPointerMove(ev: PointerEvent) {
   const dx = ev.clientX - startClientX
   const dy = ev.clientY - startClientY
   if (isCompanionDragGesture(dx, dy)) dragMoved = true
-  // 拖动中只钳制舞台，不贴边吸附，避免打开对话时左右乱跳
-  const stage = stageSize()
-  const maxX = Math.max(0, stage.width - COMPANION_SIZE_PX)
-  const maxY = Math.max(0, stage.height - COMPANION_SIZE_PX)
-  x.value = Math.min(maxX, Math.max(0, originX + dx))
-  y.value = Math.min(maxY, Math.max(0, originY + dy))
-  dock.value = 'none'
+  // 拖动中只钳制舞台，不重新测量 DOM，避免 Layout Thrashing
+  const maxX = Math.max(0, cachedStageWidth - COMPANION_SIZE_PX)
+  const maxY = Math.max(0, cachedStageHeight - COMPANION_SIZE_PX)
+  pendingCompanionX = Math.min(maxX, Math.max(0, originX + dx))
+  pendingCompanionY = Math.min(maxY, Math.max(0, originY + dy))
+  if (companionDragRaf === null) {
+    companionDragRaf = requestAnimationFrame(flushCompanionDrag)
+  }
 }
 
 function onPointerUp(ev: PointerEvent) {
   if (!dragging.value || pointerId !== ev.pointerId) return
+  if (companionDragRaf !== null) {
+    cancelAnimationFrame(companionDragRaf)
+    companionDragRaf = null
+    x.value = pendingCompanionX
+    y.value = pendingCompanionY
+  }
   dragging.value = false
   pointerId = null
   try {
@@ -226,6 +248,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  if (companionDragRaf != null) cancelAnimationFrame(companionDragRaf)
   if (greetingTimer != null) window.clearTimeout(greetingTimer)
   if (clickPulseTimer != null) window.clearTimeout(clickPulseTimer)
   if (hoverLeaveTimer != null) window.clearTimeout(hoverLeaveTimer)
@@ -251,7 +274,6 @@ watch(open, (v) => {
     <div ref="rootRef" class="agent-companion-root">
       <!-- 命中层固定在逻辑坐标；视觉 peek 只动内部，消除边缘闪烁 -->
       <div
-        ref="wrapRef"
         class="agent-companion-wrap"
         :class="{ 'agent-companion-wrap--dragging': dragging }"
         :style="wrapStyle"
@@ -306,6 +328,9 @@ watch(open, (v) => {
         :anchor="panelAnchor"
         :dragging="dragging"
         :fit-to-layer-extent="fitToLayerExtent"
+        :fit-china="fitChina"
+        :locate-coordinate="locateCoordinate"
+        :set-basemap="setBasemap"
         @close="open = false"
       />
     </div>
@@ -357,10 +382,10 @@ watch(open, (v) => {
   place-items: center;
   opacity: 1;
   transition:
-    opacity 220ms ease,
-    box-shadow 220ms ease,
-    border-color 220ms ease,
-    filter 220ms ease,
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease),
+    filter var(--motion-surface-duration) var(--motion-surface-ease),
     transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform, opacity;
   touch-action: none;
@@ -371,9 +396,9 @@ watch(open, (v) => {
 .agent-companion-wrap--dragging .agent-companion,
 .agent-companion--dragging {
   transition:
-    opacity 120ms ease,
-    box-shadow 120ms ease,
-    filter 120ms ease;
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    filter var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .agent-companion--dock-peek {
@@ -405,11 +430,11 @@ watch(open, (v) => {
 }
 
 .agent-companion--click .agent-companion-body {
-  animation: agent-click-pop 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: agent-click-pop var(--motion-slow) var(--ease-emphasized);
 }
 
 .agent-companion--click .agent-companion-ripple {
-  animation: agent-ripple 420ms ease-out;
+  animation: agent-ripple var(--motion-slow) var(--ease-decelerate);
 }
 
 .agent-companion-aura {
@@ -567,7 +592,7 @@ watch(open, (v) => {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
   white-space: nowrap;
   pointer-events: none;
-  animation: agent-bubble-in 240ms ease-out;
+  animation: agent-bubble-in var(--motion-modal) var(--ease-decelerate);
 }
 
 .agent-companion-bubble::after {

@@ -40,6 +40,20 @@ _ALLOWED_INTENTS = frozenset(
         "set_layer_opacity",
         "fit_layer",
         "list_active_layers",
+        # Map viewport / basemap (FE aliases included so tool-call variants pass allowlist)
+        "fit_china",
+        "zoom_to_china",
+        "locate_coordinate",
+        "fly_to_location",
+        "fly_to",
+        "switch_basemap",
+        "set_basemap",
+        # P1 timeline / stack / symbology
+        "set_timeline",
+        "set_timeline_playing",
+        "remove_layer",
+        "reorder_layer",
+        "set_layer_symbology",
     }
 )
 _SERVER_TOOLS = ALLOWED_SERVER_TOOLS
@@ -175,7 +189,11 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
                 for item in layers
                 if isinstance(item, dict) and item.get("layer_id")
             ]
-            head = f"图层库搜索「{q}」命中 {len(lines)} 条：" if q else f"找到 {len(lines)} 个图层："
+            head = (
+                f"图层库搜索「{q}」命中 {len(lines)} 条："
+                if q
+                else f"找到 {len(lines)} 个图层："
+            )
             return head + "\n" + "\n".join(lines)
         samples = data.get("samples")
         if isinstance(samples, list) and samples:
@@ -364,6 +382,57 @@ def sanitize_client_context(
                     "lng": round(lng_v, 6),
                     "lat": round(lat_v, 6),
                 }
+    if "basemap_id" in client_context:
+        bid = str(client_context.get("basemap_id") or "").strip()[:64]
+        if bid:
+            cleaned["basemap_id"] = bid
+    if "timeline" in client_context:
+        tl = client_context.get("timeline")
+        if isinstance(tl, dict):
+            slim_tl: dict[str, Any] = {}
+            if "hour" in tl:
+                try:
+                    hour = int(tl["hour"])
+                    if 0 <= hour <= 23:
+                        slim_tl["hour"] = hour
+                except (TypeError, ValueError):
+                    pass
+            if "date" in tl:
+                date_s = str(tl.get("date") or "").strip()[:32]
+                if date_s:
+                    slim_tl["date"] = date_s
+            if "playing" in tl:
+                slim_tl["playing"] = bool(tl.get("playing"))
+            if slim_tl:
+                cleaned["timeline"] = slim_tl
+    if "viewport" in client_context:
+        vp = client_context.get("viewport")
+        if isinstance(vp, dict):
+            slim_vp: dict[str, Any] = {}
+            for key in ("zoom",):
+                if key in vp:
+                    try:
+                        slim_vp[key] = round(float(vp[key]), 4)
+                    except (TypeError, ValueError):
+                        pass
+            center = vp.get("center")
+            if isinstance(center, (list, tuple)) and len(center) >= 2:
+                try:
+                    lng_c = float(center[0])
+                    lat_c = float(center[1])
+                    if -180.0 <= lng_c <= 180.0 and -90.0 <= lat_c <= 90.0:
+                        slim_vp["center"] = [round(lng_c, 6), round(lat_c, 6)]
+                except (TypeError, ValueError):
+                    pass
+            bbox = vp.get("bbox")
+            if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                try:
+                    coords = [round(float(x), 6) for x in bbox[:4]]
+                    slim_vp["bbox"] = coords
+                except (TypeError, ValueError):
+                    pass
+            if slim_vp:
+                cleaned["viewport"] = slim_vp
     if not cleaned:
         return None
     try:
@@ -413,13 +482,19 @@ def _build_system(
     parts.append(
         "## Tools\n"
         "- UI intents (client-executed): set_layer_visibility, set_layer_opacity, "
-        "fit_layer, list_active_layers\n"
+        "fit_layer, list_active_layers, fit_china, locate_coordinate, switch_basemap, "
+        "set_timeline, set_timeline_playing, remove_layer, reorder_layer, set_layer_symbology\n"
         "- Server read tools (immediate): search_layers, list_workflows, get_layer_meta, "
-        "get_workflow_meta, sample_layer_point, web_search\n"
-        "- Server write: run_workflow (confirmation ticket — user must approve before submit)\n"
+        "get_workflow_meta, sample_layer_point, web_search, list_workflow_runs, "
+        "get_workflow_run, get_layer_coverage, list_workflow_timers (admin)\n"
+        "- Server write: run_workflow (confirmation ticket — user must approve before submit; "
+        "optional time_range + workflow_variant=online)\n"
+        "- Prefer client_context.timeline / viewport / basemap_id for current map clock and view\n"
         "- Prefer get_layer_meta / get_workflow_meta for details; sample_layer_point for "
         "map coordinates + layer values (use client_context.map_point when user selected a point); "
         "web_search for public background knowledge only\n"
+        "- Prefer fit_china for 中国全境/全国; locate_coordinate for explicit lng/lat or known cities; "
+        "switch_basemap for 天地图影像/街道等底图切换; fit_layer only for a specific layer extent\n"
         "- Prefer search_layers before run_workflow; never claim a run was submitted "
         "until confirmation is approved"
     )
@@ -831,7 +906,9 @@ def run_chat(
                 else "已生成工作流确认卡，请点击「确认提交」后才会真正排队。"
             )
         # Prefer tool synthesis when mock reply is empty but tools returned data
-        reply = _ensure_visible_reply(reply, list(steps), fallback=reply or "（无回复）")
+        reply = _ensure_visible_reply(
+            reply, list(steps), fallback=reply or "（无回复）"
+        )
         if history:
             reply = f"（已结合此前 {len(history)//2} 轮对话）\n{reply}"
         usage = {

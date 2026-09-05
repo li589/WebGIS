@@ -36,13 +36,46 @@ function quantize(value: number, factor: number): number {
 }
 
 function extractPointCoord(feature: WindGeoJSONFeature): [number, number] | null {
-  if (feature.geometry?.type !== 'Point') return null
-  const coords = feature.geometry.coordinates
-  if (!Array.isArray(coords) || coords.length < 2) return null
-  const lon = Number(coords[0])
-  const lat = Number(coords[1])
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null
-  return [lon, lat]
+  const geom = feature?.geometry as { type?: string; coordinates?: unknown } | undefined
+  if (!geom) return null
+  if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
+    const lon = Number(geom.coordinates[0])
+    const lat = Number(geom.coordinates[1])
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null
+    return [lon, lat]
+  }
+  if (geom.type === 'Polygon') {
+    // 标量天气图层（温度/湿度/降水/气压等）瓦片以网格单元 Polygon（PixelIsArea）组织；
+    // 按外环包围盒取质心作为格心，与 scalar-field-grid 构建网格严格对齐。
+    const ring = (geom.coordinates as number[][][] | undefined)?.[0]
+    if (!Array.isArray(ring) || ring.length < 4) return null
+    let minX = Infinity
+    let maxX = -Infinity
+    let minY = Infinity
+    let maxY = -Infinity
+    for (const vertex of ring) {
+      const x = Number(vertex?.[0])
+      const y = Number(vertex?.[1])
+      if (Number.isFinite(x)) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+      }
+      if (Number.isFinite(y)) {
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+    if (
+      !Number.isFinite(minX) ||
+      !Number.isFinite(maxX) ||
+      !Number.isFinite(minY) ||
+      !Number.isFinite(maxY)
+    ) {
+      return null
+    }
+    return [(minX + maxX) / 2, (minY + maxY) / 2]
+  }
+  return null
 }
 
 function buildDedupKey(feature: WindGeoJSONFeature, quantizeFactor: number): string | null {

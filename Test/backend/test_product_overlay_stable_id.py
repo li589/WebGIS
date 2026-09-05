@@ -84,7 +84,7 @@ def test_stable_overlay_id_with_layer_id(raster_product, tmp_path, monkeypatch):
 
 
 def test_stable_id_sanitizes_illegal_chars(raster_product, tmp_path, monkeypatch):
-    """layer_id 含 :/\ 等非法字符时 sanitize 为 _（safe_import_child 防护）。
+    r"""layer_id 含 :/\ 等非法字符时 sanitize 为 _（safe_import_child 防护）。
 
     回归锚点：analysis:test 若不 sanitize，Windows 上 mkdir
     imports/imported-analysis:test-00 报"目录名称无效"（2026-08-24 实测）。

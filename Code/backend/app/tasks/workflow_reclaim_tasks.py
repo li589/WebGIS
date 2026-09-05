@@ -82,9 +82,7 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
                 "已自动回收——请点击重试恢复。"
             )
             run.updated_at = now
-            if repository.save_run_cas(
-                run, expected_status=expected, max_retries=1
-            ):
+            if repository.save_run_cas(run, expected_status=expected, max_retries=1):
                 reclaimed.append(run.run_id)
                 logger.warning(
                     "Reclaimed stuck workflow run %s (idle %.0fs > %ds)",

@@ -27,6 +27,7 @@ import {
 import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { useLogStore } from '../log'
+import { buildTimeKey, buildTimeRangeFromKey } from './online-temporal-orchestrator'
 import { readScopedItem, writeScopedItem } from '../../services/user-local-isolation'
 import {
   fetchDataInputPolicies,
@@ -115,12 +116,31 @@ async function resolveDefaultTimeRangeFromTimeline(options: {
   supportsTime: boolean
   nativeStep: string | null | undefined
   granularity?: string | null
+  descriptor?: {
+    tags?: string[] | null
+    time_granularity?: string | null
+    native_step?: string | null
+    online_temporal?: { native_step?: string | null } | null
+  } | null
 }): Promise<{ start_at: string; end_at: string; granularity: string } | null> {
   if (!options.supportsTime) return null
   try {
     const { useUiStore } = await import('../ui')
-    const { buildTimeKey, buildTimeRangeFromKey } = await import('./online-temporal-orchestrator')
+    const { resolveLayerTemporalMode, alignDateToTemporalRange } =
+      await import('../../utils/temporal-mode')
     const ui = useUiStore()
+
+    // 标签驱动与时间模式识别：若声明为时段型（如整月或多日块），自动对齐为完整时段
+    const tempMode = resolveLayerTemporalMode(options.descriptor)
+    if (tempMode.mode === 'range') {
+      const aligned = alignDateToTemporalRange(ui.currentDate, tempMode)
+      return {
+        start_at: aligned.start_at,
+        end_at: aligned.end_at,
+        granularity: aligned.granularity,
+      }
+    }
+
     const granRaw = options.granularity || ui.activeTimeGranularity || 'day'
     const gran =
       granRaw === 'hour' ||
@@ -1039,11 +1059,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     let existingGroup = deps.getRunLayerGroups().find((g) => g.runId === runId)
     // 画布/编辑器在 submit 前已建 computing 组（runId 尚空）——提交路径须接管，
     // 禁止再建第二组导致双 runId / attach 绑错组 / cleanup 清错侧栏。
+    // 时段/计划重跑时上一组常已 ready/failed：同样复用同 source（+workflow）最近一组，避免叠组。
     if (!existingGroup && options?.source === 'submit') {
-      const probeWorkflowId = String(bridge.workflowId || existingGroup?.workflowId || '')
+      const probeWorkflowId = String(bridge.workflowId || '')
       const probeSource = resolveInversionCatalogId(String(bridge.sourceLayerId || catalogId))
       const groups = deps.getRunLayerGroups()
       let pendingGroup: (typeof groups)[number] | undefined
+      // 1) 优先：预建 computing 且 runId 仍空
       for (let i = groups.length - 1; i >= 0; i -= 1) {
         const g = groups[i]!
         if (g.runId || g.status !== 'computing') continue
@@ -1055,8 +1077,22 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           break
         }
       }
+      // 2) 否则：同 source（优先同 workflow）最近一组，任意终态/计算中均可重绑
+      if (!pendingGroup) {
+        for (let i = groups.length - 1; i >= 0; i -= 1) {
+          const g = groups[i]!
+          const sourceMatches =
+            resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource
+          if (!sourceMatches) continue
+          if (probeWorkflowId && g.workflowId && g.workflowId !== probeWorkflowId) continue
+          pendingGroup = g
+          break
+        }
+      }
       if (pendingGroup) {
         pendingGroup.runId = runId
+        pendingGroup.status = 'computing'
+        pendingGroup.dissolvable = false
         existingGroup = pendingGroup
       }
     }
@@ -1099,15 +1135,27 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       (typeof rawCatalogTitle === 'string' && rawCatalogTitle.trim() ? rawCatalogTitle : undefined)
     const layerTags = memberTagsFromLayers()
     const catalogLabels = catalogExtra?.output_labels
+    const catalogExtraOutputs = (() => {
+      const raw = catalogExtra?.outputs
+      if (Array.isArray(raw)) {
+        return raw.filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
+      }
+      return []
+    })()
     // descriptor.workflow_extra.output_labels 的键即产物槽（SM/VOD/OMEGA）；
     // 无完整 workflow_definition.extra.outputs 时仍须建三槽，否则 attach
     // 会落成 imported-omega_sf_fenkuai_* 游离层污染 TOC/库。
-    const labelsFromExtraKeys =
+    const rawLabelsFromExtraKeys =
       catalogLabels && typeof catalogLabels === 'object' && !Array.isArray(catalogLabels)
         ? Object.keys(catalogLabels as Record<string, unknown>).filter(
             (k) => typeof (catalogLabels as Record<string, unknown>)[k] === 'string' && k.trim(),
           )
         : []
+    // 若 rawLabelsFromExtraKeys 包含非 'result' 的业务 tag，且含有 'result'（如 ndvi 中为了向下兼容配置了 result），则剔除 result 槽，防止产生重复槽
+    const labelsFromExtraKeys =
+      rawLabelsFromExtraKeys.length > 1 && rawLabelsFromExtraKeys.includes('result')
+        ? rawLabelsFromExtraKeys.filter((k) => k !== 'result')
+        : rawLabelsFromExtraKeys
     // 需求2 后的新种子（带 extra 配置）但无显式 outputs 时 → 优先 output_labels 键。
     // 反演目录（method-*-omega-* / 英文 workflow id）无元数据时回退 SM/VOD/OMEGA，
     // 禁止只建 'result' 槽导致 attach 落成 imported-omega_* 游离层。
@@ -1129,11 +1177,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       ? layerTags
       : defTags.length
         ? defTags
-        : labelsFromExtraKeys.length
-          ? labelsFromExtraKeys
-          : inversionFallback
-            ? ['SM', 'VOD', 'OMEGA']
-            : ['result']
+        : catalogExtraOutputs.length
+          ? catalogExtraOutputs
+          : labelsFromExtraKeys.length
+            ? labelsFromExtraKeys
+            : inversionFallback
+              ? ['SM', 'VOD', 'OMEGA']
+              : ['result']
     const mergedLabels: Record<string, string> = Array.isArray(catalogLabels)
       ? Object.fromEntries(
           catalogLabels
@@ -1173,6 +1223,24 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     const sourceLayerId = resolveInversionCatalogId(String(rawSourceLayerId || catalogId))
     const workflowId = existingGroup?.workflowId || bridge.workflowId || ''
 
+    /** 自愈清理组外无数据游离触发图层（若当前组已有对应成员） */
+    const pruneOrphanTriggers = (group: ActiveRunLayerGroup) => {
+      const activeLayers = deps.getActiveLayers()
+      const targetSource = group.sourceLayerId || catalogId
+      const orphans = activeLayers.filter(
+        (l) =>
+          !l.runGroupId &&
+          !l.importedRaster?.overlayLayerId &&
+          (l.catalogId === targetSource || l.catalogId === catalogId) &&
+          group.memberInstanceIds.length > 0 &&
+          !group.memberInstanceIds.includes(l.instanceId),
+      )
+      for (const orphan of orphans) {
+        const idx = activeLayers.findIndex((l) => l.instanceId === orphan.instanceId)
+        if (idx >= 0) activeLayers.splice(idx, 1)
+      }
+    }
+
     /** 渐进/部分水合后补全缺失产品槽（勿因组已存在而直接 return） */
     const fillMissingMembers = (group: ActiveRunLayerGroup) => {
       if (!options?.createPlaceholders && group.status !== 'computing') return
@@ -1191,6 +1259,31 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           }
         }
       }
+
+      // 自愈：若组内包含多个未绑定的 wf-run-* 占位图层，且存在业务槽与兼容 result 槽重复，清理冗余 result 占位
+      const existingMembersInGroup = group.memberInstanceIds
+        .map((id) => activeLayers.find((l) => l.instanceId === id))
+        .filter((l): l is ActiveLayer => Boolean(l))
+      const hasBusinessMember = existingMembersInGroup.some(
+        (m) => m.runGroupProductTag && m.runGroupProductTag.toLowerCase() !== 'result',
+      )
+      if (hasBusinessMember) {
+        const redundantResult = existingMembersInGroup.find(
+          (m) =>
+            m.runGroupProductTag?.toLowerCase() === 'result' &&
+            !m.importedRaster?.overlayLayerId &&
+            m.catalogId.startsWith('wf-run-'),
+        )
+        if (redundantResult) {
+          const idx = activeLayers.findIndex((l) => l.instanceId === redundantResult.instanceId)
+          if (idx >= 0) activeLayers.splice(idx, 1)
+          group.memberInstanceIds = group.memberInstanceIds.filter(
+            (id) => id !== redundantResult.instanceId,
+          )
+          presentCatalogIds.delete(redundantResult.catalogId)
+        }
+      }
+
       const accentDonor = activeLayers.find((l) => l.runGroupId === group.groupId)
       const maxOrder = activeLayers.reduce((max, l) => Math.max(max, l.order), -1)
       let added = 0
@@ -1209,10 +1302,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           }
           return
         }
+        const candidateName =
+          configuredTargets.find((t) => t.productTag === tag)?.name ||
+          mergedLabelMap[tag] ||
+          (tag === 'result' && extraTitle ? extraTitle : productTagLabel(tag))
         const layer: ActiveLayer = {
           instanceId: crypto.randomUUID(),
           catalogId: cid,
-          name: productTagLabel(tag),
+          name: candidateName,
           visible: true,
           opacity: 1,
           order: maxOrder + tags.length - i + added,
@@ -1255,6 +1352,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
     if (existingGroup) {
       fillMissingMembers(existingGroup)
+      pruneOrphanTriggers(existingGroup)
       return
     }
 
@@ -1267,7 +1365,32 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       ? deps.getActiveLayers().filter((l) => l.runGroupId === tracked.groupId)
       : []
 
-    const seedMembers = existingMembers.length ? existingMembers : hydratedByGroupId
+    // 单产出场景治理：若活跃图层中存在未进组的对应触发图层（如用户从图层库添加的 ndvi），直接复用其入组，杜绝孤儿残留
+    const existingTrigger =
+      tags.length === 1 && !existingMembers.length && !hydratedByGroupId.length
+        ? deps
+            .getActiveLayers()
+            .find(
+              (l) => !l.runGroupId && (l.catalogId === catalogId || l.catalogId === sourceLayerId),
+            )
+        : undefined
+
+    if (existingTrigger) {
+      existingTrigger.runGroupId = groupId
+      existingTrigger.runGroupProductTag = tags[0]
+      if (options?.createPlaceholders && !existingTrigger.importedRaster?.overlayLayerId) {
+        existingTrigger.runGroupLocked = true
+      }
+      memberCatalogIds[0] = existingTrigger.catalogId
+    }
+
+    const seedMembers = existingMembers.length
+      ? existingMembers
+      : hydratedByGroupId.length
+        ? hydratedByGroupId
+        : existingTrigger
+          ? [existingTrigger]
+          : []
 
     if (seedMembers.length) {
       for (const m of seedMembers) {
@@ -1295,6 +1418,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }
       deps.getRunLayerGroups().push(group)
       fillMissingMembers(group)
+      pruneOrphanTriggers(group)
       return
     }
 
@@ -1313,12 +1437,21 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }),
       targets: configuredTargets.length
         ? configuredTargets
-        : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
+        : tags.map((tag) => ({
+            name:
+              mergedLabelMap[tag] ||
+              (tag === 'result' && extraTitle ? extraTitle : productTagLabel(tag)),
+            productTag: tag,
+          })),
       sourceLayerId,
       workflowId,
       memberCatalogIds,
     })
     deps.bindRunIdToGroup(created.groupId, runId)
+    const createdGroup = deps.getRunLayerGroups().find((g) => g.groupId === created.groupId)
+    if (createdGroup) {
+      pruneOrphanTriggers(createdGroup)
+    }
   }
 
   // ── 提交 / 取消 / 重试簇（B-2）───────────────────────────────────────────
@@ -1465,7 +1598,6 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           } else {
             try {
               const { useUiStore } = await import('../ui')
-              const { buildTimeKey } = await import('./online-temporal-orchestrator')
               const ui = useUiStore()
               const granRaw =
                 (descriptor as { time_granularity?: string } | null)?.time_granularity ||
@@ -1736,6 +1868,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             nativeStep: catalogNative ?? rt?.native_step ?? rt?.online_temporal?.native_step,
             // 目录条目未投影 timeGranularity；粒度以 runtime descriptor 为准
             granularity: rt?.time_granularity,
+            descriptor: rt as never,
           })
           if (filled) {
             payload.time_range = filled
@@ -2073,6 +2206,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         jobId: accepted.run_id,
         name: retryDisplayName,
         commandType: 'analysis',
+        commandLabel: prevJob?.commandLabel,
         status: 'queued',
         progress: 12,
         createdAt: accepted.created_at,

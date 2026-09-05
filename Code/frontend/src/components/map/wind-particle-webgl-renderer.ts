@@ -46,11 +46,7 @@ import {
 } from './wind-particle-webgl-texture'
 import { resolveParticleResolution } from './wind-particle-gl-profile'
 import { isPerfEnabled, perfMark } from '../../utils/perf-probe'
-import {
-  GLOBE_OCCLUSION_RIM_COSINE,
-  getGlobeViewPole,
-  globeFacingCosine,
-} from './canvas-utils'
+import { GLOBE_OCCLUSION_RIM_COSINE, getGlobeViewPole, globeFacingCosine } from './canvas-utils'
 
 /** MapLibre resize 事件名 */
 const MAP_EVENT_RESIZE = 'resize'
@@ -1141,7 +1137,9 @@ export class WindParticleWebGLLayer {
       // 经纬度 → 单位球坐标 → mainMatrix(true) → 透视除法 → NDC
       // 另用视向极点点积剔除地平线内侧背面（仅 cw<=0 不够，仍会穿球叠到圆盘）
       const DEG2RAD = Math.PI / 180
-      const viewPole = this.map ? getGlobeViewPole(this.map) : ([0, 0, 1] as [number, number, number])
+      const viewPole = this.map
+        ? getGlobeViewPole(this.map)
+        : ([0, 0, 1] as [number, number, number])
       for (let i = 0; i < this.particleCount; i++) {
         const p = i * 4
         const [nx, ny] = decodePositionBytes(pixels[p], pixels[p + 1], pixels[p + 2], pixels[p + 3])

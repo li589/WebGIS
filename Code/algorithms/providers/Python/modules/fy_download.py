@@ -340,7 +340,10 @@ def _download_from_nsmc(
         NsmcDownloadError,
         NsmcPortalClient,
     )
-    from modules.download_nodes import _resolve_portal_entry
+    from modules.download_nodes import (
+        _make_multi_file_progress_cb,
+        _resolve_portal_entry,
+    )
 
     template = NSMC_PRODUCT_TEMPLATES.get((satellite, orbit_mode))
     if template is None:
@@ -378,6 +381,18 @@ def _download_from_nsmc(
             f"{satellite}/{orbit_mode} {day} -> {target_dir}",
         )
 
+    # 阶段进度：NSMC 登录/检索/整包 resp.read() 期间原先无事件，UI 会长时间停在 0%。
+    # 本路径在会话、检索与每个文件开始前 emit；字节级流式进度留待后续。
+    def _nsmc_phase(message: str, progress: float = 0.0, **extra: object) -> None:
+        if ctx.logger_adapter is None:
+            return
+        ctx.logger_adapter.emit_progress(
+            "fy_download:nsmc",
+            progress,
+            message,
+            {"phase": "nsmc_wait", **extra},
+        )
+
     now = time.monotonic()
     ordered = sorted(
         accounts, key=lambda acc: _account_cooldown_until.get(_account_key(acc), 0.0)
@@ -388,7 +403,14 @@ def _download_from_nsmc(
         key = _account_key(account)
         cooldown = _account_cooldown_until.get(key, 0.0)
         if cooldown > now:
-            failures.append(f"{key}: cooling down ({int(cooldown - now)}s left)")
+            left = int(cooldown - now)
+            failures.append(f"{key}: cooling down ({left}s left)")
+            _nsmc_phase(
+                f"跳过冷却中账号 {key}（剩余 {left}s）",
+                0.0,
+                account=key,
+                cooldown_left_s=left,
+            )
             continue
         client = NsmcPortalClient(
             session_file=session_file,
@@ -397,7 +419,13 @@ def _download_from_nsmc(
             download_interval=download_interval,
         )
         try:
+            _nsmc_phase(f"校验/登录 NSMC 会话（账号 {key}）…", 0.0, account=key)
             client.ensure_session()
+            _nsmc_phase(
+                f"检索 NSMC 目录 {satellite}/{orbit_mode} {day}…",
+                0.02,
+                account=key,
+            )
             files = client.search_daily_files(
                 template, day, max_files=max_files_per_day
             )
@@ -428,8 +456,6 @@ def _download_from_nsmc(
                 f"（template={template}）"
             )
 
-        from modules.download_nodes import _make_multi_file_progress_cb
-
         total_files = min(len(files), max_files_per_day)
         _progress_cb = _make_multi_file_progress_cb(
             ctx.logger_adapter, "fy_download:nsmc"
@@ -451,6 +477,17 @@ def _download_from_nsmc(
                     continue
                 # 不完整/损坏的成品删掉后再下，避免永久跳过
                 _unlink_incomplete(dest)
+                # 传输开始前先报一次，避免整包 resp.read() 期间 UI 卡在上一阶段 0%
+                start_frac = (i - 1) / total_files if total_files else 0.0
+                _nsmc_phase(
+                    f"开始下载文件 {i}/{total_files} · {filename}",
+                    start_frac,
+                    account=key,
+                    current_item_name=filename,
+                    downloaded_items=i - 1,
+                    total_items=total_files,
+                )
+                _progress_cb(i - 1, total_files, downloaded_bytes, filename)
                 client.download_file(
                     filename, dest, center_flag=str(item.get("CNETERFLAG") or "1")
                 )

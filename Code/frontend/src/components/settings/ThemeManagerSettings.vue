@@ -285,7 +285,8 @@ async function loadPresetMeta(themeId: number | null) {
       has_preset: detail.has_preset,
       updated_at: detail.updated_at,
       updated_by_user_id: detail.updated_by_user_id,
-      display_name_count: detail.display_name_count ?? Object.keys(detail.display_names || {}).length,
+      display_name_count:
+        detail.display_name_count ?? Object.keys(detail.display_names || {}).length,
     }
   } catch {
     presetMeta.value = {
@@ -338,8 +339,11 @@ async function clearSelectedPreset() {
     <h3 class="section-title">主题管理（管理员）</h3>
     <p class="section-hint">
       每个用户必须绑定一个主题（默认主主题为「星地融合土壤数据平台」/ sgfs）。主题承载品牌与默认资源
-      ACL；用户覆盖优先于主题默认。图层库分组 / 主题显示名在「分组管理」中<strong>直接编辑本主题预设</strong>
-      （运行时 SQLite 快照，<strong>不会</strong>改写 catalog_seeds / gen:catalog）。「登录页配色」只影响未登录页。
+      ACL；用户覆盖优先于主题默认。图层库分组 / 主题显示名在「分组管理」中<strong
+        >直接编辑本主题预设</strong
+      >
+      （运行时 SQLite 快照，<strong>不会</strong>改写 catalog_seeds /
+      gen:catalog）。「登录页配色」只影响未登录页。
     </p>
     <p v-if="message" class="ok">{{ message }}</p>
     <p v-if="error" class="err">{{ error }}</p>

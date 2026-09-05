@@ -1,5 +1,5 @@
 import type { components } from '../types/api-contracts'
-import { requestJson } from './_http'
+import { requestJson, resolveApiUrl } from './_http'
 
 export type AuthConfig = components['schemas']['AuthConfigResponse']
 export type UserRole = 'admin' | 'standard' | 'demo'
@@ -256,7 +256,6 @@ export async function uploadThemeLogo(themeId: number, file: File): Promise<Them
   const form = new FormData()
   form.append('file', file)
   const { applyApiFetchDefaults } = await import('./http-credentials')
-  const { resolveApiUrl } = await import('./_http')
   const resp = await fetch(
     resolveApiUrl(`/auth/themes/${themeId}/logo`),
     applyApiFetchDefaults({ method: 'POST', body: form }),

@@ -183,6 +183,10 @@ export class ScalarFieldWebGLLayer {
     const mat = extractMercatorProjectionMatrix(options)
     if (mat) {
       for (let i = 0; i < 16; i++) this.matrix[i] = Number(mat[i])
+      if (Math.abs(this.matrix[15]) > 1) {
+        const scale = 1 / this.matrix[15]
+        for (let i = 0; i < 16; i++) this.matrix[i] *= scale
+      }
       this.hasMatrix = true
     } else {
       this.refreshProjectionMatrix()
@@ -205,6 +209,14 @@ export class ScalarFieldWebGLLayer {
     const fromTransform = transform?.getProjectionDataForCustomLayer?.(this.useGlobe)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
       for (let i = 0; i < 16; i++) this.matrix[i] = Number(fromTransform[i])
+      // MapLibre 5 返回的 mainMatrix 可能是 pixel viewport 矩阵（m[15]=viewport
+      // height），而 shader 的 lngLatToMercator 输出是 [0,1] normalized 坐标，
+      // 必须把整矩阵归一到 clip 量纲；否则 computeWorldWrapOffsets 算出的 clip 偏移
+      // 直接加到 pixel 量纲的 m[12] 上仅偏移 3.5 像素而非整幅世界，导致相邻半球世界副本丢失。
+      if (Math.abs(this.matrix[15]) > 1) {
+        const scale = 1 / this.matrix[15]
+        for (let i = 0; i < 16; i++) this.matrix[i] *= scale
+      }
       this.hasMatrix = true
     }
   }

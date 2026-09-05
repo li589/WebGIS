@@ -1,10 +1,26 @@
 /**
- * CGDA 共享动效层
+ * CGDA 共享动效层（macOS / Apple HIG 取向）
  *
- * - Vue Transition 名：cgda-modal（对话框）、cgda-drawer（侧滑设置等）、
- *   cgda-fade-scale（面板显隐）、cgda-fade（轻量淡入淡出）、cgda-pop（小浮层）
- * - 性能：仅 transform/opacity；拖拽中禁用 transition；.reduce-motion 压短 token
- * - 加载指示器（.loading-overlay / .loading-compact）不纳入全局掐断
+ * ## 约定（所有前端动画必须遵守）
+ * 1. 时长 / 缓动只引用 tokens.css 的 `--motion-*` / `--ease-*`（或下方语义别名）。
+ * 2. 禁止 `transition: all`、禁止裸 `ease` / `0.2s` / `300ms` 等硬编码。
+ * 3. 优先动画：`transform` / `opacity` / `color` / `background-color` /
+ *    `border-color` / `box-shadow`；避免 width/height/top/left 触发布局。
+ * 4. 拖拽 / 连续指针跟随时加 `.cgda-dragging`（或 `.is-dragging`）关过渡。
+ * 5. 入场/出场用下方 Vue Transition 名，勿再造一套。
+ * 6. `html.reduce-motion` 将时长压为 0；无限旋转加载条可保留但须降速/可关。
+ *
+ * ## Vue Transition 名
+ * - `cgda-modal`      对话框（遮罩淡入 + 面板上浮）
+ * - `cgda-drawer`     侧滑设置等
+ * - `cgda-fade-scale` 面板显隐（淡入 + 轻位移，无 scale）
+ * - `cgda-fade`       toast / 提示条
+ * - `cgda-pop`        tooltip / 小浮层
+ *
+ * ## 语义工具类
+ * - `.cgda-motion-interactive`  按钮 / 芯片 / 可点行（色 + 微位移）
+ * - `.cgda-motion-surface`      卡片 / 边框 / 表面色变（无位移）
+ * - `.cgda-pressable`           原生 button 按压反馈
  */
 
 /* ── reduce-motion：压短 token（组件仍可用 var，自动变「瞬时」）── */
@@ -17,6 +33,30 @@ html.reduce-motion {
   --motion-modal-leave: 0ms;
   --motion-stagger-step: 0ms;
   --motion-enter-delay: 0ms;
+  --motion-interactive-duration: 0ms;
+  --motion-surface-duration: 0ms;
+  --motion-sheet-duration: 0ms;
+}
+
+/* ── 语义工具类：可交互控件 ── */
+.cgda-motion-interactive {
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--motion-interactive-ease);
+}
+
+/* ── 语义工具类：表面色变（无 transform，避免与定位冲突）── */
+.cgda-motion-surface {
+  transition:
+    background-color var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease),
+    color var(--motion-surface-duration) var(--motion-surface-ease),
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    opacity var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 /* ── 对话框：遮罩淡入 + 面板轻抬升（不用 scale，避免与布局打架）── */
@@ -67,14 +107,14 @@ html.reduce-motion {
 /* ── 侧滑抽屉（设置面板等）── */
 .cgda-drawer-enter-active,
 .cgda-drawer-leave-active {
-  transition: opacity var(--motion-base) var(--ease-standard);
+  transition: opacity var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .cgda-drawer-enter-active .settings-panel,
 .cgda-drawer-leave-active .settings-panel,
 .cgda-drawer-enter-active .cgda-drawer-panel,
 .cgda-drawer-leave-active .cgda-drawer-panel {
-  transition: transform var(--motion-slow) var(--ease-emphasized);
+  transition: transform var(--motion-sheet-duration) var(--motion-sheet-ease);
 }
 
 .cgda-drawer-enter-from,
@@ -100,8 +140,8 @@ html.reduce-motion {
 .cgda-fade-scale-enter-active,
 .cgda-fade-scale-leave-active {
   transition:
-    opacity var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-emphasized);
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--ease-emphasized);
 }
 
 .cgda-fade-scale-enter-from,
@@ -113,7 +153,7 @@ html.reduce-motion {
 /* ── 轻量淡入（提示条 / toast 类）── */
 .cgda-fade-enter-active,
 .cgda-fade-leave-active {
-  transition: opacity var(--motion-fast) var(--ease-standard);
+  transition: opacity var(--motion-interactive-duration) var(--motion-surface-ease);
 }
 
 .cgda-fade-enter-from,
@@ -125,8 +165,8 @@ html.reduce-motion {
 .cgda-pop-enter-active,
 .cgda-pop-leave-active {
   transition:
-    opacity var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-emphasized);
+    opacity var(--motion-interactive-duration) var(--motion-surface-ease),
+    transform var(--motion-interactive-duration) var(--ease-emphasized);
 }
 
 .cgda-pop-enter-from,
@@ -162,8 +202,8 @@ html.reduce-motion {
   background: var(--accent-surface);
   box-shadow: inset 0 0 0 1px var(--accent-border);
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 html.reduce-motion .is-dragging.cgda-drag-lift,
@@ -174,11 +214,11 @@ html.reduce-motion .cgda-dragging.cgda-drag-lift {
 /* ── 按压反馈工具类（原生 button 可复用）── */
 .cgda-pressable {
   transition:
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft),
-    box-shadow var(--motion-press, var(--motion-fast)) var(--ease-soft),
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft);
+    transform var(--motion-press) var(--motion-interactive-ease),
+    box-shadow var(--motion-press) var(--motion-interactive-ease),
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .cgda-pressable:hover:not(:disabled) {
@@ -201,19 +241,19 @@ html.reduce-motion .cgda-pressable:active:not(:disabled) {
 }
 
 .cgda-boot-reveal--1 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 0);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 0);
 }
 
 .cgda-boot-reveal--2 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 2);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 2);
 }
 
 .cgda-boot-reveal--3 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 4);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 4);
 }
 
 .cgda-boot-reveal--4 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 6);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 6);
 }
 
 @keyframes cgda-boot-reveal {
@@ -239,7 +279,263 @@ html.reduce-motion .cgda-pulse:not(.loading-progress-glow):not(.compact-glow) {
   animation: none !important;
 }
 
-/* 对话框打开时弱化其它层 blur 的钩子由组件自行读取；此处仅文档约定 */
-html.cgda-modal-open {
-  /* reserved for future scroll-lock / focus traps */
+/* 对话框打开时弱化其它层 blur 的钩子由组件自行读取 */
+
+/* ── 现代 CSS 独立变换属性（Individual Transform Properties）：解耦位移/缩放 ──
+ * 优势：拖拽只改变 translate，微交互只改变 scale 或 translateY，不再相互覆盖打架。
+ */
+.cgda-scale-interactive {
+  transition:
+    scale var(--motion-press) var(--ease-spring-snappy),
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
+}
+
+.cgda-scale-interactive:hover:not(:disabled) {
+  scale: 1.02;
+}
+
+.cgda-scale-interactive:active:not(:disabled) {
+  scale: 0.98;
+}
+
+html.reduce-motion .cgda-scale-interactive:hover:not(:disabled),
+html.reduce-motion .cgda-scale-interactive:active:not(:disabled) {
+  scale: 1;
+}
+
+/* ── 现代原生顶层显隐（@starting-style & transition-behavior: allow-discrete）──
+ * 支持原生 <dialog> 或具备 popover 属性的弹出层，出入顶层时纯 CSS 平滑过渡。
+ */
+@supports (transition-behavior: allow-discrete) {
+  .cgda-discrete-reveal {
+    transition:
+      opacity var(--motion-modal) var(--ease-emphasized),
+      transform var(--motion-modal) var(--ease-emphasized),
+      display var(--motion-modal) allow-discrete,
+      overlay var(--motion-modal) allow-discrete;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @starting-style {
+    .cgda-discrete-reveal[open],
+    .cgda-discrete-reveal:popover-open {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  .cgda-discrete-reveal:not([open]):not(:popover-open) {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ── View Transitions API 原生跨视图过渡 ── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-slow);
+  animation-timing-function: var(--ease-emphasized);
+}
+
+::view-transition-old(root) {
+  animation-name: cgda-view-fade-out;
+}
+
+::view-transition-new(root) {
+  animation-name: cgda-view-fade-in;
+}
+
+@keyframes cgda-view-fade-out {
+  from {
+    opacity: 1;
+    filter: blur(0px);
+  }
+  to {
+    opacity: 0;
+    filter: blur(1.5px);
+  }
+}
+
+@keyframes cgda-view-fade-in {
+  from {
+    opacity: 0;
+    filter: blur(1.5px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+html.reduce-motion::view-transition-old(root),
+html.reduce-motion::view-transition-new(root) {
+  animation: none !important;
+}
+
+/* ── 列表瀑布流交错入场（Staggered Entrance） ──
+ * 规则：最大延时设上限（8 * 20ms = 160ms），防止长列表尾项产生迟滞感。
+ */
+.cgda-stagger-item {
+  animation: cgda-stagger-rise var(--motion-base) var(--ease-emphasized) both;
+  animation-delay: calc(min(var(--stagger-i, 0), 8) * 20ms);
+}
+
+@keyframes cgda-stagger-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+html.reduce-motion .cgda-stagger-item {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* ── 时空数据就绪涟漪（Readiness Pulse Wave） ──
+ * 规则：数据瓦片/栅格就绪时触发一次性光环微波（1.6s 一次性，严禁无限循环）。
+ */
+.cgda-readiness-wave {
+  position: relative;
+}
+
+.cgda-readiness-wave::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1px currentColor;
+  opacity: 0.8;
+  pointer-events: none;
+  animation: cgda-readiness-wave 1.6s var(--ease-emphasized) 1 forwards;
+}
+
+@keyframes cgda-readiness-wave {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+    box-shadow: 0 0 0 1px currentColor;
+  }
+  60% {
+    transform: scale(2.6);
+    opacity: 0.2;
+    box-shadow: 0 0 8px 2px currentColor;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+    box-shadow: 0 0 12px 3px transparent;
+  }
+}
+
+html.reduce-motion .cgda-readiness-wave::after {
+  animation: none !important;
+  display: none !important;
+}
+
+/* ── 工作流节点生命周期动效（Running Shimmer / Success Pop / Error Shake） ── */
+.cgda-node-running .wf-progress-fill {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: cgda-shimmer-flow 1.8s infinite linear;
+}
+
+@keyframes cgda-shimmer-flow {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.cgda-node-success .wf-item-status,
+.cgda-node-success.wf-item {
+  animation: cgda-pop-subtle 400ms var(--ease-spring-bouncy) 1;
+}
+
+@keyframes cgda-pop-subtle {
+  0% {
+    scale: 0.96;
+  }
+  50% {
+    scale: 1.025;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+.cgda-node-error {
+  animation: cgda-shake-subtle 320ms var(--ease-standard) 1;
+}
+
+@keyframes cgda-shake-subtle {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-3px);
+  }
+  40%,
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+html.reduce-motion .cgda-node-running .wf-progress-fill,
+html.reduce-motion .cgda-node-success,
+html.reduce-motion .cgda-node-success .wf-item-status,
+html.reduce-motion .cgda-node-error {
+  animation: none !important;
+  transform: none !important;
+  scale: 1 !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 维度三：卡片光标聚光灯微反馈（Cursor Spotlight / Glow Feedback）
+ * -------------------------------------------------------------------------- */
+.cgda-spotlight-card {
+  position: relative;
+}
+
+.cgda-spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    280px circle at var(--spotlight-x, -999px) var(--spotlight-y, -999px),
+    var(--spotlight-color, rgba(56, 189, 248, 0.08)),
+    transparent 80%
+  );
+  opacity: var(--spotlight-opacity, 0);
+  transition: opacity 250ms ease;
+  border-radius: inherit;
+}
+
+html.reduce-motion .cgda-spotlight-card::before {
+  display: none !important;
+}
+
+@media (hover: none) {
+  .cgda-spotlight-card::before {
+    display: none !important;
+  }
 }

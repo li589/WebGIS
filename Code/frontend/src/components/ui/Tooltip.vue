@@ -84,8 +84,8 @@ function updatePosition() {
 
   const placement = order.find(fits) ?? props.position
 
-  let top = 0
-  let left = 0
+  let top: number
+  let left: number
   if (placement === 'top') {
     top = rect.top - gap - bh
     left = rect.left + rect.width / 2 - bw / 2
@@ -175,7 +175,7 @@ onUnmounted(() => {
     <slot />
   </span>
   <Teleport to="body">
-    <transition name="tooltip-fade">
+    <transition name="cgda-pop">
       <div
         v-if="showTooltip && text"
         ref="boxRef"
@@ -237,46 +237,46 @@ onUnmounted(() => {
 }
 
 /* 进场微位移（placement 在 open 后写入） */
-.tooltip-fade-enter-active,
-.tooltip-fade-leave-active {
+.cgda-pop-enter-active,
+.cgda-pop-leave-active {
   transition:
-    opacity var(--motion-fast) var(--ease-soft),
-    transform var(--motion-fast) var(--ease-soft);
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--ease-emphasized);
 }
 
-.tooltip-fade-enter-from,
-.tooltip-fade-leave-to {
+.cgda-pop-enter-from,
+.cgda-pop-leave-to {
   opacity: 0;
 }
 
-.tooltip-fade-enter-from.tooltip-top,
-.tooltip-fade-leave-to.tooltip-top {
+.cgda-pop-enter-from.tooltip-top,
+.cgda-pop-leave-to.tooltip-top {
   transform: translateY(4px);
 }
 
-.tooltip-fade-enter-from.tooltip-bottom,
-.tooltip-fade-leave-to.tooltip-bottom {
+.cgda-pop-enter-from.tooltip-bottom,
+.cgda-pop-leave-to.tooltip-bottom {
   transform: translateY(-4px);
 }
 
-.tooltip-fade-enter-from.tooltip-left,
-.tooltip-fade-leave-to.tooltip-left {
+.cgda-pop-enter-from.tooltip-left,
+.cgda-pop-leave-to.tooltip-left {
   transform: translateX(4px);
 }
 
-.tooltip-fade-enter-from.tooltip-right,
-.tooltip-fade-leave-to.tooltip-right {
+.cgda-pop-enter-from.tooltip-right,
+.cgda-pop-leave-to.tooltip-right {
   transform: translateX(-4px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tooltip-fade-enter-active,
-  .tooltip-fade-leave-active {
-    transition: opacity var(--motion-fast);
+  .cgda-pop-enter-active,
+  .cgda-pop-leave-active {
+    transition: opacity var(--motion-interactive-duration);
   }
 
-  .tooltip-fade-enter-from,
-  .tooltip-fade-leave-to {
+  .cgda-pop-enter-from,
+  .cgda-pop-leave-to {
     transform: none;
   }
 }

@@ -535,9 +535,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           const materialized = await materializeWorkflowMapLayers(runId)
           materializedLayers = materialized.layers ?? []
           const fromMaterialize = materializedLayers
-            .filter(
-              (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
-            )
+            .filter((layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id)
             .map((layer) => {
               const rawBounds = layer.bounds
               const bounds =
@@ -696,15 +694,23 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       const cleanTitle = cleanProductDisplayName(item.title || '')
       const safeCleanTitle =
         cleanTitle && !isEnglishInversionCatalogId(cleanTitle) ? cleanTitle : ''
+      // Bind only within this run's computing group (never cross-run by tag alone).
+      const groupByRun = runId ? runLayerGroups.value.find((g) => g.runId === runId) : undefined
+      const groupTitleFallback = groupByRun?.title
+        ? groupByRun.title.replace(/\s*·\s*(?:计算中|已完成|部分失败|执行失败)$/u, '').trim()
+        : ''
+      const safeGroupTitle =
+        groupTitleFallback && !isEnglishInversionCatalogId(groupTitleFallback)
+          ? groupTitleFallback
+          : ''
       const displayName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
         safeCleanTitle ||
         (item.productTag && !isEnglishInversionCatalogId(item.productTag) ? item.productTag : '') ||
+        safeGroupTitle ||
         productTagLabel(tag || 'result')
 
-      // Bind only within this run's computing group (never cross-run by tag alone).
-      const groupByRun = runId ? runLayerGroups.value.find((g) => g.runId === runId) : undefined
       const groupMember =
         groupByRun &&
         deps
@@ -712,7 +718,10 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           .find(
             (layer) =>
               layer.runGroupId === groupByRun.groupId &&
-              normalizeProductTag(layer.runGroupProductTag) === tag,
+              (normalizeProductTag(layer.runGroupProductTag) === tag ||
+                normalizeProductTag(layer.name) === tag ||
+                (tag === 'NDVI' &&
+                  (layer.catalogId === 'ndvi' || layer.catalogId.includes('ndvi')))),
           )
 
       // 已有同 overlay 的游离层 + 组内占位：并入组并移除游离层
@@ -732,6 +741,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
               followPolicy: timeList?.length ? 'containing' : undefined,
             })
         groupMember.dataState = 'imported'
+        if (
+          groupMember.jobLayer?.status === 'failed' ||
+          groupMember.jobLayer?.status === 'cancelled'
+        ) {
+          groupMember.jobLayer.status = 'succeeded'
+          groupMember.jobLayer.progress = 100
+        }
         groupMember.name = groupMember.name || displayName
         // 去掉游离层但不删后端文件
         const orphanId = existingByOverlay.instanceId
@@ -762,10 +778,38 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           followPolicy: timeList?.length ? 'containing' : undefined,
         })
         groupMember.dataState = 'imported'
+        if (
+          groupMember.jobLayer?.status === 'failed' ||
+          groupMember.jobLayer?.status === 'cancelled'
+        ) {
+          groupMember.jobLayer.status = 'succeeded'
+          groupMember.jobLayer.progress = 100
+        }
         if (groupMember.name === productTagLabel('OMEGA') || !groupMember.name) {
           groupMember.name = displayName === 'OMEGA_BLOCK' ? productTagLabel('OMEGA') : displayName
         }
         if (groupMember.runGroupId) refreshRunGroupDissolvable(groupMember.runGroupId)
+
+        // 治理重复/旧失败层：清理组内同 tag 的其它废弃成员（如旧失败残留、冗余未绑定占位）
+        const redundantMembers = deps
+          .getActiveLayers()
+          .filter(
+            (l) =>
+              l.runGroupId === groupByRun.groupId &&
+              l.instanceId !== groupMember.instanceId &&
+              (normalizeProductTag(l.runGroupProductTag) === tag ||
+                normalizeProductTag(l.name) === tag ||
+                (tag === 'NDVI' && (l.catalogId === 'ndvi' || l.catalogId.includes('ndvi')))) &&
+              (!l.importedRaster?.overlayLayerId ||
+                l.jobLayer?.status === 'failed' ||
+                l.jobLayer?.status === 'cancelled'),
+          )
+        for (const red of redundantMembers) {
+          deps.removeLayer(red.instanceId)
+          groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
+            (id) => id !== red.instanceId,
+          )
+        }
         continue
       }
 
@@ -809,13 +853,44 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
       // Prefer binding onto an existing wf-out active layer when present.
       const targetCatalogId = matchingOutput?.localId
-      const existingActive = targetCatalogId
+      const candidateActive = targetCatalogId
         ? deps
             .getActiveLayers()
             .find((layer) => layer.catalogId === targetCatalogId && !layer.isAdminBoundary)
         : deps
             .getActiveLayers()
             .find((layer) => layer.catalogId === preferredCatalogId && !layer.isAdminBoundary)
+
+      // 保护校验：产物 tag 与目标图层语义是否兼容，防止算法产物跨品类误并入用户图层
+      // （例如：NDVI 产物严禁并入粗糙度参数 smap-aux-h、gebco 等不兼容图层导致突变）
+      const isTagCompatibleWithTarget = (targetCid: string, productTag: string): boolean => {
+        const normTag = normalizeProductTag(productTag)
+        if (!normTag) return true
+        const cid = targetCid.toLowerCase()
+        if (normTag === 'NDVI') {
+          return cid === 'ndvi' || cid.includes('ndvi')
+        }
+        if (normTag === 'SM' || normTag === 'VOD' || normTag === 'OMEGA') {
+          return (
+            cid.includes('omega') ||
+            cid.includes('soil_moisture') ||
+            cid.includes('soil-moisture') ||
+            cid.includes('vod') ||
+            cid.includes('inversion') ||
+            cid.startsWith('wf-run-')
+          )
+        }
+        // 辅助图层（如 smap-aux-*）或明确不是算法计算的图层不可绑定外部产物
+        if (cid.startsWith('smap-aux-') || cid.startsWith('aux-') || cid === 'gebco-dem-cn') {
+          return false
+        }
+        return true
+      }
+
+      const existingActive =
+        candidateActive && isTagCompatibleWithTarget(candidateActive.catalogId, tag)
+          ? candidateActive
+          : null
 
       if (existingActive && !existingActive.importedRaster) {
         // 2026-08-24 三联报障 B：绑定产物 overlay 到用户层时保留用户已选定的
@@ -850,11 +925,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         workflowDisplayName && !isEnglishInversionCatalogId(workflowDisplayName)
           ? workflowDisplayName
           : ''
+      const freeGroupTitle = groupByRun?.title
+        ? groupByRun.title.replace(/\s*·\s*(?:计算中|已完成|部分失败|执行失败)$/u, '').trim()
+        : ''
+      const safeFreeGroupTitle =
+        freeGroupTitle && !isEnglishInversionCatalogId(freeGroupTitle) ? freeGroupTitle : ''
       const freeLayerName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
         safeWorkflowName ||
         safeCleanTitle ||
+        safeFreeGroupTitle ||
         productTagLabel(tag || 'result')
 
       // 组存在但 tag 槽缺失（常见：占位仅 result、产物为 SM/VOD/OMEGA）：
@@ -910,6 +991,26 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         slot.runGroupProductTag = slot.runGroupProductTag || slotTag
         if (!groupByRun.memberInstanceIds.includes(slot.instanceId)) {
           groupByRun.memberInstanceIds.push(slot.instanceId)
+        }
+        // 治理重复/旧失败层：清理组内同 tag 的其它废弃成员
+        const redundantMembers = deps
+          .getActiveLayers()
+          .filter(
+            (l) =>
+              l.runGroupId === groupByRun.groupId &&
+              l.instanceId !== slot.instanceId &&
+              (normalizeProductTag(l.runGroupProductTag) === tag ||
+                normalizeProductTag(l.name) === tag ||
+                (tag === 'NDVI' && (l.catalogId === 'ndvi' || l.catalogId.includes('ndvi')))) &&
+              (!l.importedRaster?.overlayLayerId ||
+                l.jobLayer?.status === 'failed' ||
+                l.jobLayer?.status === 'cancelled'),
+          )
+        for (const red of redundantMembers) {
+          deps.removeLayer(red.instanceId)
+          groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
+            (id) => id !== red.instanceId,
+          )
         }
         refreshRunGroupDissolvable(groupByRun.groupId)
         deps.scheduleWorkspacePersist()
@@ -1228,7 +1329,16 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         continue
       }
       if (!layer.importedRaster?.overlayLayerId) {
-        removeIds.push(instanceId)
+        const hasOtherMaterialized = g.memberInstanceIds.some((id) => {
+          if (id === instanceId) return false
+          const other = deps.getActiveLayers().find((l) => l.instanceId === id)
+          return Boolean(other?.importedRaster?.overlayLayerId)
+        })
+        if (layer.catalogId.startsWith('wf-run-') || (opts?.succeeded && hasOtherMaterialized)) {
+          removeIds.push(instanceId)
+        } else {
+          layer.runGroupLocked = false
+        }
       } else {
         layer.runGroupLocked = false
         if (!opts?.succeeded) {
@@ -1251,6 +1361,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
     const left = runLayerGroups.value.find((x) => x.groupId === g.groupId)
     if (left) {
+      left.memberInstanceIds = left.memberInstanceIds.filter((id) => !removeIds.includes(id))
       if (opts?.succeeded) {
         left.status = 'ready'
         refreshRunGroupDissolvable(left.groupId)
@@ -1279,21 +1390,56 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   function refreshRunGroupDissolvable(groupId: string) {
     const g = runLayerGroups.value.find((x) => x.groupId === groupId)
     if (!g) return
+    const activeLayers = deps.getActiveLayers()
     const members = g.memberInstanceIds
-      .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id))
+      .map((id) => activeLayers.find((l) => l.instanceId === id))
+      .filter((l): l is ActiveLayer => Boolean(l))
+
+    // 自愈：若组内已有水合成功的产物成员，清理同 tag 的旧失败成员或无数据占位
+    const successfulTags = new Set(
+      members
+        .filter((m) => Boolean(m.importedRaster?.overlayLayerId))
+        .map((m) => normalizeProductTag(m.runGroupProductTag || m.name))
+        .filter(Boolean),
+    )
+    if (successfulTags.size > 0) {
+      const deadIds: string[] = []
+      for (const m of members) {
+        const tag = normalizeProductTag(m.runGroupProductTag || m.name)
+        if (
+          tag &&
+          successfulTags.has(tag) &&
+          (!m.importedRaster?.overlayLayerId ||
+            m.jobLayer?.status === 'failed' ||
+            m.jobLayer?.status === 'cancelled')
+        ) {
+          deadIds.push(m.instanceId)
+        }
+      }
+      if (deadIds.length) {
+        for (const id of deadIds) {
+          deps.removeLayer(id)
+        }
+        g.memberInstanceIds = g.memberInstanceIds.filter((id) => !deadIds.includes(id))
+      }
+    }
+
+    const currentMembers = g.memberInstanceIds
+      .map((id) => activeLayers.find((l) => l.instanceId === id))
       .filter((l): l is ActiveLayer => Boolean(l))
     const allDisplayable =
-      members.length > 0 && members.every((m) => Boolean(m.importedRaster?.overlayLayerId))
+      currentMembers.length > 0 &&
+      currentMembers.every((m) => Boolean(m.importedRaster?.overlayLayerId))
     if (g.status === 'failed' || g.status === 'cancelled') {
       g.dissolvable = true
-      members.forEach((m) => {
+      currentMembers.forEach((m) => {
         m.runGroupLocked = false
       })
       return
     }
     if (g.status === 'ready' && allDisplayable) {
       g.dissolvable = true
-      members.forEach((m) => {
+      currentMembers.forEach((m) => {
         m.runGroupLocked = false
       })
     }

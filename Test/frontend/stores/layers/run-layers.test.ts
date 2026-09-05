@@ -931,6 +931,45 @@ describe("attachAlgorithmProductOverlays", () => {
     expect(group.memberInstanceIds).toContain(added!.instanceId);
   });
 
+  it("NDVI 产物水合占位并自动清理组内旧失败层", async () => {
+    const { slice } = setup();
+    const { group, members } = setupGroup(slice, {
+      runId: "run-ndvi",
+      tags: ["NDVI"],
+    });
+    const failedMember = makeLayer({
+      name: "植被指数 NDVI",
+      runGroupId: group.groupId,
+      runGroupProductTag: "NDVI",
+      dataState: "imported",
+      jobLayer: makeJob({ status: "failed" }),
+    });
+    activeLayers.push(failedMember);
+    group.memberInstanceIds.push(failedMember.instanceId);
+
+    mockMaterialize([
+      {
+        overlay_layer_id: "ov-ndvi-new",
+        title: "植被指数 NDVI",
+        product_tag: "植被指数 NDVI",
+      },
+    ]);
+
+    const count = await slice.attachAlgorithmProductOverlays(
+      [],
+      "cat-src",
+      "run-ndvi",
+    );
+    expect(count).toBe(1);
+    expect(members[0]!.importedRaster?.overlayLayerId).toBe("ov-ndvi-new");
+    expect(members[0]!.dataState).toBe("imported");
+    expect(group.memberInstanceIds).toEqual([members[0]!.instanceId]);
+    expect(activeLayers.map((l) => l.instanceId)).not.toContain(
+      failedMember.instanceId,
+    );
+  });
+
+
   it("三联B：产物绑定用户层时保留已选配色/量程覆盖", async () => {
     // 渲染源从静态 catalog overlay 切到产物 overlay 时，用户在分析框选定的
     // paletteOverride/vminOverride/vmaxOverride 必须保留——否则配色突变回
@@ -1390,6 +1429,32 @@ describe("refreshRunGroupDissolvable", () => {
     slice.refreshRunGroupDissolvable(group.groupId);
     expect(group.dissolvable).toBe(false);
   });
+
+  it("ready 状态下自愈清理组内同 tag 旧失败成员", () => {
+    const { slice } = setup();
+    const { group, members } = setupGroup(slice, { tags: ["NDVI"] });
+    group.status = "ready";
+    members[0]!.importedRaster = { overlayLayerId: "ov-ndvi", nativeStep: null };
+    members[0]!.dataState = "imported";
+    const failedMember = makeLayer({
+      name: "植被指数 NDVI",
+      runGroupId: group.groupId,
+      runGroupProductTag: "NDVI",
+      dataState: "imported",
+      jobLayer: makeJob({ status: "failed" }),
+    });
+    activeLayers.push(failedMember);
+    group.memberInstanceIds.push(failedMember.instanceId);
+
+    expect(group.memberInstanceIds).toHaveLength(2);
+    slice.refreshRunGroupDissolvable(group.groupId);
+    expect(group.memberInstanceIds).toEqual([members[0]!.instanceId]);
+    expect(activeLayers.map((l) => l.instanceId)).not.toContain(
+      failedMember.instanceId,
+    );
+    expect(group.dissolvable).toBe(true);
+  });
+
 
   it("未知组无操作", () => {
     const { slice } = setup();

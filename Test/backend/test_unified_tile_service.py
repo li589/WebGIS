@@ -109,6 +109,8 @@ def test_weather_endpoint_returns_weather_tile() -> None:
     from app.main import create_app
 
     app = create_app()
+    from app.api.deps import get_request_user
+    app.dependency_overrides[get_request_user] = lambda: type("MockUser", (), {"id": "test", "role": "admin"})()
     client = TestClient(app)
 
     mock_geojson = {

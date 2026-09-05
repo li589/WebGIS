@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "SMAP 动态 散射约束产品反演（在线）",
+    "name": "SMAP 动态散射约束产品反演（在线）",
     "description": "目的：在线拉取 SMAP L3（NSIDC CMR+云 CDN，earthdata 凭证）→ smap_daily 转 YYYYMMDD.mat 落盘规范目录 → omega_sf_fenkuai 8-day 分块 SF 倒推 → DDCA SM/VOD 反演。前置：earthdata 凭证；辅助库/NDVI 气候态本地就绪。产出：SM/VOD/OMEGA 三图层。配置：tb_source=SMAP, freq_ghz=1.4, sf_mode=INVERTED_DAILY。",
     "author": "system",
     "readonly": true,
@@ -11,12 +11,14 @@
     "tags": [
       "pipeline",
       "sf_inversion",
-      "online"
+      "online",
+      "temporal:range",
+      "temporal:8d-block"
     ],
     "category": "inversion"
   },
   "workflow_id": "omega_sf_fenkuai_smap_online",
-  "name": "SMAP 动态 散射约束产品反演（在线）",
+  "name": "SMAP 动态散射约束产品反演（在线）",
   "description": "nsidc_smap_download（CMR+云 CDN，earthdata 凭证）→ smap_daily（.h5→YYYYMMDD.mat）→ omega_sf_fenkuai 动态反演。语义：动态=8 天块内联合反演逐日 ω（块级 h/α 优化 + λ 平滑），产出逐日动态 SM/VOD/OMEGA。",
   "nodes": [
     {
@@ -157,7 +159,7 @@
       ],
       "properties": {
         "layer_id": "method-smap-omega-doy-dynamic",
-        "display_name": "SMAP 动态 散射约束产品反演（在线）"
+        "display_name": "SMAP 动态散射约束产品反演（在线）"
       }
     }
   ],
