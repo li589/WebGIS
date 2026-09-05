@@ -156,8 +156,6 @@ function handleExport() {
   display: flex;
   justify-content: flex-end;
   background: var(--surface-raised);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .log-panel {
@@ -171,8 +169,8 @@ function handleExport() {
   box-shadow:
     -16px 0 48px rgba(1, 8, 16, 0.4),
     inset 1px 0 0 rgba(136, 223, 255, 0.06);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
 }
 
 .panel-header {

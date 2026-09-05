@@ -129,14 +129,3 @@ a {
   transform: translateY(-1px);
   box-shadow: var(--elevation-2);
 }
-
-.hover-glow {
-  transition:
-    box-shadow var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft);
-}
-
-.hover-glow:hover {
-  border-color: var(--border-accent);
-  box-shadow: var(--elevation-1), var(--accent-glow-sm);
-}

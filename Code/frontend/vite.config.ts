@@ -113,6 +113,10 @@ export default defineConfig(({ mode }) => {
             if (id.includes('cesium')) return 'vendor-cesium'
             if (id.includes('html2canvas')) return 'vendor-html2canvas'
             if (id.includes('jspdf')) return 'vendor-jspdf'
+            if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts'
+            if (id.includes('katex') || id.includes('marked')) return 'vendor-markdown'
+            if (id.includes('litegraph.js')) return 'vendor-litegraph'
+            if (id.includes('shpjs') || id.includes('proj4')) return 'vendor-geo'
             if (id.includes('vue') || id.includes('pinia')) return 'vendor-framework'
 
             return undefined

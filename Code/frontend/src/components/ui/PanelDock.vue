@@ -91,6 +91,7 @@ const {
   visible,
   collapsed,
   dragging,
+  resizing,
   resizeEnabled,
   frameStyle,
   panelSizeStyle,
@@ -297,7 +298,6 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   --panel-collapsed-height: 2.9rem;
   --panel-scrollbar-track: var(--surface-hover);
   --panel-scrollbar-thumb: var(--border-strong);
-  --panel-backdrop-blur: 12px;
 
   position: relative;
   pointer-events: auto;
@@ -350,8 +350,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   font-size: var(--font-size-caption);
   box-shadow: var(--elevation-2);
   opacity: 0.72;
-  backdrop-filter: blur(var(--panel-backdrop-blur));
-  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   user-select: none;
   touch-action: none;
   transition:
@@ -363,9 +363,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 .restore-pill:hover {
   opacity: 1;
   border-color: var(--border-strong);
-  box-shadow:
-    var(--elevation-3),
-    0 0 12px var(--accent-surface);
+  box-shadow: var(--elevation-3);
 }
 
 .restore-pill--dragging {
@@ -397,28 +395,11 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   min-height: 0;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background:
-    linear-gradient(180deg, var(--surface-2), var(--surface-1)),
-    radial-gradient(circle at top left, var(--surface-hover), transparent 34%),
-    radial-gradient(circle at bottom right, var(--accent-surface), transparent 42%);
+  background: var(--surface-panel);
   box-shadow: var(--elevation-2);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   contain: layout paint;
-}
-
-/* 顶部高光条 */
-.panel-dock__frame::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 12%;
-  right: 12%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 3;
 }
 
 .panel-dock__frame:hover {
@@ -449,9 +430,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   opacity: 1;
   transform: translateY(-2px);
   border-color: var(--border-strong);
-  box-shadow:
-    var(--elevation-3),
-    0 0 14px var(--accent-surface);
+  box-shadow: var(--elevation-3);
 }
 
 /* 位置修饰 */
@@ -501,12 +480,10 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   border: 1px solid var(--border-subtle);
   border-bottom-color: var(--border-subtle);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
   min-height: var(--panel-title-height);
-  backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
-  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 var(--inner-highlight),
     var(--elevation-1);
 }
 
@@ -515,15 +492,12 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   background: linear-gradient(180deg, var(--surface-hover), var(--surface-2));
   border-color: var(--border-accent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    var(--elevation-2),
-    0 0 0 1px var(--accent-surface);
+    inset 0 1px 0 var(--inner-highlight-strong),
+    var(--elevation-2);
 }
 
 .panel-anchor--interacting .panel-dock__frame {
-  box-shadow:
-    var(--elevation-3),
-    0 0 18px var(--accent-surface);
+  box-shadow: var(--elevation-3);
   border-color: var(--border-accent);
 }
 

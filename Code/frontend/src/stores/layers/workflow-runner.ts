@@ -27,6 +27,7 @@ import {
 import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { useLogStore } from '../log'
+import { buildTimeKey, buildTimeRangeFromKey } from './online-temporal-orchestrator'
 import { readScopedItem, writeScopedItem } from '../../services/user-local-isolation'
 import {
   fetchDataInputPolicies,
@@ -125,7 +126,6 @@ async function resolveDefaultTimeRangeFromTimeline(options: {
   if (!options.supportsTime) return null
   try {
     const { useUiStore } = await import('../ui')
-    const { buildTimeKey, buildTimeRangeFromKey } = await import('./online-temporal-orchestrator')
     const { resolveLayerTemporalMode, alignDateToTemporalRange } =
       await import('../../utils/temporal-mode')
     const ui = useUiStore()
@@ -1598,7 +1598,6 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           } else {
             try {
               const { useUiStore } = await import('../ui')
-              const { buildTimeKey } = await import('./online-temporal-orchestrator')
               const ui = useUiStore()
               const granRaw =
                 (descriptor as { time_granularity?: string } | null)?.time_granularity ||

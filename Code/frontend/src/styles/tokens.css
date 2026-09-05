@@ -141,7 +141,9 @@
   --font-weight-bold: 700; /* 页面标题 / 强调 */
 
   /* ═══ Elevation（暗色实现：低透明阴影 + 内高光） ═══ */
-  --glass-blur: 16px; /* 统一玻璃模糊 */
+  --glass-blur: 12px; /* 统一玻璃模糊：12px 兼顾平滑虚化与 GPU 卷积性能 */
+  --inner-highlight: rgba(255, 255, 255, 0.06); /* 精密微质感内高亮 */
+  --inner-highlight-strong: rgba(255, 255, 255, 0.1); /* 聚焦态内高亮 */
 
   --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
@@ -216,23 +218,12 @@
   --inspect-dot-ring: #f0faff;
   --inspect-dot-glow: rgba(255, 184, 77, 0.75);
 
-  /* ═══ 数据分类语义色（天气 / 栅格 / 矢量） ═══ */
-  --category-weather: #67d4ff;
-  --category-weather-surface: rgba(103, 212, 255, 0.14);
-  --category-weather-border: rgba(103, 212, 255, 0.3);
-  --category-raster: #7fe0a6;
-  --category-raster-surface: rgba(127, 224, 166, 0.14);
-  --category-raster-border: rgba(127, 224, 166, 0.3);
-  --category-vector: #ffc878;
-  --category-vector-surface: rgba(255, 200, 120, 0.14);
-  --category-vector-border: rgba(255, 200, 120, 0.3);
-
   /* ═══ 动效（扩展：编排延迟） ═══ */
   --motion-stagger-step: 30ms;
   --motion-enter-delay: 100ms;
 
   /* ═══ 触控目标最小值 ═══ */
-  --touch-min: 36px;
+  --touch-min: 2.25rem;
   --select-panel-bg: #102235;
   --select-panel-text: #f0faff;
 }

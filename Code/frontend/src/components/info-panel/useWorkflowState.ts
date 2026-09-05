@@ -17,6 +17,10 @@ import {
   resolveWorkflowStageCopy,
 } from './analysis-panel-summary'
 import type { ResultDisplayModel } from './result-adapter'
+import {
+  buildTimeKey,
+  buildTimeRangeFromKey,
+} from '../../stores/layers/online-temporal-orchestrator'
 
 /**
  * 工作流状态 / 进度 / 阶段摘要 composable。
@@ -130,8 +134,6 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     let timeRange: Record<string, unknown> | undefined
     try {
       const { useUiStore } = await import('../../stores/ui')
-      const { buildTimeKey, buildTimeRangeFromKey } =
-        await import('../../stores/layers/online-temporal-orchestrator')
       const ui = useUiStore()
       const desc = workspace.resolveEffectiveDescriptor(cid) as {
         time_granularity?: string

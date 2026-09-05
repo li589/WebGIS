@@ -9,7 +9,6 @@
  */
 import { importVectorMultipart } from '../data-manager/core/api'
 import { registerImportedVectorLayer } from '../data-manager/adapters/layers'
-import { loadWorldAdmin0Boundaries, loadWorldAdmin1Boundaries } from '../app/admin-boundaries'
 
 export type RoadClassFilter = 'major' | 'all'
 
@@ -115,6 +114,8 @@ let boundaryLayersCache: AdminBoundaryLayer[] | null = null
 
 async function loadBoundaryLayers(): Promise<AdminBoundaryLayer[]> {
   if (boundaryLayersCache) return boundaryLayersCache
+  const { loadWorldAdmin0Boundaries, loadWorldAdmin1Boundaries } =
+    await import('../app/admin-boundaries')
   const [admin1, admin0] = await Promise.all([
     loadWorldAdmin1Boundaries(),
     loadWorldAdmin0Boundaries(),

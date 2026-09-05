@@ -14,6 +14,7 @@ import { useLayerWorkspace, useLayerViewport, useWorkflowRun } from '../../store
 import { INVERSION_RUN_LAYER_PATTERN } from '../../stores/layers/inversion-catalog'
 import { resolveRunGroupTitle } from '../../utils/workflow-run-display-name'
 import { productTagLabel } from '../../utils/workflow-expected-outputs'
+import { WorkflowValidationError } from '../../services/_http'
 
 export function useWorkflowEditorRun(
   logStore: ReturnType<typeof useLogStore>,
@@ -99,7 +100,6 @@ export function useWorkflowEditorRun(
       const links = canvasGraph?.links ?? []
       if (nodes.length > 0) {
         const { dryValidateWorkflowGraph } = await import('../../services/workflow-definition-api')
-        const { WorkflowValidationError } = await import('../../services/_http')
         const { WORKFLOW_COPY } = await import('../../ui-copy/workflow')
         const { deriveJobTimeRangeFromGraph } =
           await import('../../composables/workflow-pipeline-params')

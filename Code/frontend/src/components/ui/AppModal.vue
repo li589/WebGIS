@@ -116,14 +116,7 @@ watch(
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: color-mix(in srgb, var(--surface-base) 55%, transparent);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
-}
-
-:global(html.reduce-motion) .cgda-modal-mask {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: color-mix(in srgb, var(--surface-base) 65%, transparent);
 }
 
 .cgda-modal-panel {
