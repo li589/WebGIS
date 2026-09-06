@@ -98,6 +98,21 @@ class _RecordingLogger:
         _ = message
 
 
+from ingest.ndvi import NdviStackInfo
+
+
+def _ndvi_stack_info(stack, dates):
+    """与 ingest.ndvi.load_ndvi_stack_full 返回结构对齐（模块消费 stack/dates/transform/crs）。"""
+    return NdviStackInfo(
+        stack=stack,
+        dates=dates,
+        transform=None,
+        crs=None,
+        width=int(stack.shape[1]),
+        height=int(stack.shape[0]),
+    )
+
+
 class NativeModuleTests(unittest.TestCase):
     def test_get_module_resolves_native_daily_bundle_for_pipeline_alias(self) -> None:
         module = get_module("daily_bundle_pipeline")
@@ -456,8 +471,8 @@ class NativeModuleTests(unittest.TestCase):
 
             with (
                 patch(
-                    "modules.ndvi.load_ndvi_stack",
-                    return_value=(ndvi_stack, observation_dates),
+                    "modules.ndvi.load_ndvi_stack_full",
+                    return_value=_ndvi_stack_info(ndvi_stack, observation_dates),
                 ),
                 patch(
                     "modules.ndvi.process_ndvi_stack_to_daily",
@@ -539,11 +554,14 @@ class NativeModuleTests(unittest.TestCase):
             def fake_load_ndvi_stack(*, input_dir, start_time, end_time):
                 _ = (start_time, end_time)
                 self.assertEqual(Path(input_dir), expected_input_dir)
-                return ndvi_stack, observation_dates
+                return _ndvi_stack_info(ndvi_stack, observation_dates)
 
             expected_input_dir = input_dir
             with (
-                patch("modules.ndvi.load_ndvi_stack", side_effect=fake_load_ndvi_stack),
+                patch(
+                    "modules.ndvi.load_ndvi_stack_full",
+                    side_effect=fake_load_ndvi_stack,
+                ),
                 patch(
                     "modules.ndvi.process_ndvi_stack_to_daily",
                     return_value=(daily_stack, daily_dates),

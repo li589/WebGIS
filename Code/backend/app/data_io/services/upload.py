@@ -23,7 +23,7 @@ from app.data_io.services._meta_io import meta_lock as _io_meta_lock
 from app.data_io.services._meta_io import save_meta as _io_save_meta
 from app.data_io.services.paths import (
     MAX_UPLOAD_BYTES,
-    STAGING_DIR,
+    staging_dir,
     STAGING_TTL_SECONDS,
     assert_quota_available,
     ensure_imports_root,
@@ -90,7 +90,7 @@ def init_upload(
     if resume_upload_id:
         try:
             # 安审 2026-08-21 S-2：resume_upload_id 来自 body，须防路径穿越
-            resume_dest = safe_import_child(resume_upload_id, root=STAGING_DIR)
+            resume_dest = safe_import_child(resume_upload_id, root=staging_dir())
             with _io_meta_lock(resume_dest):
                 meta = _io_load_meta(resume_dest)
                 existing_owner = meta.get("owner_user_id")
@@ -127,7 +127,7 @@ def init_upload(
             pass
 
     upload_id = f"up-{uuid.uuid4().hex[:16]}"
-    dest = STAGING_DIR / upload_id
+    dest = staging_dir() / upload_id
     dest.mkdir(parents=True, exist_ok=True)
     meta = {
         "upload_id": upload_id,
@@ -177,14 +177,14 @@ def get_upload_status(upload_id: str) -> dict[str, Any]:
 
 
 def _load_meta(upload_id: str) -> tuple[Path, dict[str, Any]]:
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     return dest, _io_load_meta(dest)
 
 
 def append_chunk(
     upload_id: str, chunk: bytes, *, offset: int | None = None
 ) -> dict[str, Any]:
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     # 持锁保护「读 meta → 校验/截断 → append 写 blob.part → 写 meta」整个 check-then-act，
     # 避免并发重试/双 complete 导致 blob.part 损坏或 meta.received 与实际大小不一致。
     with _io_meta_lock(dest):
@@ -229,7 +229,7 @@ def append_chunk(
 
 
 def complete_upload(upload_id: str) -> dict[str, Any]:
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     # 持锁防与 append_chunk 并发（rename 与 append 竞争）及双 complete 竞争。
     with _io_meta_lock(dest):
         meta = _io_load_meta(dest)
@@ -287,7 +287,7 @@ def resolve_upload_path(upload_id: str) -> Path:
 def discard_upload(upload_id: str) -> None:
     # 安审 2026-08-21 S-1：upload_id 可来自 URL/body，拼接前防路径穿越
     # （否则 rmtree 可删除 staging 根外任意目录）。
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
 
@@ -298,7 +298,7 @@ def cleanup_expired_staging(*, ttl_seconds: int | None = None) -> int:
     ttl = STAGING_TTL_SECONDS if ttl_seconds is None else max(60, int(ttl_seconds))
     now = time.time()
     removed = 0
-    for child in list(STAGING_DIR.iterdir()):
+    for child in list(staging_dir().iterdir()):
         if not child.is_dir():
             continue
         meta_path = child / "meta.json"

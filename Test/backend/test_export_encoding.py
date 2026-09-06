@@ -28,7 +28,7 @@ def imports_tmp(tmp_path, monkeypatch):
     imports_dir = tmp_path / "imports"
     imports_dir.mkdir()
     for mod in (import_paths, vector_mod, export_mod):
-        monkeypatch.setattr(mod, "IMPORTS_DIR", imports_dir)
+        monkeypatch.setattr(mod, "imports_dir", lambda: imports_dir)
     return imports_dir
 
 

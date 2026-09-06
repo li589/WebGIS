@@ -688,3 +688,24 @@ def test_theme_group_hidden_filtered_for_consumers(auth_client):
     assert "climate" not in consumer
     assert "hidden-lab" in consumer
     assert "模型输入" in consumer["research-group"]["hidden_sub_categories"]
+
+
+def test_scope_cache_invalidated_on_preset_write(auth_client):
+    """消费端 scope 走 30s TTL 缓存；主题预设写入必须立即失效（P2 热路径优化回归锁）。"""
+    from app.services import layer_group_repository as lgr
+
+    lgr.invalidate_scope_cache()
+    repo = lgr.get_layer_group_repository()
+
+    # 无预设时：消费端 scope 为 shared（回落主主题基线），且已进入缓存
+    scope_shared = lgr.resolve_catalog_group_scope(user_id=None, role=None)
+    assert scope_shared.kind == "shared"
+
+    # 写入主题预设 → invalidate_cache 链 → 再次解析必须立即变为 theme
+    repo.save_theme_preset(1, {"groups": [], "assignments": {}})
+    scope_theme = lgr.resolve_catalog_group_scope(user_id=None, role=None)
+    assert scope_theme.kind == "theme"
+
+    # 删除预设 → 恢复 shared
+    assert repo.delete_theme_preset(1) is True
+    assert lgr.resolve_catalog_group_scope(user_id=None, role=None).kind == "shared"

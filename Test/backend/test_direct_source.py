@@ -77,7 +77,7 @@ def test_register_direct_geotiff_creates_direct_layer(tmp_path, monkeypatch) -> 
     from app.services.overlay_registry import get_overlay_spec, unregister_overlay
 
     imports_root = tmp_path / "imports"
-    monkeypatch.setattr("app.data_io.services.paths.IMPORTS_DIR", imports_root)
+    monkeypatch.setattr("app.data_io.services.paths.imports_dir", lambda: imports_root)
     # 配额检查依赖 imports 根存在
     monkeypatch.setattr(
         "app.data_io.services.paths.assert_quota_available", lambda *a, **k: None
@@ -118,7 +118,7 @@ def test_register_direct_geotiff_creates_direct_layer(tmp_path, monkeypatch) -> 
 def test_register_direct_geotiff_rejects_bad_suffix(tmp_path, monkeypatch) -> None:
     from app.data_io.services import direct_source
 
-    monkeypatch.setattr("app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports")
+    monkeypatch.setattr("app.data_io.services.paths.imports_dir", lambda: tmp_path / "imports")
     bad = tmp_path / "data.nc"
     bad.write_bytes(b"")
     with pytest.raises(ValueError, match="非法 direct 源"):
@@ -130,7 +130,7 @@ def test_register_direct_geotiff_duplicate_rejected(tmp_path, monkeypatch) -> No
     from app.services.overlay_registry import unregister_overlay
 
     imports_root = tmp_path / "imports"
-    monkeypatch.setattr("app.data_io.services.paths.IMPORTS_DIR", imports_root)
+    monkeypatch.setattr("app.data_io.services.paths.imports_dir", lambda: imports_root)
     monkeypatch.setattr(
         "app.data_io.services.paths.assert_quota_available", lambda *a, **k: None
     )
@@ -158,7 +158,7 @@ def test_registry_lazy_load_delegates_to_data_io(tmp_path, monkeypatch) -> None:
         json.dumps({"bounds": [100.0, 30.0, 110.0, 40.0], "meta": {}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr("app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports")
+    monkeypatch.setattr("app.data_io.services.paths.imports_dir", lambda: tmp_path / "imports")
 
     reg.unregister_overlay("imported-manual-direct")
     try:

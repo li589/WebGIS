@@ -109,6 +109,12 @@ def env(tmp_path_factory) -> _Env:
         lambda *a, **k: {"layer_id": "test-layer", "feature_count": 0},
     )
     monkeypatch.setattr("app.core.celery_app.celery_available", False)
+    # 属主断言读取 upload meta（fake-uid 无真实会话），夹具级 no-op——
+    # 测试目标的是 job 属主落库/读取隔离，不是 meta 校验本身。
+    monkeypatch.setattr(
+        "app.data_io.api.router.assert_upload_access",
+        lambda *a, **k: None,
+    )
 
     repo = UserRepository(tmp_path / "state" / "users.sqlite3")
 

@@ -23,7 +23,7 @@ from app.services.zonal_stats_service import (
 
 @pytest.fixture()
 def imported_raster_dir(tmp_path: Path) -> Path:
-    """构造 IMPORTS_DIR/imported-test/<tif + bounds.json> 目录布局。"""
+    """构造 imports_dir()/imported-test/<tif + bounds.json> 目录布局。"""
     import rasterio
     from rasterio.crs import CRS
     from rasterio.transform import from_bounds
@@ -61,33 +61,25 @@ def imported_raster_dir(tmp_path: Path) -> Path:
 
 
 def test_find_imported_raster_path_prefers_bounds_meta(
-    imported_raster_dir: Path,
+    monkeypatch: pytest.MonkeyPatch, imported_raster_dir: Path
 ) -> None:
-    original = paths_mod.IMPORTS_DIR
-    paths_mod.IMPORTS_DIR = imported_raster_dir
-    try:
-        found = _find_imported_raster_path("imported-test")
-        assert found is not None
-        assert found.name == "source_demo.tif"
-    finally:
-        paths_mod.IMPORTS_DIR = original
+    monkeypatch.setattr(paths_mod, "imports_dir", lambda: imported_raster_dir)
+    found = _find_imported_raster_path("imported-test")
+    assert found is not None
+    assert found.name == "source_demo.tif"
 
 
 def test_find_imported_raster_path_ignores_non_imported_ids(
-    imported_raster_dir: Path,
+    monkeypatch: pytest.MonkeyPatch, imported_raster_dir: Path
 ) -> None:
-    original = paths_mod.IMPORTS_DIR
-    paths_mod.IMPORTS_DIR = imported_raster_dir
-    try:
-        assert _find_imported_raster_path("aridity-cn") is None
-    finally:
-        paths_mod.IMPORTS_DIR = original
+    monkeypatch.setattr(paths_mod, "imports_dir", lambda: imported_raster_dir)
+    assert _find_imported_raster_path("aridity-cn") is None
 
 
 def test_compute_zonal_stats_for_imported_raster(
     monkeypatch: pytest.MonkeyPatch, imported_raster_dir: Path, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(paths_mod, "IMPORTS_DIR", imported_raster_dir)
+    monkeypatch.setattr(paths_mod, "imports_dir", lambda: imported_raster_dir)
 
     # 多边形 100.1–109.9E / 25.1–34.9N（避开像元边界，中心落入 4×4=16 像元）
     ring = [
@@ -116,7 +108,7 @@ def test_compute_zonal_stats_for_imported_raster(
 def test_find_raster_path_falls_back_to_imported_dir(
     monkeypatch: pytest.MonkeyPatch, imported_raster_dir: Path, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(paths_mod, "IMPORTS_DIR", imported_raster_dir)
+    monkeypatch.setattr(paths_mod, "imports_dir", lambda: imported_raster_dir)
     found = _find_raster_path(
         "imported-test", data_root=tmp_path / "empty-data-root", desc={}
     )

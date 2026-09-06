@@ -160,7 +160,7 @@ def test_direct_source_overlay_registers_without_preview(monkeypatch, tmp_path) 
 
     dest = _make_direct_overlay_dir(tmp_path, with_preview=False, with_source=True)
     monkeypatch.setattr(
-        "app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports"
+        "app.data_io.services.paths.imports_dir", lambda: tmp_path / "imports"
     )
     reg.unregister_overlay("imported-direct-test")
     spec = reg._try_load_imported_overlay("imported-direct-test")
@@ -177,7 +177,7 @@ def test_no_preview_no_source_still_rejected(monkeypatch, tmp_path) -> None:
 
     _make_direct_overlay_dir(tmp_path, with_preview=False, with_source=False)
     monkeypatch.setattr(
-        "app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports"
+        "app.data_io.services.paths.imports_dir", lambda: tmp_path / "imports"
     )
     reg.unregister_overlay("imported-direct-test")
     assert reg._try_load_imported_overlay("imported-direct-test") is None
@@ -189,7 +189,7 @@ def test_bounds_meta_reports_has_overview_false(monkeypatch, tmp_path) -> None:
 
     _make_direct_overlay_dir(tmp_path, with_preview=False, with_source=True)
     monkeypatch.setattr(
-        "app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports"
+        "app.data_io.services.paths.imports_dir", lambda: tmp_path / "imports"
     )
     reg.unregister_overlay("imported-direct-test")
     spec = reg._try_load_imported_overlay("imported-direct-test")

@@ -125,7 +125,7 @@ def test_sync_skips_seed_that_expands_to_invalid_json(
     dest.write_text('{"a": "previous-good"}', encoding="utf-8")
 
     monkeypatch.setattr(svc, "_SEED_SYSTEM_DIR", seed_dir)
-    monkeypatch.setattr(svc, "_SYSTEM_DIR", dest_dir)
+    monkeypatch.setattr(svc, "system_dir", lambda: dest_dir)
     # 故意让展开结果非法：注入裸反斜杠构成非法转义 \G（\b 等是合法 JSON 转义）
     monkeypatch.setattr(svc, "_expand_seed_placeholders", lambda c: '{"a": "I:\\Geo"}')
 

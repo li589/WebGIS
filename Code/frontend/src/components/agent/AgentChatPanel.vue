@@ -41,7 +41,6 @@ import {
   buildAgentClientContextPayload,
   exportChatMarkdown,
   extractLayerCardsFromSteps,
-  isAbortError,
   isTimeoutAbortError,
   isUserInitiatedStop,
   layerCardsFromActiveLayers,

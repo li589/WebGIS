@@ -1,4 +1,4 @@
-"""注册表 overlay 图层导出（prod-/ref-/method- 等非 IMPORTS_DIR 图层）。
+"""注册表 overlay 图层导出（prod-/ref-/method- 等非 imports_dir() 图层）。
 
 覆盖 `_export_registry_overlay` 分支：tif 直读 / png 预览 / 格式拒绝 /
 未知图层 FileNotFoundError / 时序 source_pattern 解析与多时刻 zip。
@@ -23,8 +23,8 @@ from app.services import overlay_registry
 def imports_tmp(tmp_path, monkeypatch):
     imports_dir = tmp_path / "imports"
     imports_dir.mkdir()
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_dir)
-    monkeypatch.setattr(export_mod, "IMPORTS_DIR", imports_dir)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_dir)
+    monkeypatch.setattr(export_mod, "imports_dir", lambda: imports_dir)
     return imports_dir
 
 

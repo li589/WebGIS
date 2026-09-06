@@ -8,8 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from app.data_io.services import paths as import_paths
-from app.data_io.services import resumable_upload as resumable_mod
-from app.data_io.services import upload as upload_mod
 from app.data_io.services.resumable_upload import (
     complete_resumable,
     get_upload_status,
@@ -21,14 +19,11 @@ from app.data_io.services.upload import get_upload_status as unified_status
 
 @pytest.fixture()
 def staging_tmp(tmp_path, monkeypatch):
+    # paths.py 的目录常量已惰性化为函数（逐调用读取 settings）；
+    # 这里 patch output_root 函数，所有 staging/jobs/exports 派生目录随之落盘 tmp。
     root = tmp_path / "imports_output"
-    imports_dir = root / "imports"
-    staging = imports_dir / "_staging"
-    for mod in (import_paths, upload_mod, resumable_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_dir)
-        if hasattr(mod, "STAGING_DIR"):
-            monkeypatch.setattr(mod, "STAGING_DIR", staging)
+    monkeypatch.setattr(import_paths, "output_root", lambda: root)
+    staging = import_paths.staging_dir()
     import_paths.ensure_imports_root()
     return staging
 

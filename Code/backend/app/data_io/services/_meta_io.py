@@ -8,7 +8,7 @@ append 模式（``upload.py``）与 manifest 模式（``resumable_upload.py``）
   保护「读 meta → 改字段 → 写 meta」的 check-then-act 临界区。
 - ``load_meta``：纯读，``save_meta`` 的原子性保证读不到半写内容，故无需持锁。
 
-量纲：``dest`` 为 staging 会话目录（``STAGING_DIR/<upload_id>``），meta 文件名固定 ``meta.json``。
+量纲：``dest`` 为 staging 会话目录（``staging_dir()/<upload_id>``），meta 文件名固定 ``meta.json``。
 """
 
 from __future__ import annotations

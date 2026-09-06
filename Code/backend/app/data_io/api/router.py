@@ -578,7 +578,7 @@ async def import_job_download(
     path = Path(str(path_str))
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="导出文件已失效")
-    exports_root = (import_paths.IMPORTS_DIR / "_exports").resolve()
+    exports_root = (import_paths.imports_dir() / "_exports").resolve()
     try:
         path.resolve().relative_to(exports_root)
     except ValueError as exc:
@@ -859,7 +859,7 @@ async def delete_imported_layer(layer_id: str) -> dict[str, Any]:
     if not (safe.startswith("imported-") or safe.startswith("imported_")):
         if not safe.startswith("imported"):
             raise HTTPException(status_code=400, detail="仅允许删除导入图层")
-    dest = import_paths.IMPORTS_DIR / safe
+    dest = import_paths.imports_dir() / safe
     if not dest.exists() or not dest.is_dir():
         raise HTTPException(status_code=404, detail=f"图层不存在: {safe}")
     if safe.startswith("_"):

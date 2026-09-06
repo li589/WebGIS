@@ -16,7 +16,6 @@ from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
 import contextlib
 
 logger = logging.getLogger(__name__)
@@ -36,13 +35,29 @@ class WorkflowExistsError(Exception):
 _BACKEND_ROOT = (
     Path(__file__).resolve().parents[2]
 )  # app/services/x.py -> app/services -> app -> backend
-_data_root_raw = settings.data_root or ".data"
-_data_root = Path(_data_root_raw)
-if not _data_root.is_absolute():
-    _data_root = _BACKEND_ROOT / _data_root
-_DEFINITIONS_ROOT = _data_root / "workflow_definitions"
-_SYSTEM_DIR = _DEFINITIONS_ROOT / "system"
-_USER_DIR = _DEFINITIONS_ROOT / "user"
+
+
+def _current_data_root() -> Path:
+    """调用时解析 data_root（惰性：尊重测试对 cfg_mod.settings 的替换与运行时变更）。"""
+    from app.core.config import settings
+
+    root = Path(settings.data_root or ".data")
+    if not root.is_absolute():
+        root = _BACKEND_ROOT / root
+    return root
+
+
+def definitions_root() -> Path:
+    return _current_data_root() / "workflow_definitions"
+
+
+def system_dir() -> Path:
+    return definitions_root() / "system"
+
+
+def user_dir() -> Path:
+    return definitions_root() / "user"
+
 
 # 合法的 workflow_id 字符集（防路径穿越）
 _ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-]*$")
@@ -90,7 +105,7 @@ def _sync_system_seeds() -> None:
         return
     seed_names = {src.name for src in _SEED_SYSTEM_DIR.glob("*.json")}
     for src in sorted(_SEED_SYSTEM_DIR.glob("*.json")):
-        dest = _SYSTEM_DIR / src.name
+        dest = system_dir() / src.name
         try:
             content = _expand_seed_placeholders(src.read_text(encoding="utf-8"))
             try:
@@ -118,9 +133,9 @@ def _sync_system_seeds() -> None:
     # 孤儿清理：运行时 system 目录中已无对应种子的定义一并移除。
     # 仅覆盖 .json 定义文件；种子仍在但内容非法（上面对 continue 的场景）
     # 时旧定义保留，避免误删可用回退。
-    if not _SYSTEM_DIR.is_dir():
+    if not system_dir().is_dir():
         return
-    for stale in sorted(_SYSTEM_DIR.glob("*.json")):
+    for stale in sorted(system_dir().glob("*.json")):
         if stale.name in seed_names:
             continue
         try:
@@ -132,9 +147,9 @@ def _sync_system_seeds() -> None:
 
 def _ensure_dirs() -> None:
     """确保目录存在，并同步仓库内 system 种子模板。"""
-    _SYSTEM_DIR.mkdir(parents=True, exist_ok=True)
-    _USER_DIR.mkdir(parents=True, exist_ok=True)
-    (_USER_DIR / ".gitkeep").touch(exist_ok=True)
+    system_dir().mkdir(parents=True, exist_ok=True)
+    user_dir().mkdir(parents=True, exist_ok=True)
+    (user_dir() / ".gitkeep").touch(exist_ok=True)
     _sync_system_seeds()
 
 
@@ -222,10 +237,10 @@ def can_mutate_user_definition(
 def _resolve_file(workflow_id: str) -> Path | None:
     """在 system/ 和 user/ 目录（及打包种子目录）中查找工作流定义文件。"""
     _validate_id(workflow_id)
-    sys_file = _SYSTEM_DIR / f"{workflow_id}.json"
+    sys_file = system_dir() / f"{workflow_id}.json"
     if sys_file.exists():
         return sys_file
-    usr_file = _USER_DIR / f"{workflow_id}.json"
+    usr_file = user_dir() / f"{workflow_id}.json"
     if usr_file.exists():
         return usr_file
     seed_file = _SEED_SYSTEM_DIR / f"{workflow_id}.json"
@@ -305,7 +320,7 @@ def list_definitions() -> list[dict[str, Any]]:
     _ensure_dirs()
     results: list[dict[str, Any]] = []
 
-    for directory, default_kind in [(_SYSTEM_DIR, "system"), (_USER_DIR, "user")]:
+    for directory, default_kind in [(system_dir(), "system"), (user_dir(), "user")]:
         if not directory.exists():
             continue
         for path in sorted(directory.glob("*.json")):
@@ -378,13 +393,13 @@ def create_definition(
     _validate_id(workflow_id)
 
     # system 定义不会动态创建，预检查安全（无 TOCTOU 风险）
-    sys_file = _SYSTEM_DIR / f"{workflow_id}.json"
+    sys_file = system_dir() / f"{workflow_id}.json"
     if sys_file.exists():
         raise WorkflowExistsError(
             f"workflow_id '{workflow_id}' is reserved by system definition"
         )
 
-    usr_file = _USER_DIR / f"{workflow_id}.json"
+    usr_file = user_dir() / f"{workflow_id}.json"
 
     engine = payload.get("engine", "common")
     name = payload.get("name", workflow_id)

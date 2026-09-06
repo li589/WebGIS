@@ -95,11 +95,11 @@ def test_generic_raster_map_layer_publish(tmp_path: Path, monkeypatch: pytest.Mo
     imports_dir = tmp_path / "imports"
     imports_dir.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.paths.IMPORTS_DIR",
-        imports_dir,
+        "app.data_io.services.paths.imports_dir",
+        lambda: imports_dir,
     )
-    # 批次2 路径穿越收敛后 raster_register 不再持有 IMPORTS_DIR 模块属性
-    # （统一走 safe_import_child → paths.IMPORTS_DIR 动态解析），残留 patch
+    # 批次2 路径穿越收敛后 raster_register 不再持有 imports_dir() 模块属性
+    # （统一走 safe_import_child → paths.imports_dir() 动态解析），残留 patch
     # 已删（曾致 AttributeError，2026-08-23 P3 批次顺带修复）
 
     builder = PythonProviderResultBuilder()

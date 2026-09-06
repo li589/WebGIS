@@ -132,7 +132,12 @@ export function exportChatMarkdown(
 
 /** Pure builder for agent client_context (testable). */
 export function buildAgentClientContextPayload(input: {
-  layers: Array<{ catalogId: string; instanceId?: string; name?: string; isAdminBoundary?: boolean }>
+  layers: Array<{
+    catalogId: string
+    instanceId?: string
+    name?: string
+    isAdminBoundary?: boolean
+  }>
   mapPoint?: { lng: number; lat: number } | null
   timeline: { hour: number; date: Date; playing: boolean }
   viewport: {

@@ -371,6 +371,7 @@ async function submitCreate() {
         icon: newIcon.value.trim() || null,
         accent_color: newAccent.value.trim() || null,
         sub_categories: [],
+        hidden: false,
       },
       tid,
     )

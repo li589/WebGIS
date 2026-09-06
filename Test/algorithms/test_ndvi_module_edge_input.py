@@ -54,6 +54,21 @@ def _make_ctx(root: Path) -> NodeExecutionContext:
     )
 
 
+from ingest.ndvi import NdviStackInfo
+
+
+def _ndvi_stack_info(stack, dates):
+    """与 ingest.ndvi.load_ndvi_stack_full 返回结构对齐（模块消费 stack/dates/transform/crs）。"""
+    return NdviStackInfo(
+        stack=stack,
+        dates=dates,
+        transform=None,
+        crs=None,
+        width=int(stack.shape[1]),
+        height=int(stack.shape[0]),
+    )
+
+
 class NdviModuleEdgeInputTests(unittest.TestCase):
     def test_data_port_declared(self) -> None:
         spec = NdviDailyModule().get_spec()
@@ -68,12 +83,13 @@ class NdviModuleEdgeInputTests(unittest.TestCase):
 
             captured: dict[str, Path] = {}
 
-            def fake_load(input_dir, *, start_time, end_time):
+            def fake_load(*, input_dir, start_time, end_time):
+                _ = (start_time, end_time)
                 captured["input_dir"] = Path(str(input_dir))
-                return np.zeros((2, 2, 1)), [datetime(2025, 6, 1)]
+                return _ndvi_stack_info(np.zeros((2, 2, 1)), [datetime(2025, 6, 1)])
 
             with (
-                patch("modules.ndvi.load_ndvi_stack", side_effect=fake_load),
+                patch("modules.ndvi.load_ndvi_stack_full", side_effect=fake_load),
                 patch(
                     "modules.ndvi.process_ndvi_stack_to_daily",
                     return_value=(np.zeros((2, 2, 1)), [datetime(2025, 6, 1)]),

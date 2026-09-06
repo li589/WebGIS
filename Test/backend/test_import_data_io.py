@@ -39,14 +39,14 @@ def imports_tmp(tmp_path, monkeypatch):
     docs = imports_dir / "_documents"
 
     for mod in (import_paths, upload_mod, vector_mod, document_mod, export_mod, jobs_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_dir)
-        if hasattr(mod, "STAGING_DIR"):
-            monkeypatch.setattr(mod, "STAGING_DIR", staging)
-        if hasattr(mod, "JOBS_DIR"):
-            monkeypatch.setattr(mod, "JOBS_DIR", jobs)
-        if hasattr(mod, "DOC_SESSIONS_DIR"):
-            monkeypatch.setattr(mod, "DOC_SESSIONS_DIR", docs)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_dir)
+        if hasattr(mod, "staging_dir"):
+            monkeypatch.setattr(mod, "staging_dir", lambda: staging)
+        if hasattr(mod, "jobs_dir"):
+            monkeypatch.setattr(mod, "jobs_dir", lambda: jobs)
+        if hasattr(mod, "doc_sessions_dir"):
+            monkeypatch.setattr(mod, "doc_sessions_dir", lambda: docs)
 
     import_paths.ensure_imports_root()
     return root
@@ -240,7 +240,7 @@ def test_delete_imported_layer_dir(imports_tmp):
     path.write_text(json.dumps(gj), encoding="utf-8")
     layer_id = import_vector_from_paths([path])["layer_id"]
     assert layer_id.startswith("imported")
-    dest = import_paths.IMPORTS_DIR / layer_id
+    dest = import_paths.imports_dir() / layer_id
     assert dest.exists()
     # 模拟路由删除
     import shutil
@@ -342,7 +342,7 @@ def test_export_batch_zip_and_jobs(imports_tmp):
     # staging TTL：伪造过期目录
     meta = init_upload(filename="old.geojson", size=4)
     upload_id = meta["upload_id"]
-    dest = import_paths.STAGING_DIR / upload_id
+    dest = import_paths.staging_dir() / upload_id
     meta_path = dest / "meta.json"
     data = json.loads(meta_path.read_text(encoding="utf-8"))
     data["created_at"] = 0

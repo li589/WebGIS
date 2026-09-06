@@ -15,9 +15,9 @@ from app.data_io.services.document import _detect_csv_encoding, create_document_
 def docs_tmp(tmp_path, monkeypatch):
     imports_dir = tmp_path / "imports"
     docs = imports_dir / "_documents"
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_dir)
-    monkeypatch.setattr(import_paths, "DOC_SESSIONS_DIR", docs)
-    monkeypatch.setattr(document_mod, "DOC_SESSIONS_DIR", docs)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_dir)
+    monkeypatch.setattr(import_paths, "doc_sessions_dir", lambda: docs)
+    monkeypatch.setattr(document_mod, "doc_sessions_dir", lambda: docs)
     import_paths.ensure_imports_root()
     return docs
 

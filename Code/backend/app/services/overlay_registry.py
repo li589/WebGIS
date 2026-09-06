@@ -657,7 +657,7 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
 
     Import commits may run in a Celery worker / one-off process while the
     FastAPI process has a separate ``_REGISTRY``. Rehydrate from
-    ``IMPORTS_DIR/<layer_id>`` so ``/overlay-preview`` works cross-process.
+    ``<imports>/<layer_id>`` so ``/overlay-preview`` works cross-process.
     """
     if not layer_id.startswith("imported-"):
         return None
@@ -806,10 +806,10 @@ def list_overlay_ids() -> list[str]:
     with _REGISTRY_LOCK:
         ids = set(_REGISTRY.keys())
     try:
-        from app.data_io.services.paths import IMPORTS_DIR
+        from app.data_io.services.paths import imports_dir
 
-        if IMPORTS_DIR.is_dir():
-            for child in IMPORTS_DIR.iterdir():
+        if imports_dir().is_dir():
+            for child in imports_dir().iterdir():
                 if not (
                     child.is_dir()
                     and child.name.startswith("imported-")

@@ -26,10 +26,8 @@ from pydantic import BaseModel, Field, model_validator
 from app.api.deps import require_data_transfer_access
 from app.services.crs import crs_detector, crs_transformer
 from app.services.crs.crs_registry import to_api_payload, to_api_payload_expanded
-from app.data_io.services.paths import (
-    MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES,
-)
-from app.data_io.services.paths import IMPORTS_DIR as _IMPORTS_DIR
+from app.data_io.services.paths import MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES
+from app.data_io.services.paths import imports_dir as _IMPORTS_DIR
 from app.data_io.services.paths import safe_import_child as _safe_import_child
 from app.data_io.services.paths import assert_quota_available as _assert_quota_available
 from app.data_io.services.paths import QuotaExceededError as _QuotaExceededError
@@ -155,7 +153,7 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
 
     # 生成唯一 ID 和存储目录
     layer_id = f"imported-{uuid.uuid4().hex[:12]}"
-    dest_dir = _IMPORTS_DIR / layer_id
+    dest_dir = _IMPORTS_DIR() / layer_id
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     # 保存上传文件（带大小上限）

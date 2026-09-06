@@ -75,8 +75,8 @@ def test_upsert_refreshes_when_mat_newer(
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+        lambda: imports,
     )
 
     block_dir = tmp_path / "blocks"
@@ -125,8 +125,8 @@ def test_omega_reuses_legacy_omega_block_layer_id(
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+        lambda: imports,
     )
     from app.data_io.services.raster_timeseries import stable_imported_layer_id
 
@@ -156,8 +156,8 @@ def test_layer_key_dedupes_across_runs(
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+        lambda: imports,
     )
 
     first_dir = tmp_path / "blocks_a"
@@ -197,8 +197,8 @@ def test_layer_key_empty_falls_back_to_run_id(
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+        lambda: imports,
     )
     from app.data_io.services.raster_timeseries import stable_imported_layer_id
 
@@ -223,8 +223,8 @@ def test_upsert_default_time_skips_all_nodata_trailing_day(
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+        lambda: imports,
     )
 
     block_dir = tmp_path / "blocks"
@@ -270,8 +270,8 @@ def test_upsert_ndvi_daily_dir_timeseries(
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(
-        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+        lambda: imports,
     )
 
     block_dir = tmp_path / "ndvi_daily"

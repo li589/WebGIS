@@ -57,10 +57,10 @@ def find_existing_science_layer(
     stable = import_paths.stable_import_layer_id(
         want_src, want_var, want_grid, str(want_time)
     )
-    if (import_paths.IMPORTS_DIR / stable).exists():
+    if (import_paths.imports_dir() / stable).exists():
         return stable
 
-    for child in import_paths.IMPORTS_DIR.iterdir():
+    for child in import_paths.imports_dir().iterdir():
         if not child.is_dir() or not child.name.startswith("imported"):
             continue
         if child.name.startswith("_"):
@@ -116,7 +116,7 @@ def _resolve_science_layer_id(
     )
     # 覆盖时优先复用已有目录（含旧随机 id），避免配额净增
     target_id = existing or base_id
-    exists = (import_paths.IMPORTS_DIR / target_id).exists()
+    exists = (import_paths.imports_dir() / target_id).exists()
 
     if conflict_policy == "overwrite":
         return target_id, exists
@@ -156,7 +156,7 @@ def commit_science_raster_variable(
     vmax: float | None = None,
     cell_registration: str | None = None,
 ) -> dict[str, Any]:
-    tmp_dir = import_paths.IMPORTS_DIR / "_tmp"
+    tmp_dir = import_paths.imports_dir() / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     safe_var = "".join(c if c.isalnum() or c in "-_" else "_" for c in variable_id)[:48]
     out_tif = tmp_dir / f"{upload_id}_{safe_var}.tif"
@@ -205,7 +205,7 @@ def commit_science_raster_variable(
         vmin=vmin,
         vmax=vmax,
     )
-    layer_dir = import_paths.IMPORTS_DIR / result["layer_id"]
+    layer_dir = import_paths.imports_dir() / result["layer_id"]
     with contextlib.suppress(OSError):
         shutil.copy2(path, layer_dir / path.name)
     out_tif.unlink(missing_ok=True)
@@ -288,7 +288,7 @@ def commit_algorithm_geotiff(
     )
 
     resolved_id = layer_id
-    dest = import_paths.IMPORTS_DIR / resolved_id
+    dest = import_paths.imports_dir() / resolved_id
     exists = dest.exists()
     if conflict_policy == "error" and exists:
         raise ValueError(f"同名导入已存在: {resolved_id}")
@@ -363,7 +363,7 @@ def commit_raster_upload(
     ext = path.suffix.lower()
     if ext in {".tif", ".tiff"}:
         layer_id = import_paths.stable_import_layer_id(Path(name).name, "geotiff")
-        dest = import_paths.IMPORTS_DIR / layer_id
+        dest = import_paths.imports_dir() / layer_id
         replace = conflict_policy == "overwrite" and dest.exists()
         if conflict_policy == "error" and dest.exists():
             raise ValueError(f"同名导入已存在: {layer_id}。请选择覆盖或另存为新图层。")

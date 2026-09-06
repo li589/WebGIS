@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-from app.data_io.services.paths import JOBS_DIR, ensure_imports_root, safe_import_child
+from app.data_io.services.paths import jobs_dir, ensure_imports_root, safe_import_child
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ JobHandler = Callable[[dict[str, Any]], dict[str, Any]]
 def _job_path(job_id: str) -> Path:
     ensure_imports_root()
     # 安审 2026-08-22（B-3）：job_id 纯名称校验，防越界读任意 JSON 文件
-    safe = safe_import_child(job_id, root=JOBS_DIR)
+    safe = safe_import_child(job_id, root=jobs_dir())
     return safe.with_name(safe.name + ".json")
 
 
@@ -100,7 +100,7 @@ def list_jobs(
     ensure_imports_root()
     items: list[dict[str, Any]] = []
     for path in sorted(
-        JOBS_DIR.glob("job-*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        jobs_dir().glob("job-*.json"), key=lambda p: p.stat().st_mtime, reverse=True
     ):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
