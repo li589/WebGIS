@@ -75,8 +75,12 @@ const displayLabel = (l: ActiveLayer): string =>
 const displayNameByOverlayId = computed(() => {
   const map = new Map<string, string>()
   for (const l of activeLayers.value) {
+    const label = displayLabel(l)
+    // 统计请求的 layer_id 既可能是 overlay id（imported-*），也可能是
+    // catalog id（wf-run-* 槽位 / catalog 栅格，见 resolveRasterOverlayIdFromActiveLayer）
     const oid = l.importedRaster?.overlayLayerId
-    if (oid && !map.has(oid)) map.set(oid, displayLabel(l))
+    if (oid) map.set(oid, label)
+    if (l.catalogId && !map.has(l.catalogId)) map.set(l.catalogId, label)
   }
   return map
 })
@@ -131,6 +135,11 @@ function onHeadPointerDown(e: PointerEvent) {
 function headRectAsFloatPos(e: PointerEvent): { x: number; y: number } {
   const rect = (e.currentTarget as HTMLElement).closest('.auto-stats')?.getBoundingClientRect()
   return rect ? { x: rect.left, y: rect.top } : { x: e.clientX, y: e.clientY }
+}
+
+function dockBack() {
+  floatPos.value = null
+  saveUiState()
 }
 
 function toggleCollapsed() {
@@ -231,7 +240,12 @@ function formatValue(val: number | null): string {
     :class="{ 'auto-stats--floating': isFloating, 'auto-stats--collapsed': collapsed }"
     :style="floatingStyle"
   >
-    <div class="auto-stats-head" @pointerdown="onHeadPointerDown">
+    <div
+      class="auto-stats-head"
+      title="拖动移动 · 双击返回面板"
+      @pointerdown="onHeadPointerDown"
+      @dblclick="dockBack"
+    >
       <div :class="{ 'auto-stats-drag': true }">
         <div class="section-kicker">自动统计</div>
         <h3 class="auto-stats-title">
@@ -253,12 +267,18 @@ function formatValue(val: number | null): string {
         <button
           class="auto-stats-refresh"
           :title="collapsed ? '展开' : '折叠'"
+          :aria-label="collapsed ? '展开统计面板' : '折叠统计面板'"
           @click="toggleCollapsed"
         >
           <ChevronUp v-if="!collapsed" :size="12" />
           <ChevronDown v-else :size="12" />
         </button>
-        <button class="auto-stats-refresh" title="隐藏（可从恢复条还原）" @click="hideCard">
+        <button
+          class="auto-stats-refresh"
+          title="隐藏（可从恢复条还原）"
+          aria-label="隐藏统计面板"
+          @click="hideCard"
+        >
           <X :size="12" />
         </button>
       </div>
