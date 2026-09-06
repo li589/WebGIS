@@ -1226,7 +1226,10 @@ function onKeydown(ev: KeyboardEvent) {
               <p v-if="sessionListError && !sessionsLoading" class="agent-session-empty">
                 会话列表加载失败：{{ sessionListError }}
               </p>
-              <p v-else-if="!sessionSummaries.length && !sessionsLoading" class="agent-session-empty">
+              <p
+                v-else-if="!sessionSummaries.length && !sessionsLoading"
+                class="agent-session-empty"
+              >
                 暂无服务端会话
               </p>
               <button

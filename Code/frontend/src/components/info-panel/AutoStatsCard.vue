@@ -234,110 +234,110 @@ function formatValue(val: number | null): string {
     自动统计
   </button>
   <Teleport to="body" :disabled="!isFloating">
-  <section
-    v-if="!hidden && summary"
-    class="auto-stats"
-    :class="{ 'auto-stats--floating': isFloating, 'auto-stats--collapsed': collapsed }"
-    :style="floatingStyle"
-  >
-    <div
-      class="auto-stats-head"
-      title="拖动移动 · 双击返回面板"
-      @pointerdown="onHeadPointerDown"
-      @dblclick="dockBack"
+    <section
+      v-if="!hidden && summary"
+      class="auto-stats"
+      :class="{ 'auto-stats--floating': isFloating, 'auto-stats--collapsed': collapsed }"
+      :style="floatingStyle"
     >
-      <div :class="{ 'auto-stats-drag': true }">
-        <div class="section-kicker">自动统计</div>
-        <h3 class="auto-stats-title">
-          矢量几何 + 可见栅格
-          <span class="auto-stats-meta">
-            {{ summary.polygonCount }} 面 · {{ summary.lineCount }} 线
-          </span>
-        </h3>
+      <div
+        class="auto-stats-head"
+        title="拖动移动 · 双击返回面板"
+        @pointerdown="onHeadPointerDown"
+        @dblclick="dockBack"
+      >
+        <div :class="{ 'auto-stats-drag': true }">
+          <div class="section-kicker">自动统计</div>
+          <h3 class="auto-stats-title">
+            矢量几何 + 可见栅格
+            <span class="auto-stats-meta">
+              {{ summary.polygonCount }} 面 · {{ summary.lineCount }} 线
+            </span>
+          </h3>
+        </div>
+        <div class="auto-stats-head-actions">
+          <button
+            class="auto-stats-refresh"
+            :disabled="loading"
+            title="刷新统计"
+            @click="fetchStats"
+          >
+            <RefreshCw :size="12" :class="{ spinning: loading }" />
+          </button>
+          <button
+            class="auto-stats-refresh"
+            :title="collapsed ? '展开' : '折叠'"
+            :aria-label="collapsed ? '展开统计面板' : '折叠统计面板'"
+            @click="toggleCollapsed"
+          >
+            <ChevronUp v-if="!collapsed" :size="12" />
+            <ChevronDown v-else :size="12" />
+          </button>
+          <button
+            class="auto-stats-refresh"
+            title="隐藏（可从恢复条还原）"
+            aria-label="隐藏统计面板"
+            @click="hideCard"
+          >
+            <X :size="12" />
+          </button>
+        </div>
       </div>
-      <div class="auto-stats-head-actions">
-        <button
-          class="auto-stats-refresh"
-          :disabled="loading"
-          title="刷新统计"
-          @click="fetchStats"
-        >
-          <RefreshCw :size="12" :class="{ spinning: loading }" />
-        </button>
-        <button
-          class="auto-stats-refresh"
-          :title="collapsed ? '展开' : '折叠'"
-          :aria-label="collapsed ? '展开统计面板' : '折叠统计面板'"
-          @click="toggleCollapsed"
-        >
-          <ChevronUp v-if="!collapsed" :size="12" />
-          <ChevronDown v-else :size="12" />
-        </button>
-        <button
-          class="auto-stats-refresh"
-          title="隐藏（可从恢复条还原）"
-          aria-label="隐藏统计面板"
-          @click="hideCard"
-        >
-          <X :size="12" />
-        </button>
+
+      <div class="geom-stats">
+        <div v-if="summary.polygonCount > 0" class="geom-stat">
+          <span class="geom-label">测地线面积</span>
+          <strong class="geom-value">{{ formatArea(summary.areaM2) }}</strong>
+        </div>
+        <div class="geom-stat">
+          <span class="geom-label">{{ summary.polygonCount > 0 ? '周长' : '线总长' }}</span>
+          <strong class="geom-value">{{ formatLength(summary.perimeterM) }}</strong>
+        </div>
       </div>
-    </div>
 
-    <div class="geom-stats">
-      <div v-if="summary.polygonCount > 0" class="geom-stat">
-        <span class="geom-label">测地线面积</span>
-        <strong class="geom-value">{{ formatArea(summary.areaM2) }}</strong>
+      <div v-show="!collapsed" class="auto-stats-body">
+        <div v-if="loading" class="auto-stats-loading">
+          <span class="loading-dot"></span>
+          <span>正在统计可见栅格…</span>
+        </div>
+
+        <div v-else-if="error" class="auto-stats-error">
+          <AlertCircle :size="14" />
+          <span>{{ error }}</span>
+          <button class="auto-stats-retry" @click="fetchStats">重试</button>
+        </div>
+
+        <div v-else-if="stats.length === 0" class="auto-stats-empty">
+          导入栅格图层后可自动统计选区像元数与最大/最小值
+        </div>
+
+        <div v-else class="auto-stats-table-wrap">
+          <table class="auto-stats-table">
+            <thead>
+              <tr>
+                <th>图层</th>
+                <th>像元数</th>
+                <th>最大值</th>
+                <th>最小值</th>
+                <th>均值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in stats" :key="item.layer_id">
+                <td class="stat-name" :title="statDisplayName(item)">
+                  {{ statDisplayName(item) }}
+                  <span v-if="item.unit" class="stat-unit">({{ item.unit }})</span>
+                </td>
+                <td class="stat-value">{{ item.count.toLocaleString() }}</td>
+                <td class="stat-value">{{ formatValue(item.max) }}</td>
+                <td class="stat-value">{{ formatValue(item.min) }}</td>
+                <td class="stat-value">{{ formatValue(item.mean) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <div class="geom-stat">
-        <span class="geom-label">{{ summary.polygonCount > 0 ? '周长' : '线总长' }}</span>
-        <strong class="geom-value">{{ formatLength(summary.perimeterM) }}</strong>
-      </div>
-    </div>
-
-    <div v-show="!collapsed" class="auto-stats-body">
-    <div v-if="loading" class="auto-stats-loading">
-      <span class="loading-dot"></span>
-      <span>正在统计可见栅格…</span>
-    </div>
-
-    <div v-else-if="error" class="auto-stats-error">
-      <AlertCircle :size="14" />
-      <span>{{ error }}</span>
-      <button class="auto-stats-retry" @click="fetchStats">重试</button>
-    </div>
-
-    <div v-else-if="stats.length === 0" class="auto-stats-empty">
-      导入栅格图层后可自动统计选区像元数与最大/最小值
-    </div>
-
-    <div v-else class="auto-stats-table-wrap">
-      <table class="auto-stats-table">
-        <thead>
-          <tr>
-            <th>图层</th>
-            <th>像元数</th>
-            <th>最大值</th>
-            <th>最小值</th>
-            <th>均值</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in stats" :key="item.layer_id">
-            <td class="stat-name" :title="statDisplayName(item)">
-              {{ statDisplayName(item) }}
-              <span v-if="item.unit" class="stat-unit">({{ item.unit }})</span>
-            </td>
-            <td class="stat-value">{{ item.count.toLocaleString() }}</td>
-            <td class="stat-value">{{ formatValue(item.max) }}</td>
-            <td class="stat-value">{{ formatValue(item.min) }}</td>
-            <td class="stat-value">{{ formatValue(item.mean) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    </div>
-  </section>
+    </section>
   </Teleport>
 </template>
 

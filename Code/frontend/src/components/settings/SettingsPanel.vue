@@ -256,7 +256,7 @@ function onNavResizePointerUp(_event: PointerEvent) {
   window.removeEventListener('pointerup', onNavResizePointerUp)
   if (navResizeCaptureEl && navResizePointerId !== null) {
     try {
-      (navResizeCaptureEl as HTMLElement).releasePointerCapture(navResizePointerId)
+      ;(navResizeCaptureEl as HTMLElement).releasePointerCapture(navResizePointerId)
     } catch {
       /* 指针已释放 */
     }

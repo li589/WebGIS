@@ -41,7 +41,10 @@ export function humanizeStageMessage(raw: string): string {
   const s = raw.trim()
 
   // Stage D: 361/365 (processed=0, resumed=25, skipped=336)
-  const stage = /^Stage\s*([A-D])\s*:\s*(\d+)\/(\d+)\s*\(processed=(\d+),\s*resumed=(\d+),\s*skipped=(\d+)\)/i.exec(s)
+  const stage =
+    /^Stage\s*([A-D])\s*:\s*(\d+)\/(\d+)\s*\(processed=(\d+),\s*resumed=(\d+),\s*skipped=(\d+)\)/i.exec(
+      s,
+    )
   if (stage) {
     const letter = stage[1]!
     const done = stage[2]!
@@ -50,7 +53,13 @@ export function humanizeStageMessage(raw: string): string {
     const resumed = stage[5]!
     const skipped = stage[6]!
     const label =
-      letter === 'D' ? '反演回代' : letter === 'A' ? '逐日缓存' : letter === 'B' ? '气候态' : '参数提取'
+      letter === 'D'
+        ? '反演回代'
+        : letter === 'A'
+          ? '逐日缓存'
+          : letter === 'B'
+            ? '气候态'
+            : '参数提取'
     return `反演阶段 ${letter}（${label}）：已完成 ${done}/${total} 天（新计算 ${processed}，复用缓存 ${resumed}，跳过 ${skipped}）`
   }
 

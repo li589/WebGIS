@@ -743,9 +743,10 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
               nativeStep: nativeStep || (timeList?.length ? '8d' : null),
               timeList,
               followPolicy: timeList?.length ? 'containing' : undefined,
-            defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+              defaultTime:
+                (item as { defaultTime?: string }).defaultTime ??
+                matMeta?.default_time ??
+                undefined,
             })
         groupMember.dataState = 'imported'
         if (
@@ -783,9 +784,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
-            defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+          defaultTime:
+            (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
         })
         groupMember.dataState = 'imported'
         if (
@@ -841,8 +841,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
             defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+              (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
           })
           omegaPlaceholder.dataState = 'imported'
           omegaPlaceholder.name = productTagLabel('OMEGA')
@@ -932,9 +931,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
-            defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+          defaultTime:
+            (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
         })
         existingActive.dataState = 'imported'
         if (userPalette) existingActive.paletteOverride = userPalette
@@ -1010,9 +1008,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
-            defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+          defaultTime:
+            (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
         })
         slot.dataState = 'imported'
         if (!slot.name || isEnglishInversionCatalogId(slot.name)) {
@@ -1064,8 +1061,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
             defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+              (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
           })
           catalogTarget.dataState = 'imported'
           if (!catalogTarget.name || isEnglishInversionCatalogId(catalogTarget.name)) {
@@ -1080,9 +1076,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         nativeStep: nativeStep || (timeList?.length ? '8d' : null),
         timeList,
         followPolicy: timeList?.length ? 'containing' : undefined,
-            defaultTime:
-              (item as { defaultTime?: string }).defaultTime ??
-              matMeta?.default_time ?? undefined,
+        defaultTime:
+          (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
       })
       if (added && groupByRun) {
         added.runGroupId = groupByRun.groupId
@@ -1454,7 +1449,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         }
       }
       if (deadIds.length) {
-    for (const id of deadIds) {
+        for (const id of deadIds) {
           deps.removeLayer(id, { dismiss: false, deleteBackendFile: false })
         }
         g.memberInstanceIds = g.memberInstanceIds.filter((id) => !deadIds.includes(id))
