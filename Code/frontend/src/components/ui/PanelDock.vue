@@ -486,6 +486,9 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 .panel-dock__body-clip {
   display: grid;
   grid-template-rows: 1fr;
+  /* 原 body 作为 frame 直接 flex 子元素持有 flex:1（撑满剩余高度）；
+     引入裁剪容器后由本层接管，否则内容高度不足时内卡下缘与外框分离 */
+  flex: 1 1 auto;
   min-height: 0;
   transition:
     grid-template-rows var(--motion-sheet-duration) var(--motion-surface-ease),
