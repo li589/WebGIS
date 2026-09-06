@@ -7,6 +7,7 @@ import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
 import { formatWorkflowCommandChip } from '../../utils/workflow-error-messages'
+import { humanizeStageMessage } from '../../utils/humanize-stage-message'
 import type { JobStatus } from '../../stores/layers/types'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import { filterDisplayableNodeProgress } from '../../stores/layers/workflow-progress'
@@ -931,8 +932,9 @@ onBeforeUnmount(() => {
                     )"
                 :key="`${item.jobLayer.jobId}-${evtIdx}-${evt}`"
                 :class="{ 'wf-event-error': /ERROR|失败|failed/i.test(evt) }"
+                :title="evt"
               >
-                {{ evt }}
+                {{ humanizeStageMessage(evt) }}
               </li>
               <button
                 v-if="
@@ -987,7 +989,8 @@ onBeforeUnmount(() => {
                 <span
                   v-if="np.message && !nodeMessageRedundantWithDetail(np)"
                   class="node-progress-message"
-                  >{{ np.message }}</span
+                  :title="np.message"
+                  >{{ humanizeStageMessage(np.message) }}</span
                 >
                 <!-- P0-10：节点产物下载入口（/artifacts/{id} 由后端 FileResponse 直接下载） -->
                 <div v-if="np.artifacts?.length" class="node-artifacts">

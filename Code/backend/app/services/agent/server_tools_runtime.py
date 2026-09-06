@@ -528,13 +528,35 @@ def _sample_layer_point(
             "error": "未指定 catalog_id，且客户端无活动图层",
         }
 
+    # 运行时栅格（imported-*/wf-run-*）：client_context 携带 overlay_layer_id，
+    # catalog_id → overlay id 映射（overlay 采样以实际 overlay id 为准）
+    overlay_id_by_catalog: dict[str, str] = {}
+    if isinstance(client_context, dict):
+        layers_ctx = client_context.get("active_layers")
+        if isinstance(layers_ctx, list):
+            for layer in layers_ctx:
+                if not isinstance(layer, dict):
+                    continue
+                cid = str(layer.get("catalog_id") or "").strip()
+                oid = str(layer.get("overlay_layer_id") or "").strip()
+                if cid and oid:
+                    overlay_id_by_catalog[cid] = oid
+
     accessible = set(_filter_ids(targets, cred))
     samples: list[dict[str, Any]] = []
     for lid in targets:
         if lid not in accessible:
             samples.append({"catalog_id": lid, "ok": False, "error": "无权访问该图层"})
             continue
-        samples.append(_sample_one_layer(lid, lng=lng, lat=lat, time=time_key))
+        samples.append(
+            _sample_one_layer(
+                lid,
+                lng=lng,
+                lat=lat,
+                time=time_key,
+                overlay_id=overlay_id_by_catalog.get(lid),
+            )
+        )
 
     return {
         "ok": True,
@@ -552,6 +574,7 @@ def _sample_one_layer(
     lng: float,
     lat: float,
     time: str | None,
+    overlay_id: str | None = None,
 ) -> dict[str, Any]:
     from app.services.layer_catalog import get_layer_descriptor
     from app.services.overlay_registry import get_overlay_spec
@@ -562,7 +585,8 @@ def _sample_one_layer(
     if desc is not None:
         display = str(getattr(desc, "display_name", "") or catalog_id)
 
-    spec = get_overlay_spec(catalog_id)
+    # 运行时栅格图层：catalog_id 无 overlay spec，须用实际 overlay id 采样
+    spec = get_overlay_spec(overlay_id or catalog_id)
     if spec is not None:
         try:
             raw = spec.resolve_value(lng, lat, time)

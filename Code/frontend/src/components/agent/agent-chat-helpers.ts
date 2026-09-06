@@ -137,6 +137,8 @@ export function buildAgentClientContextPayload(input: {
     instanceId?: string
     name?: string
     isAdminBoundary?: boolean
+    /** 运行时栅格 overlay id（imported-*），供 Agent 点查采样 */
+    overlayLayerId?: string | null
   }>
   mapPoint?: { lng: number; lat: number } | null
   timeline: { hour: number; date: Date; playing: boolean }
@@ -148,7 +150,12 @@ export function buildAgentClientContextPayload(input: {
   basemapId: string
 }): {
   active_catalog_ids: string[]
-  active_layers: Array<{ catalog_id: string; instance_id?: string; name?: string }>
+  active_layers: Array<{
+    catalog_id: string
+    instance_id?: string
+    name?: string
+    overlay_layer_id?: string | null
+  }>
   map_point?: { lng: number; lat: number }
   timeline: { hour: number; date: string; playing: boolean }
   viewport?: {
@@ -165,6 +172,7 @@ export function buildAgentClientContextPayload(input: {
       catalog_id: l.catalogId,
       instance_id: l.instanceId,
       name: l.name || l.catalogId,
+      overlay_layer_id: l.overlayLayerId || null,
     })),
     timeline: {
       hour: input.timeline.hour,

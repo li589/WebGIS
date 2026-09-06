@@ -718,6 +718,7 @@ function buildClientContext() {
       instanceId: l.instanceId,
       name: l.name || l.catalogId,
       isAdminBoundary: l.isAdminBoundary,
+      overlayLayerId: l.importedRaster?.overlayLayerId ?? null,
     })),
     mapPoint: agentMapPoint.value,
     timeline: {
