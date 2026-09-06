@@ -31,6 +31,12 @@ export interface SettingsUiLocal {
   panelWidthPx?: number
   /** 设置面板左菜单列宽度（px）；未设则用默认 8.5rem */
   settingsNavWidthPx?: number
+  /** 自动统计卡片折叠态 */
+  autoStatsCollapsed?: boolean
+  /** 自动统计卡片隐藏（恢复条还原） */
+  autoStatsHidden?: boolean
+  /** 自动统计卡片浮动位置（拖离面板后） */
+  autoStatsFloat?: { x: number; y: number } | null
   /** 系统日志侧栏宽度（px）；未设则用默认 26rem */
   logPanelWidthPx?: number
   /** 分析工具运行成功后是否在地图显示新图层（默认开启） */

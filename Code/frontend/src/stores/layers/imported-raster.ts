@@ -28,6 +28,8 @@ export interface ImportedRasterPayload {
   followPolicy?: TemporalFollowPolicy
   /** 当前生效切片标签（跟随策略结果） */
   effectiveTimeLabel?: string
+  /** 物化链给定的默认时刻（时间轴覆盖外时的初始展示槽） */
+  defaultTime?: string
 }
 
 export function buildImportedRasterPayload(
@@ -43,6 +45,8 @@ export function buildImportedRasterPayload(
     timeSlices?: TimeSlice[]
     followPolicy?: TemporalFollowPolicy
     effectiveTimeLabel?: string
+    /** 物化链给定的默认时刻（materialize default_time）：时间轴在覆盖外时的初始展示槽 */
+    defaultTime?: string
   },
 ): ImportedRasterPayload {
   const timeList = options?.timeList
@@ -63,6 +67,7 @@ export function buildImportedRasterPayload(
     timeList,
     timeSlices,
     followPolicy: options?.followPolicy,
-    effectiveTimeLabel: options?.effectiveTimeLabel,
+    effectiveTimeLabel: options?.effectiveTimeLabel ?? options?.defaultTime,
+    defaultTime: options?.defaultTime,
   }
 }

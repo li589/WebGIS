@@ -200,7 +200,10 @@ def list_block_mats(
             continue
         if end and block_start > end:
             continue
-        out.append((f"{block_start}_{block_end}", path))
+        # 单日块标签归一：YYYYMMDD（start==end 时不重复后缀，FE 显示
+        # "12-03 → 12-03" 的同日重复即源于此）。8 日块保持 start_end。
+        label = block_start if block_end == block_start else f"{block_start}_{block_end}"
+        out.append((label, path))
     out.sort(key=lambda x: x[0])
     return out
 

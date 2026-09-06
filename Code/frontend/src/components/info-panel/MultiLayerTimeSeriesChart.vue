@@ -123,12 +123,12 @@ const echartsOption = computed(() => {
       left: 52,
       right: 16,
       top: props.title ? (showLegend.value ? 56 : 36) : showLegend.value ? 28 : 12,
-      bottom: showDataZoom.value ? 48 : 28,
+      bottom: showDataZoom.value ? 72 : 28,
     },
     dataZoom: showDataZoom.value
       ? [
           { type: 'inside', start: 0, end: 100 },
-          { type: 'slider', height: 16, bottom: 8 },
+          { type: 'slider', height: 18, bottom: 8 },
         ]
       : undefined,
     xAxis: {

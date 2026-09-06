@@ -358,6 +358,7 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     if (vertices.length < 3) return
     options.addFeature(buildPolygonFeature(vertices))
     options.clearActiveVertices()
+    options.setDrawingFlag(false)
     syncAll()
     options.scheduleDraftPersist()
   }
@@ -367,6 +368,7 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     if (vertices.length < 2) return
     options.addFeature(buildLineFeature(vertices))
     options.clearActiveVertices()
+    options.setDrawingFlag(false)
     syncAll()
     options.scheduleDraftPersist()
   }
@@ -386,6 +388,9 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     }
 
     options.addVertex(point)
+    // 多边形/线：落首点即进入绘制态——预览连线（MapLibre path + canvas 虚线）
+    // 均以 isDrawing 为前提，缺省时过程连线不可见（仅封闭后可见）
+    options.setDrawingFlag(true)
     syncAll()
   }
 
@@ -417,6 +422,9 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     e.preventDefault()
     if (options.getDrawState().drawMode === 'rectangle') return
     options.undoLastVertex()
+    if (options.getDrawState().activeVertices.length === 0) {
+      options.setDrawingFlag(false)
+    }
     syncAll()
   }
 

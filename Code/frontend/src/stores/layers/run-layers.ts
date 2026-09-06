@@ -49,7 +49,10 @@ export interface RunLayersSliceDeps {
     jobLayer?: JobLayerItem,
     options?: { skipAutoRun?: boolean },
   ) => void
-  removeLayer: (instanceId: string) => void
+  removeLayer: (
+    instanceId: string,
+    opts?: { dismiss?: boolean; deleteBackendFile?: boolean },
+  ) => void
   assignLayerAccent: (preferred?: string | null) => {
     accentColor: string
     accentGlow: string
@@ -76,6 +79,7 @@ export interface RunLayersSliceDeps {
       nativeStep?: string | null
       timeList?: string[]
       followPolicy?: import('../../utils/temporal-interval').TemporalFollowPolicy
+      defaultTime?: string
     },
   ) => ActiveLayer
 }
@@ -739,6 +743,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
               nativeStep: nativeStep || (timeList?.length ? '8d' : null),
               timeList,
               followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
             })
         groupMember.dataState = 'imported'
         if (
@@ -776,6 +783,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
         })
         groupMember.dataState = 'imported'
         if (
@@ -805,7 +815,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
                 l.jobLayer?.status === 'cancelled'),
           )
         for (const red of redundantMembers) {
-          deps.removeLayer(red.instanceId)
+          deps.removeLayer(red.instanceId, { dismiss: false, deleteBackendFile: false })
           groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
             (id) => id !== red.instanceId,
           )
@@ -830,6 +840,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             nativeStep: nativeStep || (timeList?.length ? '8d' : null),
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
           })
           omegaPlaceholder.dataState = 'imported'
           omegaPlaceholder.name = productTagLabel('OMEGA')
@@ -919,6 +932,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
         })
         existingActive.dataState = 'imported'
         if (userPalette) existingActive.paletteOverride = userPalette
@@ -994,6 +1010,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
         })
         slot.dataState = 'imported'
         if (!slot.name || isEnglishInversionCatalogId(slot.name)) {
@@ -1019,7 +1038,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
                 l.jobLayer?.status === 'cancelled'),
           )
         for (const red of redundantMembers) {
-          deps.removeLayer(red.instanceId)
+          deps.removeLayer(red.instanceId, { dismiss: false, deleteBackendFile: false })
           groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
             (id) => id !== red.instanceId,
           )
@@ -1044,6 +1063,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             nativeStep: nativeStep || (timeList?.length ? '8d' : null),
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
           })
           catalogTarget.dataState = 'imported'
           if (!catalogTarget.name || isEnglishInversionCatalogId(catalogTarget.name)) {
@@ -1058,6 +1080,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         nativeStep: nativeStep || (timeList?.length ? '8d' : null),
         timeList,
         followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ??
+              matMeta?.default_time ?? undefined,
       })
       if (added && groupByRun) {
         added.runGroupId = groupByRun.groupId
@@ -1368,7 +1393,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     }
     for (const instanceId of removeIds) {
       // 占位无 overlay：removeLayer 不会删后端文件
-      deps.removeLayer(instanceId)
+      deps.removeLayer(instanceId, { dismiss: false, deleteBackendFile: false })
     }
 
     const left = runLayerGroups.value.find((x) => x.groupId === g.groupId)
@@ -1429,8 +1454,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         }
       }
       if (deadIds.length) {
-        for (const id of deadIds) {
-          deps.removeLayer(id)
+    for (const id of deadIds) {
+          deps.removeLayer(id, { dismiss: false, deleteBackendFile: false })
         }
         g.memberInstanceIds = g.memberInstanceIds.filter((id) => !deadIds.includes(id))
       }

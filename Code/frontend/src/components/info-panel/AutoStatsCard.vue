@@ -7,12 +7,16 @@
  * 像元数、最大值、最小值、均值
  */
 import { computed, ref, watch } from 'vue'
-import { AlertCircle, RefreshCw } from '../ui/icons'
+import { AlertCircle, RefreshCw, ChevronUp, ChevronDown, X } from '../ui/icons'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { formatArea, formatLength, summarizeFeatureCollection } from '../map/geometry-stats'
+import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
+import { resolveLayerDisplayLabel } from '../../stores/layers/layer-naming'
+import { getCatalogDisplayName } from '../../stores/layers/catalog-builders'
+import type { ActiveLayer } from '../../stores/layers/types'
 import {
   activeLayerHasReadableRaster,
   resolveRasterOverlayIdFromActiveLayer,
@@ -59,6 +63,91 @@ const overlayLayerIds = computed(() =>
 const loading = ref(false)
 const error = ref<string | null>(null)
 const stats = ref<ZonalStatItem[]>([])
+
+// ── 图层显示名：后端对运行时图层无描述符（回落 layer_id），按 overlayId 映射显示名 ──
+const displayLabel = (l: ActiveLayer): string =>
+  resolveLayerDisplayLabel({
+    name: l.name,
+    catalogDisplayName: getCatalogDisplayName(l.catalogId) || null,
+    catalogId: l.catalogId,
+  })
+
+const displayNameByOverlayId = computed(() => {
+  const map = new Map<string, string>()
+  for (const l of activeLayers.value) {
+    const oid = l.importedRaster?.overlayLayerId
+    if (oid && !map.has(oid)) map.set(oid, displayLabel(l))
+  }
+  return map
+})
+
+function statDisplayName(item: ZonalStatItem): string {
+  return displayNameByOverlayId.value.get(item.layer_id) ?? item.layer_name
+}
+
+// ── 卡片交互：折叠 / 隐藏（可从恢复条还原）/ 拖动浮离面板 ──
+const ui = loadSettingsUiLocal()
+const collapsed = ref(ui.autoStatsCollapsed ?? false)
+const hidden = ref(ui.autoStatsHidden ?? false)
+const floatPos = ref<{ x: number; y: number } | null>(ui.autoStatsFloat ?? null)
+
+function saveUiState() {
+  saveSettingsUiLocal({
+    autoStatsCollapsed: collapsed.value,
+    autoStatsHidden: hidden.value,
+    autoStatsFloat: floatPos.value,
+  })
+}
+
+const isFloating = computed(() => floatPos.value !== null)
+const floatingStyle = computed(() =>
+  floatPos.value ? { left: `${floatPos.value.x}px`, top: `${floatPos.value.y}px` } : {},
+)
+
+let dragStart: { px: number; py: number; x: number; y: number } | null = null
+function onHeadPointerDown(e: PointerEvent) {
+  if ((e.target as HTMLElement).closest('button')) return
+  const base = floatPos.value ?? headRectAsFloatPos(e)
+  dragStart = { px: e.clientX, py: e.clientY, x: base.x, y: base.y }
+  floatPos.value = { ...base }
+  saveUiState()
+  const move = (ev: PointerEvent) => {
+    if (!dragStart) return
+    floatPos.value = {
+      x: Math.max(8, dragStart.x + (ev.clientX - dragStart.px)),
+      y: Math.max(8, dragStart.y + (ev.clientY - dragStart.py)),
+    }
+  }
+  const up = () => {
+    dragStart = null
+    saveUiState()
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+}
+
+function headRectAsFloatPos(e: PointerEvent): { x: number; y: number } {
+  const rect = (e.currentTarget as HTMLElement).closest('.auto-stats')?.getBoundingClientRect()
+  return rect ? { x: rect.left, y: rect.top } : { x: e.clientX, y: e.clientY }
+}
+
+function toggleCollapsed() {
+  collapsed.value = !collapsed.value
+  saveUiState()
+}
+
+function hideCard() {
+  hidden.value = true
+  saveUiState()
+}
+
+function restoreCard() {
+  hidden.value = false
+  floatPos.value = null
+  saveUiState()
+}
 // 竞态防护：仅采纳最新一次请求的结果
 let statsSeq = 0
 
@@ -126,9 +215,23 @@ function formatValue(val: number | null): string {
 </script>
 
 <template>
-  <section v-if="summary" class="auto-stats">
-    <div class="auto-stats-head">
-      <div>
+  <button
+    v-if="hidden"
+    type="button"
+    class="auto-stats-restore-chip"
+    title="恢复自动统计"
+    @click="restoreCard"
+  >
+    自动统计
+  </button>
+  <section
+    v-else-if="summary"
+    class="auto-stats"
+    :class="{ 'auto-stats--floating': isFloating, 'auto-stats--collapsed': collapsed }"
+    :style="floatingStyle"
+  >
+    <div class="auto-stats-head" @pointerdown="onHeadPointerDown">
+      <div :class="{ 'auto-stats-drag': true }">
         <div class="section-kicker">自动统计</div>
         <h3 class="auto-stats-title">
           矢量几何 + 可见栅格
@@ -137,9 +240,27 @@ function formatValue(val: number | null): string {
           </span>
         </h3>
       </div>
-      <button class="auto-stats-refresh" :disabled="loading" title="刷新统计" @click="fetchStats">
-        <RefreshCw :size="12" :class="{ spinning: loading }" />
-      </button>
+      <div class="auto-stats-head-actions">
+        <button
+          class="auto-stats-refresh"
+          :disabled="loading"
+          title="刷新统计"
+          @click="fetchStats"
+        >
+          <RefreshCw :size="12" :class="{ spinning: loading }" />
+        </button>
+        <button
+          class="auto-stats-refresh"
+          :title="collapsed ? '展开' : '折叠'"
+          @click="toggleCollapsed"
+        >
+          <ChevronUp v-if="!collapsed" :size="12" />
+          <ChevronDown v-else :size="12" />
+        </button>
+        <button class="auto-stats-refresh" title="隐藏（可从恢复条还原）" @click="hideCard">
+          <X :size="12" />
+        </button>
+      </div>
     </div>
 
     <div class="geom-stats">
@@ -153,6 +274,7 @@ function formatValue(val: number | null): string {
       </div>
     </div>
 
+    <div v-show="!collapsed" class="auto-stats-body">
     <div v-if="loading" class="auto-stats-loading">
       <span class="loading-dot"></span>
       <span>正在统计可见栅格…</span>
@@ -181,8 +303,8 @@ function formatValue(val: number | null): string {
         </thead>
         <tbody>
           <tr v-for="item in stats" :key="item.layer_id">
-            <td class="stat-name" :title="item.layer_name">
-              {{ item.layer_name }}
+            <td class="stat-name" :title="statDisplayName(item)">
+              {{ statDisplayName(item) }}
               <span v-if="item.unit" class="stat-unit">({{ item.unit }})</span>
             </td>
             <td class="stat-value">{{ item.count.toLocaleString() }}</td>
@@ -192,6 +314,7 @@ function formatValue(val: number | null): string {
           </tr>
         </tbody>
       </table>
+    </div>
     </div>
   </section>
 </template>
@@ -234,6 +357,44 @@ function formatValue(val: number | null): string {
   font-size: 10px;
   font-weight: 400;
   color: var(--text-secondary);
+}
+
+.auto-stats--floating {
+  position: fixed;
+  z-index: 60;
+  width: min(24rem, calc(100vw - 2rem));
+  box-shadow: var(--elevation-3, 0 12px 32px rgba(0, 0, 0, 0.4));
+  cursor: grab;
+}
+
+.auto-stats-restore-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+}
+
+.auto-stats-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.auto-stats-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.auto-stats-drag {
+  cursor: grab;
+  user-select: none;
 }
 
 .auto-stats-refresh {

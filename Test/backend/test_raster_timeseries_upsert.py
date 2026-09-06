@@ -244,16 +244,16 @@ def test_upsert_default_time_skips_all_nodata_trailing_day(
         grid_preset="ease2-global-9km",
         native_step="1d",
     )
-    assert out["default_time"] == "20251230_20251230"
+    assert out["default_time"] == "20251230"
     meta = json.loads(
         (imports / out["layer_id"] / "meta.json").read_text(encoding="utf-8")
     )
-    assert meta["default_time"] == "20251230_20251230"
+    assert meta["default_time"] == "20251230"
     assert meta.get("palette")
     bounds = json.loads(
         (imports / out["layer_id"] / "bounds.json").read_text(encoding="utf-8")
     )
-    assert bounds["meta"]["default_time"] == "20251230_20251230"
+    assert bounds["meta"]["default_time"] == "20251230"
 
 
 def test_upsert_ndvi_daily_dir_timeseries(
@@ -293,12 +293,12 @@ def test_upsert_ndvi_daily_dir_timeseries(
         native_step="1d",
     )
     assert out["time_list"] == [
-        "20260701_20260701",
-        "20260702_20260702",
-        "20260703_20260703",
+        "20260701",
+        "20260702",
+        "20260703",
     ]
     spec = get_overlay_spec(out["layer_id"])
     assert spec is not None
     # 验证单日 8 位时间对 YYYYMMDD_YYYYMMDD 的自动匹配容错
-    assert spec._assert_time_available("20260702") == "20260702_20260702"
-    assert spec._assert_time_available("2026-07-02") == "20260702_20260702"
+    assert spec._assert_time_available("20260702") == "20260702"
+    assert spec._assert_time_available("2026-07-02") == "20260702"
