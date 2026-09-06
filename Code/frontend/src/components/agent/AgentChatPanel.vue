@@ -225,8 +225,24 @@ function stopGenerating() {
   sendAbort.abort(new DOMException('用户停止生成', 'AbortError'))
 }
 
+function pushSystemHint(text: string) {
+  messages.value.push({
+    id: `hint-${Date.now()}`,
+    role: 'system',
+    text,
+  })
+  void scrollToBottom()
+}
+
 function resetChat() {
-  if (sending.value) return
+  if (sending.value) {
+    pushSystemHint('生成进行中——请先点输入框旁的「停止」，再开启新会话。')
+    return
+  }
+  if (!sessionId.value && messages.value.length <= 1) {
+    pushSystemHint('当前已是全新会话。')
+    return
+  }
   messages.value = [
     {
       id: 'welcome',
@@ -241,26 +257,49 @@ function resetChat() {
   liveStatus.value = ''
   sessionMenuOpen.value = false
   stopSendTick()
+  pushSystemHint('已开启新会话（服务端历史待下一次对话自动续写）。')
   void scrollToBottom()
 }
 
+const sessionListError = ref<string | null>(null)
+
 async function refreshSessionList() {
   sessionsLoading.value = true
+  sessionListError.value = null
   try {
     const res = await listAgentSessions(40)
     sessionSummaries.value = res.sessions || []
-  } catch {
+  } catch (err) {
     sessionSummaries.value = []
+    sessionListError.value = err instanceof Error ? err.message : String(err)
   } finally {
     sessionsLoading.value = false
   }
 }
 
 async function toggleSessionMenu() {
-  if (sending.value) return
   sessionMenuOpen.value = !sessionMenuOpen.value
   if (sessionMenuOpen.value) await refreshSessionList()
 }
+
+// 会话菜单外点 / Esc 关闭（打开期间挂 document 监听）
+function onDocPointerDownCloseSessionMenu(e: PointerEvent) {
+  const target = e.target as HTMLElement | null
+  if (target?.closest('.agent-session-wrap')) return
+  sessionMenuOpen.value = false
+}
+function onDocKeydownCloseSessionMenu(e: KeyboardEvent) {
+  if (e.key === 'Escape') sessionMenuOpen.value = false
+}
+watch(sessionMenuOpen, (open) => {
+  if (open) {
+    document.addEventListener('pointerdown', onDocPointerDownCloseSessionMenu, true)
+    document.addEventListener('keydown', onDocKeydownCloseSessionMenu)
+  } else {
+    document.removeEventListener('pointerdown', onDocPointerDownCloseSessionMenu, true)
+    document.removeEventListener('keydown', onDocKeydownCloseSessionMenu)
+  }
+})
 
 async function loadSession(sid: string) {
   if (sending.value || !sid) return
@@ -316,8 +355,15 @@ async function removeSession(sid: string) {
 }
 
 function downloadChatExport() {
+  const exportable = messages.value.filter(
+    (m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim(),
+  )
+  if (!exportable.length) {
+    pushSystemHint('暂无可导出的对话内容——先和助手聊一轮再导出。')
+    return
+  }
   const md = exportChatMarkdown(
-    messages.value.map((m) => ({
+    exportable.map((m) => ({
       role: m.role,
       text: m.text,
       usage: m.usage,
@@ -331,6 +377,7 @@ function downloadChatExport() {
   a.download = `cgda-agent-${sessionId.value || 'draft'}-${Date.now()}.md`
   a.click()
   URL.revokeObjectURL(url)
+  pushSystemHint(`已导出 Markdown（${exportable.length} 条消息）。`)
 }
 
 function runLayerCardAction(card: AgentLayerCard, action: 'open' | 'fit') {
@@ -1159,7 +1206,6 @@ function onKeydown(ev: KeyboardEvent) {
               class="agent-chat-header-btn"
               title="历史会话"
               aria-label="历史会话"
-              :disabled="sending"
               @click.stop="toggleSessionMenu"
             >
               <ChevronDown :size="13" />
@@ -1171,7 +1217,10 @@ function onKeydown(ev: KeyboardEvent) {
                   {{ sessionsLoading ? '…' : '刷新' }}
                 </button>
               </div>
-              <p v-if="!sessionSummaries.length && !sessionsLoading" class="agent-session-empty">
+              <p v-if="sessionListError && !sessionsLoading" class="agent-session-empty">
+                会话列表加载失败：{{ sessionListError }}
+              </p>
+              <p v-else-if="!sessionSummaries.length && !sessionsLoading" class="agent-session-empty">
                 暂无服务端会话
               </p>
               <button
@@ -1202,7 +1251,6 @@ function onKeydown(ev: KeyboardEvent) {
             class="agent-chat-header-btn"
             title="导出当前对话为 Markdown"
             aria-label="导出对话"
-            :disabled="sending || messages.length <= 1"
             @click="downloadChatExport"
           >
             <Download :size="13" />
@@ -1212,7 +1260,6 @@ function onKeydown(ev: KeyboardEvent) {
             class="agent-chat-header-btn"
             title="开启新会话（重置历史）"
             aria-label="开启新会话"
-            :disabled="sending"
             @click="resetChat"
           >
             <RefreshCw :size="13" />

@@ -25,6 +25,10 @@ import {
 } from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { fetchWorkflowDefinition } from '../../services/workflow-definition-api'
+import {
+  getPipelineLastTimeRange,
+  setPipelineLastTimeRange,
+} from '../../services/pipeline-time-memory'
 import type { WorkflowDefinition } from '../../services/workflow-definition-api'
 import './workflow-editor-chrome.css'
 
@@ -260,9 +264,13 @@ function handleLaunchClick(card: PipelineCard) {
   launchResult.value = null
   const params = card.algorithmParams
 
-  // 初始化日期输入
-  const sd = typeof params.start_date === 'string' ? params.start_date : ''
-  const ed = typeof params.end_date === 'string' ? params.end_date : ''
+  // 初始化日期输入：优先记忆上次提交的时间范围（时间参数带记忆），无记忆回落种子默认
+  const remembered = getPipelineLastTimeRange(card.workflowId)
+  const sd =
+    remembered?.start_date ??
+    (typeof params.start_date === 'string' ? params.start_date : '')
+  const ed =
+    remembered?.end_date ?? (typeof params.end_date === 'string' ? params.end_date : '')
   startDate.value = sd ? yyyymmddToIso(sd) : ''
   endDate.value = ed ? yyyymmddToIso(ed) : ''
   // 重置日期范围错误提示
@@ -319,6 +327,9 @@ function handleConfirmLaunch() {
   params.end_date = ed
 
   emit('launch', selectedPipeline.value.workflowId, params)
+
+  // 时间参数记忆：记录本次提交的时间范围，下次打开参数面板时预填
+  setPipelineLastTimeRange(selectedPipeline.value.workflowId, sd, ed)
 
   // 显示启动成功反馈
   launchResult.value = {

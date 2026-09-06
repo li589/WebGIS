@@ -200,6 +200,70 @@ const panelWidthPx = ref(
 )
 const panelStyle = computed(() => ({ width: `${panelWidthPx.value}px` }))
 
+// ── 左菜单列 / 内容区 分隔拖拽（横向调节菜单宽度） ──
+const NAV_WIDTH_DEFAULT_PX = Math.round(8.5 * 16)
+const NAV_WIDTH_MIN_PX = Math.round(6.5 * 16)
+const NAV_WIDTH_MAX_PX = Math.round(15 * 16)
+
+function clampNavWidth(px: number): number {
+  return Math.min(NAV_WIDTH_MAX_PX, Math.max(NAV_WIDTH_MIN_PX, Math.round(px)))
+}
+
+const savedNavWidth = loadSettingsUiLocal().settingsNavWidthPx
+const navWidthPx = ref(
+  clampNavWidth(
+    typeof savedNavWidth === 'number' && Number.isFinite(savedNavWidth)
+      ? savedNavWidth
+      : NAV_WIDTH_DEFAULT_PX,
+  ),
+)
+const navStyle = computed(() => ({ width: `${navWidthPx.value}px` }))
+
+let navResizeStartX = 0
+let navResizeStartWidth = 0
+const isNavResizing = ref(false)
+let navResizeCaptureEl: Element | null = null
+let navResizePointerId: number | null = null
+
+function onNavDividerPointerDown(event: PointerEvent) {
+  event.preventDefault()
+  isNavResizing.value = true
+  navResizeStartX = event.clientX
+  navResizeStartWidth = navWidthPx.value
+  const el = event.currentTarget as Element
+  try {
+    el.setPointerCapture(event.pointerId)
+    navResizeCaptureEl = el
+    navResizePointerId = event.pointerId
+  } catch {
+    navResizeCaptureEl = null
+  }
+  window.addEventListener('pointermove', onNavResizePointerMove)
+  window.addEventListener('pointerup', onNavResizePointerUp)
+}
+
+function onNavResizePointerMove(event: PointerEvent) {
+  if (!isNavResizing.value) return
+  // 分隔条在 nav 右侧：向右拖 → clientX 变大 → 菜单加宽
+  navWidthPx.value = clampNavWidth(navResizeStartWidth + (event.clientX - navResizeStartX))
+}
+
+function onNavResizePointerUp(_event: PointerEvent) {
+  isNavResizing.value = false
+  window.removeEventListener('pointermove', onNavResizePointerMove)
+  window.removeEventListener('pointerup', onNavResizePointerUp)
+  if (navResizeCaptureEl && navResizePointerId !== null) {
+    try {
+      (navResizeCaptureEl as HTMLElement).releasePointerCapture(navResizePointerId)
+    } catch {
+      /* 指针已释放 */
+    }
+  }
+  navResizeCaptureEl = null
+  navResizePointerId = null
+  saveSettingsUiLocal({ settingsNavWidthPx: navWidthPx.value })
+}
+
 let resizeStartX = 0
 let resizeStartWidth = 0
 const isResizing = ref(false)
@@ -324,7 +388,7 @@ onUnmounted(() => {
       </div>
 
       <div class="settings-body">
-        <nav class="settings-nav">
+        <nav class="settings-nav" :style="navStyle">
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -348,6 +412,15 @@ onUnmounted(() => {
             <span class="nav-label">部署配置中心</span>
           </button>
         </nav>
+
+        <div
+          class="settings-nav-divider"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整菜单栏宽度（拖动）"
+          title="拖动调整菜单栏宽度"
+          @pointerdown="onNavDividerPointerDown"
+        ></div>
 
         <div class="settings-content">
           <div v-if="settingsStore.loading" class="content-loading">
@@ -602,6 +675,23 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
+/* 左菜单列 / 内容区 拖拽分隔条（悬停/拖拽态加宽高亮） */
+.settings-nav-divider {
+  flex: none;
+  width: 0.32rem;
+  margin: 0 -0.06rem;
+  cursor: col-resize;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+  touch-action: none;
+}
+
+.settings-nav-divider:hover,
+.settings-nav-divider:active {
+  background: var(--accent-border, var(--border-strong));
+}
+
 .settings-content {
   flex: 1;
   overflow-y: auto;
@@ -689,6 +779,10 @@ onUnmounted(() => {
 
   .settings-body {
     flex-direction: column;
+  }
+
+  .settings-nav-divider {
+    display: none;
   }
 
   .settings-nav {

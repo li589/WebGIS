@@ -29,6 +29,8 @@ export interface SettingsUiLocal {
   mapDistributionChrome?: boolean
   /** 设置侧栏宽度（px）；未设则用默认 38rem */
   panelWidthPx?: number
+  /** 设置面板左菜单列宽度（px）；未设则用默认 8.5rem */
+  settingsNavWidthPx?: number
   /** 系统日志侧栏宽度（px）；未设则用默认 26rem */
   logPanelWidthPx?: number
   /** 分析工具运行成功后是否在地图显示新图层（默认开启） */
