@@ -531,6 +531,7 @@ def _sample_layer_point(
     # 运行时栅格（imported-*/wf-run-*）：client_context 携带 overlay_layer_id，
     # catalog_id → overlay id 映射（overlay 采样以实际 overlay id 为准）
     overlay_id_by_catalog: dict[str, str] = {}
+    display_by_catalog: dict[str, str] = {}
     if isinstance(client_context, dict):
         layers_ctx = client_context.get("active_layers")
         if isinstance(layers_ctx, list):
@@ -539,8 +540,11 @@ def _sample_layer_point(
                     continue
                 cid = str(layer.get("catalog_id") or "").strip()
                 oid = str(layer.get("overlay_layer_id") or "").strip()
+                name = str(layer.get("name") or "").strip()
                 if cid and oid:
                     overlay_id_by_catalog[cid] = oid
+                if cid and name:
+                    display_by_catalog[cid] = name
 
     accessible = set(_filter_ids(targets, cred))
     samples: list[dict[str, Any]] = []
@@ -555,6 +559,7 @@ def _sample_layer_point(
                 lat=lat,
                 time=time_key,
                 overlay_id=overlay_id_by_catalog.get(lid),
+                display=display_by_catalog.get(lid),
             )
         )
 
@@ -575,15 +580,16 @@ def _sample_one_layer(
     lat: float,
     time: str | None,
     overlay_id: str | None = None,
+    display: str | None = None,
 ) -> dict[str, Any]:
     from app.services.layer_catalog import get_layer_descriptor
     from app.services.overlay_registry import get_overlay_spec
     from app.weatherengine.constants import WEATHER_LAYER_SPECS
 
-    display = catalog_id
+    display = display or catalog_id
     desc = get_layer_descriptor(catalog_id)
     if desc is not None:
-        display = str(getattr(desc, "display_name", "") or catalog_id)
+        display = str(getattr(desc, "display_name", "") or display or catalog_id)
 
     # 运行时栅格图层：catalog_id 无 overlay spec，须用实际 overlay id 采样
     spec = get_overlay_spec(overlay_id or catalog_id)

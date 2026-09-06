@@ -42,7 +42,7 @@ export function createWorkflowRunDomain(
     getActiveLayers: () => workspace.activeLayers.value,
     addLayer: (catalogId, isAdminBoundary, jobLayer, options) =>
       workspace.addLayer(catalogId, isAdminBoundary, jobLayer, options),
-    removeLayer: (instanceId) => workspace.removeLayer(instanceId),
+    removeLayer: (instanceId, opts) => workspace.removeLayer(instanceId, opts),
     assignLayerAccent: (preferred) => workspace.assignLayerAccent(preferred),
     setSelectedInstanceId: (id) => {
       workspace.selectedInstanceId.value = id

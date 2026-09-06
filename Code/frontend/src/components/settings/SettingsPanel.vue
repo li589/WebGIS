@@ -228,6 +228,7 @@ let navResizePointerId: number | null = null
 function onNavDividerPointerDown(event: PointerEvent) {
   event.preventDefault()
   isNavResizing.value = true
+  document.body.style.userSelect = 'none'
   navResizeStartX = event.clientX
   navResizeStartWidth = navWidthPx.value
   const el = event.currentTarget as Element
@@ -250,6 +251,7 @@ function onNavResizePointerMove(event: PointerEvent) {
 
 function onNavResizePointerUp(_event: PointerEvent) {
   isNavResizing.value = false
+  document.body.style.userSelect = ''
   window.removeEventListener('pointermove', onNavResizePointerMove)
   window.removeEventListener('pointerup', onNavResizePointerUp)
   if (navResizeCaptureEl && navResizePointerId !== null) {

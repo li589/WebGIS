@@ -15,6 +15,27 @@ function ymdToCn(value: string): string {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
 }
 
+const NODE_LABELS: Record<string, string> = {
+  fy_plan: '风云作业规划',
+  fy_execute: '风云产品执行',
+  fy_download: '风云数据下载',
+  fy_preprocess: '风云预处理',
+  omega_avg_daily: '平均 ω 逐日反演',
+  omega_sf_fenkuai: '动态 ω 反演',
+  ndvi_daily: 'NDVI 逐日产品',
+  ndvi_preprocess: 'NDVI 预处理',
+}
+
+/** 节点 id → 研究员可读名（如 fy_download:nsmc → 风云数据下载 · nsmc）。未知原样返回。 */
+export function humanizeNodeLabel(label: string): string {
+  if (!label) return label
+  const base = label.split(':')[0]!.trim().toLowerCase()
+  const cn = NODE_LABELS[base]
+  if (!cn) return label
+  const sub = label.includes(':') ? label.slice(label.indexOf(':') + 1).trim() : ''
+  return sub ? `${cn} · ${sub}` : cn
+}
+
 export function humanizeStageMessage(raw: string): string {
   if (!raw) return raw
   const s = raw.trim()

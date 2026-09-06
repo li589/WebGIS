@@ -224,8 +224,9 @@ function formatValue(val: number | null): string {
   >
     自动统计
   </button>
+  <Teleport to="body" :disabled="!isFloating">
   <section
-    v-else-if="summary"
+    v-if="!hidden && summary"
     class="auto-stats"
     :class="{ 'auto-stats--floating': isFloating, 'auto-stats--collapsed': collapsed }"
     :style="floatingStyle"
@@ -317,6 +318,7 @@ function formatValue(val: number | null): string {
     </div>
     </div>
   </section>
+  </Teleport>
 </template>
 
 <style scoped>

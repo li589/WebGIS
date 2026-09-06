@@ -301,6 +301,11 @@ watch(sessionMenuOpen, (open) => {
   }
 })
 
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocPointerDownCloseSessionMenu, true)
+  document.removeEventListener('keydown', onDocKeydownCloseSessionMenu)
+})
+
 async function loadSession(sid: string) {
   if (sending.value || !sid) return
   sessionMenuOpen.value = false

@@ -7,7 +7,7 @@ import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
 import { formatWorkflowCommandChip } from '../../utils/workflow-error-messages'
-import { humanizeStageMessage } from '../../utils/humanize-stage-message'
+import { humanizeNodeLabel, humanizeStageMessage } from '../../utils/humanize-stage-message'
 import type { JobStatus } from '../../stores/layers/types'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import { filterDisplayableNodeProgress } from '../../stores/layers/workflow-progress'
@@ -967,7 +967,9 @@ onBeforeUnmount(() => {
                   <span class="node-stage-icon"
                     ><component :is="getStageIcon(np.stage)" :size="14"
                   /></span>
-                  <span class="node-label">{{ np.nodeLabel }}</span>
+                  <span class="node-label" :title="np.nodeLabel">{{
+                    humanizeNodeLabel(np.nodeLabel)
+                  }}</span>
                   <span v-if="np.terminalHint === 'skipped'" class="node-skipped-badge"
                     >已跳过</span
                   >
