@@ -1,0 +1,509 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 42
+  },
+  "rows": [
+    {
+      "workflow_id": "weather_temperature_grid_demo",
+      "batch": "B",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'layer_id', 'resource_profile', 'weather_request', 'map_context']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_wind_field_demo",
+      "batch": "B",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'layer_id', 'resource_profile', 'weather_request', 'map_context']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_histogram",
+      "batch": "C",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_timeseries_curve",
+      "batch": "C",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_zonal_stats_aligned",
+      "batch": "C",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "smap_soil_moisture_local",
+      "batch": "D",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_noaa_grib_sample",
+      "batch": "D",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_nasa_earthdata_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_nsidc_smap_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_esa_product_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:creds (copernicus profile) + REPLACE_* path",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_block_smap_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_fy_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_dual",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:config (online download template + needs h5→mat bridge; earthdata portal ready; not light-smoke)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_gldas_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "preprocess_clip_reproject_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_mean_summary_report_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fusion_idw_interpolate_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "preprocess_mask_resample_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_trend_anomaly_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fusion_multi_source_merge_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_correlation_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_correlation_report_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_summary_chart_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_buffer",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_clip",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_contour",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_raster_calc",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_raster_to_vector",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_reclassify",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_slope_aspect",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_vector_to_raster",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_watershed",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_zonal_stats",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "cds_era5_reanalysis_download",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "cdse_sentinel_download",
+      "batch": "X",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:creds (no copernicus portal account)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fy_tb_local_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fy_tb_online_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "ndvi_gee_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:gee-not-configured (accounts=0 enabled=0)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "ndvi_local_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "ndvi_online_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "nomads_gfs_grib_download",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_fy_online",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_dual",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_online",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_dual",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_online",
+      "batch": "X",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    }
+  ]
+}

@@ -79,7 +79,7 @@
 5. **文档过时：README.md 失效链接**：154 行 `详见 [Doc/本地联调环境说明.md](Doc/本地联调环境说明.md)`——`Doc/` 目录已不存在（46 行自述"原 Doc/ 已全部并入 .ai/"），链接 404，且与同段自述矛盾。应改指 `.ai/` 内对应文档。
 6. **UI 占位符硬编码 D:/ 盘符**：`workflow/ui_metadata.py:78-105` `_FIELD_PLACEHOLDERS` / `_FIELD_EXAMPLE_OVERRIDES` 含 `D:/data/input/` 等 Windows 路径。仅作输入框 placeholder/示例展示，无功能影响，但与项目"禁止盘符回退/数据根真源在 .env"的口径不一致，Linux 用户观感差。建议改中性示例（如 `/data/input`）。
 7. **Matlab 提供方遗留脚本裸 `except: pass`**：`providers/Matlab/fy拼接/FY3B.py`（7 处）、`FY3d.py:377`、`FY3F_MWRI_mosaic.py:391` 为不带 `Exception` 的裸 `except: pass`。属历史参考代码（Python 包 `algorithms/` 内的同类均为窄化 `except ValueError: pass`，合规）；若这些脚本仍会被拼接链路调用，需补日志。
-8. **Tools 硬编码环境（容忍记录）**：`Tools/sync_server_data.py:190-214` `host="172.16.98.184"`、`username="likr6008"`、108 行跳板 `ssh -W 172.16.98.184:22 win11-lab`；`Tools/SyncData.py:38-48` 公网 IP `121.46.19.4:6666` + 本机私钥路径。按"Tools 联调可容忍"口径记录备查，不要求修改。
+8. **Tools 硬编码环境（容忍记录）**：`Tools/sync_server_data.py:190-214` `host="********"`、`username="********"`、108 行跳板 `ssh -W ********:22 win11-lab`；`Tools/SyncData.py:38-48` 公网 IP `121.46.19.4:6666` + 本机私钥路径。按"Tools 联调可容忍"口径记录备查，不要求修改。
 9. **死参数**：`nsidc_download.py:525` `expected_size_mb`（见 P1-1，单列备忘：若暂不动私有副本，至少清理该参数与 668 行的传参）。
 10. **本地工作区卫生**：仓库根有 31 个 `.pytest_tmp_*` 目录、一个 `nul` 文件（Windows 重定向产物）与 `p1_test_import.geojson`。均**未被 git 跟踪**（已验证），仅本地脏污；建议本地清理并在 `.gitignore` 补 `.pytest_tmp_*/` 与 `nul`。
 

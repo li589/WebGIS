@@ -7,6 +7,23 @@ Need ~10 more files for 2 weeks coverage.
 from __future__ import annotations
 
 import json
+
+def _cred(path: str, default: str = "") -> str:
+    """读取本地凭据文件 Tools/_nas_credentials.json（gitignored，不入库）。"""
+    import json
+    f = Path(__file__).resolve().parent / "_nas_credentials.json"
+    if not f.exists():
+        return default
+    node: object = json.loads(f.read_text(encoding="utf-8"))
+    for part in path.split("/"):
+        if isinstance(node, dict):
+            node = node.get(part)
+        elif isinstance(node, list) and part.isdigit():
+            node = node[int(part)] if int(part) < len(node) else None
+        else:
+            return default
+    return str(node) if node is not None else default
+
 import ssl
 import time
 import urllib.parse
@@ -16,7 +33,7 @@ from data_root import resolve_data_root
 
 BASE_URL = "https://nasfile.personaltunnel.dpdns.org"
 USERNAME = "user"
-PASSWORD = "remotefangwen123"
+PASSWORD = _cred("filebrowser/nasfile/password")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 LOCAL_ROOT = resolve_data_root() / "Soil_Moisture" / "SMAP"
 

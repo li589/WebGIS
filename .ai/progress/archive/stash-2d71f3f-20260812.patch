@@ -1,0 +1,2333 @@
+diff --git a/Code/algorithms/providers/Python/algorithms/omega_sf.py b/Code/algorithms/providers/Python/algorithms/omega_sf.py
+index ca53cd4..d701ed2 100644
+--- a/Code/algorithms/providers/Python/algorithms/omega_sf.py
++++ b/Code/algorithms/providers/Python/algorithms/omega_sf.py
+@@ -28,6 +28,7 @@ r"""SF 块反演算法核心逻辑（从 Matlab ``omega_sf_fenkuai.m`` 迁移）
+ 
+ from __future__ import annotations
+ 
++import json
+ import logging
+ import math
+ import re
+@@ -1479,7 +1480,51 @@ def _check_cancel_requested(cancel_flag_path: str | Path | None) -> None:
+ 
+ 
+ def _checkpoint_path(output_dir: str | Path) -> Path:
+-    return Path(output_dir) / ".omega_sf_chunk_checkpoint.pkl"
++    # G4-02: pickle.load → safe deserialization 防 RCE
++    # 扩展名由 .pkl 改为 .json，旧 .pkl 检查点将被忽略（安全降级，非数据丢失）。
++    return Path(output_dir) / ".omega_sf_chunk_checkpoint.json"
++
++
++def _assert_checkpoint_path_safe(path: Path, output_dir: str | Path) -> Path:
++    """G4-02: 校验检查点路径归属，防止路径遍历导致加载外部恶意文件。
++
++    确保解析后的 ``path`` 严格位于 ``output_dir`` 目录内（或等于该目录本身）。
++    """
++    base = Path(output_dir).resolve()
++    resolved = path.resolve()
++    if resolved != base and base not in resolved.parents:
++        raise ValueError(
++            f"Checkpoint path {resolved} is outside output_dir {base}"
++        )
++    return resolved
++
++
++def _pixel_result_to_jsonable(r: PixelResult) -> dict[str, Any]:
++    """将 PixelResult 转为 JSON 可序列化的纯字典。"""
++    return {
++        "iy": int(r.iy),
++        "ix": int(r.ix),
++        "class_id": int(r.class_id),
++        "omega": np.asarray(r.omega, dtype=np.float64).tolist(),
++        "sm": np.asarray(r.sm, dtype=np.float64).tolist(),
++        "vod": np.asarray(r.vod, dtype=np.float64).tolist(),
++        "h_star": float(r.h_star),
++        "alpha_star": float(r.alpha_star),
++    }
++
++
++def _jsonable_to_pixel_result(d: dict[str, Any]) -> PixelResult:
++    """从 JSON 字典重建 PixelResult。"""
++    return PixelResult(
++        iy=int(d["iy"]),
++        ix=int(d["ix"]),
++        class_id=int(d["class_id"]),
++        omega=np.asarray(d.get("omega") or [], dtype=np.float64),
++        sm=np.asarray(d.get("sm") or [], dtype=np.float64),
++        vod=np.asarray(d.get("vod") or [], dtype=np.float64),
++        h_star=float(d.get("h_star", float("nan"))),
++        alpha_star=float(d.get("alpha_star", float("nan"))),
++    )
+ 
+ 
+ def _load_chunk_checkpoint(
+@@ -1490,23 +1535,30 @@ def _load_chunk_checkpoint(
+ ) -> tuple[set[int], list[Any]] | None:
+     """加载块/chunk 检查点；日期范围不一致则忽略。
+ 
+-    Security: pickle 仅用于本地可信检查点文件（BACKEND_OUTPUT_ROOT 下），
+-    不接受外部输入。文件大小超过 200MB 视为异常并拒绝加载。
++    G4-02: pickle.load → safe deserialization 防 RCE
++    使用 json.load 替代 pickle.load，JSON 无法携带可执行代码，
++    从根本上消除反序列化 RCE 风险。同时校验路径归属，防止路径遍历。
++    文件大小超过 500MB 视为异常并拒绝加载（JSON 文本格式较 pickle 二进制更大）。
+     """
+     path = _checkpoint_path(output_dir)
+     if not path.exists():
+         return None
++    # G4-02: 路径归属校验 — 确保检查点文件在 output_dir 内
++    try:
++        _assert_checkpoint_path_safe(path, output_dir)
++    except ValueError:
++        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过加载: %s", path)
++        return None
+     # Guard against abnormally large checkpoint files (possible corruption/DoS)
+-    if path.stat().st_size > 200 * 1024 * 1024:
++    if path.stat().st_size > 500 * 1024 * 1024:
+         logger.warning(
+             "[CHECKPOINT] 检查点文件异常过大（%d bytes），跳过加载", path.stat().st_size
+         )
+         return None
+     try:
+-        import pickle
+-
+-        with path.open("rb") as fh:
+-            payload = pickle.load(fh)
++        # G4-02: pickle.load → json.load，消除反序列化 RCE 风险
++        with path.open("r", encoding="utf-8") as fh:
++            payload = json.load(fh)
+         if not isinstance(payload, dict):
+             return None
+         if (
+@@ -1515,7 +1567,11 @@ def _load_chunk_checkpoint(
+         ):
+             return None
+         done = {int(i) for i in (payload.get("completed_chunks") or [])}
+-        results = list(payload.get("all_results") or [])
++        raw_results = payload.get("all_results") or []
++        results: list[Any] = [
++            _jsonable_to_pixel_result(r) if isinstance(r, dict) else r
++            for r in raw_results
++        ]
+         return done, results
+     except Exception:
+         logger.warning("[CHECKPOINT] 加载失败，忽略: %s", path, exc_info=True)
+@@ -1531,21 +1587,26 @@ def _save_chunk_checkpoint(
+     all_results: list[Any],
+ ) -> None:
+     path = _checkpoint_path(output_dir)
++    # G4-02: 路径归属校验 — 确保检查点文件在 output_dir 内
++    try:
++        _assert_checkpoint_path_safe(path, output_dir)
++    except ValueError:
++        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过写入: %s", path)
++        return
+     try:
+-        import pickle
+-
+         path.parent.mkdir(parents=True, exist_ok=True)
+-        with path.open("wb") as fh:
+-            pickle.dump(
+-                {
+-                    "start_date": start_date,
+-                    "end_date": end_date,
+-                    "completed_chunks": sorted(completed_chunks),
+-                    "all_results": all_results,
+-                },
+-                fh,
+-                protocol=pickle.HIGHEST_PROTOCOL,
+-            )
++        # G4-02: pickle.dump → json.dump，消除反序列化 RCE 风险
++        payload = {
++            "start_date": start_date,
++            "end_date": end_date,
++            "completed_chunks": sorted(completed_chunks),
++            "all_results": [
++                _pixel_result_to_jsonable(r) if isinstance(r, PixelResult) else r
++                for r in all_results
++            ],
++        }
++        with path.open("w", encoding="utf-8") as fh:
++            json.dump(payload, fh, allow_nan=True)
+     except Exception:
+         logger.warning("[CHECKPOINT] 写入失败: %s", path, exc_info=True)
+ 
+diff --git a/Code/algorithms/providers/Python/ingest/fy_preprocess.py b/Code/algorithms/providers/Python/ingest/fy_preprocess.py
+index 404a5ea..b8ca3de 100644
+--- a/Code/algorithms/providers/Python/ingest/fy_preprocess.py
++++ b/Code/algorithms/providers/Python/ingest/fy_preprocess.py
+@@ -219,6 +219,7 @@ def _hdf_sds(hdf_path: str, sds_path: str) -> str:
+ 
+ def _run_gdalinfo(target_path: str) -> str:
+     cmd = [GDAL_INFO, target_path]
++    # G4-01: shell=True → list args 防命令注入
+     proc = subprocess.run(cmd, capture_output=True, text=True)
+     if proc.returncode != 0:
+         raise RuntimeError(proc.stderr)
+@@ -425,6 +426,7 @@ class FyPreprocessor:
+             vrt_path,
+         ]
+         try:
++            # G4-01: shell=True → list args 防命令注入
+             subprocess.run(cmd, check=True)
+         except subprocess.CalledProcessError as e:
+             logger.warning(
+@@ -448,6 +450,7 @@ class FyPreprocessor:
+             vrtlat_path,
+         ]
+         try:
++            # G4-01: shell=True → list args 防命令注入
+             subprocess.run(cmd, check=True)
+         except subprocess.CalledProcessError as e:
+             logger.warning(
+@@ -470,6 +473,7 @@ class FyPreprocessor:
+             vrtlon_path,
+         ]
+         try:
++            # G4-01: shell=True → list args 防命令注入
+             subprocess.run(cmd, check=True)
+         except subprocess.CalledProcessError as e:
+             logger.warning(
+@@ -538,6 +542,7 @@ class FyPreprocessor:
+             tif_path,
+         ]
+         try:
++            # G4-01: shell=True → list args 防命令注入
+             subprocess.run(cmd, check=True)
+         except subprocess.CalledProcessError as e:
+             logger.warning(
+@@ -575,6 +580,7 @@ class FyPreprocessor:
+             mosaic_vrt,
+             *src_list,
+         ]
++        # G4-01: shell=True → list args 防命令注入
+         proc = subprocess.run(cmd, capture_output=True, text=True)
+         if proc.returncode != 0:
+             logger.warning(
+@@ -616,42 +622,48 @@ class FyPreprocessor:
+             mosaic_vrt,
+             output_tif_path0,
+         ]
++        # G4-01: shell=True → list args 防命令注入
+         subprocess.run(cmd, check=True)
+         _check_nodata(
+             output_tif_path0, expected=cfg.dst_nodata, label="mosaic→4326 输出"
+         )
+ 
+         # 空间范围裁剪 / 重投影
++        # G4-01: shell=True → list args 防命令注入
+         if options.spatial_extent == 0:
+-            cmd = (
+-                f'"{GDAL_WARP}" -overwrite -t_srs EPSG:6933 '
+-                f"-te {_EASE2_GLOBAL_EXTENT[0]} {_EASE2_GLOBAL_EXTENT[1]} "
+-                f"{_EASE2_GLOBAL_EXTENT[2]} {_EASE2_GLOBAL_EXTENT[3]} "
+-                f"-ts {_EASE2_GLOBAL_SIZE[0]} {_EASE2_GLOBAL_SIZE[1]} -r average "
+-                f"-srcnodata {cfg.dst_nodata} -dstnodata {cfg.dst_nodata} "
+-                f"-of GTiff -ot Float32 "
+-                f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
+-                f'"{output_tif_path0}" "{output_tif_path}"'
+-            )
++            cmd = [
++                GDAL_WARP, "-overwrite", "-t_srs", "EPSG:6933",
++                "-te", str(_EASE2_GLOBAL_EXTENT[0]), str(_EASE2_GLOBAL_EXTENT[1]),
++                str(_EASE2_GLOBAL_EXTENT[2]), str(_EASE2_GLOBAL_EXTENT[3]),
++                "-ts", str(_EASE2_GLOBAL_SIZE[0]), str(_EASE2_GLOBAL_SIZE[1]),
++                "-r", "average",
++                "-srcnodata", str(cfg.dst_nodata),
++                "-dstnodata", str(cfg.dst_nodata),
++                "-of", "GTiff", "-ot", "Float32",
++                "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
++                output_tif_path0, output_tif_path,
++            ]
+         elif options.spatial_extent == 1:
+             min_x = options.point[0] - options.buffer_xy[0]
+             max_x = options.point[0] + options.buffer_xy[0]
+             min_y = options.point[1] - options.buffer_xy[1]
+             max_y = options.point[1] + options.buffer_xy[1]
+-            cmd = (
+-                f'"{GDAL_WARP}" -of GTiff -ot Float32 -r {options.overlap_option} '
+-                f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
+-                f"-te {min_x} {min_y} {max_x} {max_y} "
+-                f'"{mosaic_vrt}" "{output_tif_path}"'
+-            )
++            cmd = [
++                GDAL_WARP, "-of", "GTiff", "-ot", "Float32",
++                "-r", options.overlap_option,
++                "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
++                "-te", str(min_x), str(min_y), str(max_x), str(max_y),
++                mosaic_vrt, output_tif_path,
++            ]
+         elif options.spatial_extent == 2:
+-            cmd = (
+-                f'"{GDAL_WARP}" -of GTiff -ot Float32 -r {options.overlap_option} '
+-                f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
+-                f"-te {options.lat_lon_bbox[0]} {options.lat_lon_bbox[1]} "
+-                f"{options.lat_lon_bbox[2]} {options.lat_lon_bbox[3]} "
+-                f'"{mosaic_vrt}" "{output_tif_path}"'
+-            )
++            cmd = [
++                GDAL_WARP, "-of", "GTiff", "-ot", "Float32",
++                "-r", options.overlap_option,
++                "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
++                "-te", str(options.lat_lon_bbox[0]), str(options.lat_lon_bbox[1]),
++                str(options.lat_lon_bbox[2]), str(options.lat_lon_bbox[3]),
++                mosaic_vrt, output_tif_path,
++            ]
+         else:
+             out0 = os.path.join(
+                 work_folder,
+@@ -678,6 +690,7 @@ class FyPreprocessor:
+                 mosaic_vrt,
+                 out0,
+             ]
++            # G4-01: shell=True → list args 防命令注入
+             subprocess.run(cmd, check=True)
+             cmd = [
+                 GDAL_WARP,
+@@ -699,6 +712,7 @@ class FyPreprocessor:
+             ]
+             output_tif_path = out1
+ 
++        # G4-01: shell=True → list args 防命令注入
+         subprocess.run(cmd, check=True)
+ 
+         if options.spatial_extent == 0:
+@@ -796,6 +810,7 @@ class FyPreprocessor:
+             mergy_vrt0,
+             *merge_inputs,
+         ]
++        # G4-01: shell=True → list args 防命令注入
+         proc = subprocess.run(cmd, capture_output=True, text=True)
+         if proc.returncode != 0 or not os.path.exists(mergy_vrt0):
+             logger.error("gdalbuildvrt(separate) 失败：%s", proc.stderr)
+@@ -827,6 +842,7 @@ class FyPreprocessor:
+             mergy_vrt0,
+             mergy_filetifname,
+         ]
++        # G4-01: shell=True → list args 防命令注入
+         subprocess.run(cmd, check=True)
+         with contextlib.suppress(OSError):
+             os.remove(mergy_vrt0)
+diff --git a/Code/backend/app/api/routers/weather_router.py b/Code/backend/app/api/routers/weather_router.py
+index 60e351c..34ad589 100644
+--- a/Code/backend/app/api/routers/weather_router.py
++++ b/Code/backend/app/api/routers/weather_router.py
+@@ -21,7 +21,7 @@ from app.core.redis_client import (
+ )
+ from app.services.weather_bridge_service import weather_bridge_service
+ from app.weatherengine.service import weather_engine_service
+-from shared.contracts.api_contracts import WeatherPointResponse
++from shared.contracts.api_contracts import OpenMeteoSyncStatusResponse, WeatherPointResponse
+ import contextlib
+ 
+ router = APIRouter()
+@@ -81,7 +81,21 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
+         f"&hourly=temperature_2m&models={model}&forecast_days=16&timezone=Asia%2FShanghai"
+     )
+     try:
+-        with urlopen(probe_url, timeout=5) as response:
++        # G1-03: 使用 safe_urlopen 替代裸 urlopen，SSRF 防护一致化。
++        # probe_url 始终基于 OPEN_METEO_LOCAL_URL 构造，is_trusted 检查通过后允许裸 urlopen。
++        from app.core.ssrf import (
++            default_allow_private,
++            is_trusted_open_meteo_local_url,
++            safe_urlopen,
++        )
++
++        if is_trusted_open_meteo_local_url(probe_url):
++            response = urlopen(probe_url, timeout=5)
++        else:
++            response = safe_urlopen(
++                probe_url, timeout=5, allow_private=default_allow_private()
++            )
++        with response:
+             payload = json.loads(response.read().decode("utf-8"))
+     except (URLError, HTTPError, OSError) as exc:
+         logger.warning(
+@@ -422,7 +436,7 @@ def trigger_open_meteo_sync(
+     return _dispatch_local("Celery unavailable;")
+ 
+ 
+-@router.get("/weather/sync/status", tags=["weather"])
++@router.get("/weather/sync/status", tags=["weather"], response_model=OpenMeteoSyncStatusResponse)
+ def get_open_meteo_sync_status(task_id: str):
+     """查询同步任务状态（含完成时间 / domains / 错误摘要）。"""
+     from app.core.celery_app import celery_app, celery_available
+diff --git a/Code/backend/app/api/routers/workflow_router.py b/Code/backend/app/api/routers/workflow_router.py
+index f055843..27d8fa7 100644
+--- a/Code/backend/app/api/routers/workflow_router.py
++++ b/Code/backend/app/api/routers/workflow_router.py
+@@ -1,3 +1,4 @@
++import logging
+ import os
+ from datetime import datetime, timedelta, UTC
+ from threading import Lock
+@@ -21,6 +22,7 @@ from shared.contracts.api_contracts import (
+ )
+ 
+ router = APIRouter()
++_logger = logging.getLogger(__name__)
+ 
+ # JSON 事件轮询限流：按「每 IP / 每分钟请求数」（非 SSE 连接数）
+ _EVENTS_POLL_RATE_LIMIT = int(
+@@ -293,9 +295,9 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
+             tr.get("end_at") if isinstance(tr, dict) else None
+         )
+         if start_at is not None:
+-            time_start = str(start_at).replace("-", "")[:8]
++            time_start = start_at.strftime("%Y%m%d") if hasattr(start_at, "strftime") else str(start_at).replace("-", "")[:8]
+         if end_at is not None:
+-            time_end = str(end_at).replace("-", "")[:8]
++            time_end = end_at.strftime("%Y%m%d") if hasattr(end_at, "strftime") else str(end_at).replace("-", "")[:8]
+ 
+     # Prefer explicit products when present
+     if result_dto.get("products"):
+@@ -305,7 +307,7 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
+             layer_id=run_status.layer_id,
+             requested_outputs=["map_layer"],
+         )
+-        refs = python_provider_result_builder._build_product_map_layer_refs(
++        refs = python_provider_result_builder.build_product_map_layer_refs(
+             run_id=run_id,
+             requested_at=datetime.now(UTC),
+             payload=payload,
+@@ -394,6 +396,11 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
+                             ),
+                         )
+                     except Exception:
++                        # G1-09: 不再静默吞错，记录 warning 以便排障
++                        _logger.warning(
++                            "upsert_block_dir_timeseries failed for run=%s path=%s var=%s",
++                            run_id, path, variable, exc_info=True,
++                        )
+                         continue
+                     # de-dupe by overlay id
+                     if any(
+diff --git a/Code/backend/app/main.py b/Code/backend/app/main.py
+index 6123950..eb8c603 100644
+--- a/Code/backend/app/main.py
++++ b/Code/backend/app/main.py
+@@ -5,6 +5,7 @@ from uuid import uuid4
+ 
+ from fastapi import FastAPI, Request
+ from fastapi.exceptions import RequestValidationError
++from fastapi.openapi.utils import get_openapi
+ from fastapi.responses import JSONResponse
+ from starlette.exceptions import HTTPException as StarletteHTTPException
+ from fastapi.middleware.cors import CORSMiddleware
+@@ -296,6 +297,41 @@ def create_app() -> FastAPI:
+             "GEE router failed to mount — GEE backend may not be installed or configured."
+         )
+ 
++    # D-2: 补充 OpenAPI security schemes 声明。
++    # 后端支持 3 种认证：Session Cookie、User API Token (Bearer)、Service Key (X-API-Key)。
++    # FastAPI 仅从 Security(_api_key_header) 自动生成 APIKeyHeader scheme；
++    # Session 与 Bearer 由 credential_resolver 手动解析，需在此补充声明。
++    def _custom_openapi():
++        if app.openapi_schema:
++            return app.openapi_schema
++        schema = get_openapi(
++            title=app.title,
++            version=app.version,
++            description=app.description,
++            routes=app.routes,
++        )
++        components = schema.setdefault("components", {})
++        security_schemes = components.setdefault("securitySchemes", {})
++        security_schemes.setdefault(
++            "APIKeyHeader",
++            {"type": "apiKey", "in": "header", "name": "X-API-Key"},
++        )
++        security_schemes["SessionAuth"] = {
++            "type": "apiKey",
++            "in": "cookie",
++            "name": settings.session_cookie_name,
++            "description": "HttpOnly session cookie (cgda_session).",
++        }
++        security_schemes["BearerAuth"] = {
++            "type": "http",
++            "scheme": "bearer",
++            "description": "User personal API token (Authorization: Bearer <token>).",
++        }
++        app.openapi_schema = schema
++        return schema
++
++    app.openapi = _custom_openapi
++
+     return app
+ 
+ 
+diff --git a/Code/backend/app/services/download_orchestrator.py b/Code/backend/app/services/download_orchestrator.py
+index 901a4db..2f84d11 100644
+--- a/Code/backend/app/services/download_orchestrator.py
++++ b/Code/backend/app/services/download_orchestrator.py
+@@ -482,7 +482,8 @@ class DownloadOrchestrator:
+             return template.format(
+                 layer_id=layer_id, hour=hour_int, hour_float=requested_hour
+             )
+-        except (KeyError, IndexError):
++        except (KeyError, IndexError, ValueError):
++            # ValueError: 非法格式串（如 {0:d} 传 str）→ 返回原始模板
+             return template
+ 
+     # ------------------------------------------------------------------
+diff --git a/Code/backend/app/services/python_provider_result_builder.py b/Code/backend/app/services/python_provider_result_builder.py
+index 7486de1..1129b27 100644
+--- a/Code/backend/app/services/python_provider_result_builder.py
++++ b/Code/backend/app/services/python_provider_result_builder.py
+@@ -194,7 +194,7 @@ class PythonProviderResultBuilder:
+                 if end_at is not None:
+                     time_end = str(end_at).replace("-", "")[:8]
+             result_refs.extend(
+-                self._build_product_map_layer_refs(
++                self.build_product_map_layer_refs(
+                     run_id=run_id,
+                     requested_at=requested_at,
+                     payload=payload,
+@@ -567,7 +567,7 @@ class PythonProviderResultBuilder:
+     # Map layer publishing (science products → imported overlays)
+     # ------------------------------------------------------------------
+ 
+-    def _build_product_map_layer_refs(
++    def build_product_map_layer_refs(
+         self,
+         *,
+         run_id: str,
+diff --git a/Code/backend/app/services/source_fetcher.py b/Code/backend/app/services/source_fetcher.py
+index 9122812..2fd4449 100644
+--- a/Code/backend/app/services/source_fetcher.py
++++ b/Code/backend/app/services/source_fetcher.py
+@@ -249,6 +249,34 @@ class LocalFileSourceFetcher(SourceFetcher):
+                 fetched_at=fetched_at,
+             )
+ 
++        # G1-04: 路径包含性校验——阻止 file:// 读取任意本地文件。
++        # 当 download_source_root 或 data_root 已配置时，要求 local_path 在其内。
++        from app.core.config import settings as _settings
++
++        _configured_roots: list[Path] = []
++        for root_attr in ("download_source_root", "data_root", "output_root"):
++            root_val = getattr(_settings, root_attr, "") or ""
++            if root_val:
++                _configured_roots.append(Path(root_val).resolve())
++        if _configured_roots:
++            resolved = local_path.resolve()
++            if not any(
++                resolved == root or root in resolved.parents
++                for root in _configured_roots
++            ):
++                logger.warning(
++                    "Local file source rejected (outside configured roots): %s",
++                    local_path,
++                )
++                return FetchResult(
++                    ref_id=ref_id,
++                    success=False,
++                    error=(
++                        f"Local file path outside configured data roots: {local_path}"
++                    ),
++                    fetched_at=fetched_at,
++                )
++
+         try:
+             data = local_path.read_bytes()
+         except Exception as exc:  # pragma: no cover - 依赖运行时文件系统
+diff --git a/Code/backend/app/services/tile_proxy_service.py b/Code/backend/app/services/tile_proxy_service.py
+index b1f0573..09043c6 100644
+--- a/Code/backend/app/services/tile_proxy_service.py
++++ b/Code/backend/app/services/tile_proxy_service.py
+@@ -233,7 +233,9 @@ class TileProxyService:
+             # 分层超时：连接超时短（5s）让不可达底图快速失败，读取超时长（30s）允许慢速 CDN
+             self._http_client = httpx.AsyncClient(
+                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+-                follow_redirects=True,
++                # G1-02: 关闭自动重定向跟随，防止被恶意重定向到内网地址（SSRF）。
++                # 瓦片 URL 由硬编码模板构造，重定向不常见；如需支持可逐跳校验。
++                follow_redirects=False,
+                 headers={
+                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                 },
+diff --git a/Code/backend/app/services/weather_engine_settings.py b/Code/backend/app/services/weather_engine_settings.py
+index 192d16c..a263ea0 100644
+--- a/Code/backend/app/services/weather_engine_settings.py
++++ b/Code/backend/app/services/weather_engine_settings.py
+@@ -138,9 +138,21 @@ def probe_local_open_meteo_reachable(timeout: float = 2.0) -> bool:
+     from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
+ 
+     try:
+-        with urlopen(
+-            f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0", timeout=timeout
+-        ) as resp:
++        # G1-03: 使用 safe_urlopen 替代裸 urlopen，SSRF 防护一致化。
++        from app.core.ssrf import (
++            default_allow_private,
++            is_trusted_open_meteo_local_url,
++            safe_urlopen,
++        )
++
++        probe_url = f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0"
++        if is_trusted_open_meteo_local_url(probe_url):
++            resp = urlopen(probe_url, timeout=timeout)
++        else:
++            resp = safe_urlopen(
++                probe_url, timeout=timeout, allow_private=default_allow_private()
++            )
++        with resp:
+             return 200 <= int(getattr(resp, "status", 200)) < 500
+     except (URLError, HTTPError, OSError, TimeoutError):
+         return False
+diff --git a/Code/frontend/openapi.json b/Code/frontend/openapi.json
+index 39f9a6d..b575d45 100644
+--- a/Code/frontend/openapi.json
++++ b/Code/frontend/openapi.json
+@@ -2256,7 +2256,9 @@
+             "description": "Successful Response",
+             "content": {
+               "application/json": {
+-                "schema": {}
++                "schema": {
++                  "$ref": "#/components/schemas/OpenMeteoSyncStatusResponse"
++                }
+               }
+             }
+           },
+@@ -10650,6 +10652,39 @@
+         ],
+         "title": "ExecutionStatus"
+       },
++      "ExportBBox": {
++        "properties": {
++          "west": {
++            "type": "number",
++            "title": "West"
++          },
++          "south": {
++            "type": "number",
++            "title": "South"
++          },
++          "east": {
++            "type": "number",
++            "title": "East"
++          },
++          "north": {
++            "type": "number",
++            "title": "North"
++          },
++          "crs": {
++            "type": "string",
++            "title": "Crs",
++            "default": "EPSG:4326"
++          }
++        },
++        "type": "object",
++        "required": [
++          "west",
++          "south",
++          "east",
++          "north"
++        ],
++        "title": "ExportBBox"
++      },
+       "ExportBatchBody": {
+         "properties": {
+           "layer_ids": {
+@@ -10691,6 +10726,55 @@
+               }
+             ],
+             "title": "Time"
++          },
++          "times": {
++            "anyOf": [
++              {
++                "items": {
++                  "type": "string"
++                },
++                "type": "array"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Times"
++          },
++          "bbox": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/ExportBBox"
++              },
++              {
++                "type": "null"
++              }
++            ]
++          },
++          "output_crs": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Output Crs"
++          },
++          "fields": {
++            "anyOf": [
++              {
++                "items": {
++                  "type": "string"
++                },
++                "type": "array"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Fields"
+           }
+         },
+         "type": "object",
+@@ -10743,6 +10827,41 @@
+               }
+             ],
+             "title": "Times"
++          },
++          "bbox": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/ExportBBox"
++              },
++              {
++                "type": "null"
++              }
++            ]
++          },
++          "output_crs": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Output Crs"
++          },
++          "fields": {
++            "anyOf": [
++              {
++                "items": {
++                  "type": "string"
++                },
++                "type": "array"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Fields"
+           }
+         },
+         "type": "object",
+@@ -12617,6 +12736,76 @@
+         ],
+         "title": "OpenDataPresetsUpdateResponse"
+       },
++      "OpenMeteoSyncStatusResponse": {
++        "properties": {
++          "task_id": {
++            "type": "string",
++            "title": "Task Id"
++          },
++          "state": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "State"
++          },
++          "info": {
++            "title": "Info"
++          },
++          "mode": {
++            "type": "string",
++            "title": "Mode",
++            "default": "local_thread"
++          },
++          "finished_at": {
++            "anyOf": [
++              {
++                "type": "string",
++                "format": "date-time"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Finished At"
++          },
++          "error": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Error"
++          },
++          "domains": {
++            "anyOf": [
++              {
++                "items": {
++                  "type": "string"
++                },
++                "type": "array"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Domains"
++          }
++        },
++        "type": "object",
++        "required": [
++          "task_id"
++        ],
++        "title": "OpenMeteoSyncStatusResponse",
++        "description": "Open-Meteo 本地数据同步任务状态（N-4：finished_at 类型化为 datetime）。"
++      },
+       "OpenMeteoSyncTriggerRequest": {
+         "properties": {
+           "domains": {
+@@ -15360,7 +15549,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Wind Speed 850Hpa"
++            "title": "Wind Speed 850Hpa",
++            "description": "850 hPa 风速 (m/s)"
+           },
+           "wind_direction_850hPa": {
+             "anyOf": [
+@@ -15371,7 +15561,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Wind Direction 850Hpa"
++            "title": "Wind Direction 850Hpa",
++            "description": "850 hPa 风向 (°)"
+           },
+           "temperature_850hPa": {
+             "anyOf": [
+@@ -15382,7 +15573,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Temperature 850Hpa"
++            "title": "Temperature 850Hpa",
++            "description": "850 hPa 温度 (°C)"
+           },
+           "wind_speed_500hPa": {
+             "anyOf": [
+@@ -15393,7 +15585,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Wind Speed 500Hpa"
++            "title": "Wind Speed 500Hpa",
++            "description": "500 hPa 风速 (m/s)"
+           },
+           "wind_direction_500hPa": {
+             "anyOf": [
+@@ -15404,7 +15597,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Wind Direction 500Hpa"
++            "title": "Wind Direction 500Hpa",
++            "description": "500 hPa 风向 (°)"
+           },
+           "temperature_500hPa": {
+             "anyOf": [
+@@ -15415,7 +15609,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Temperature 500Hpa"
++            "title": "Temperature 500Hpa",
++            "description": "500 hPa 温度 (°C)"
+           },
+           "wind_speed_200hPa": {
+             "anyOf": [
+@@ -15426,7 +15621,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Wind Speed 200Hpa"
++            "title": "Wind Speed 200Hpa",
++            "description": "200 hPa 风速 (m/s)"
+           },
+           "wind_direction_200hPa": {
+             "anyOf": [
+@@ -15437,7 +15633,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Wind Direction 200Hpa"
++            "title": "Wind Direction 200Hpa",
++            "description": "200 hPa 风向 (°)"
+           },
+           "temperature_200hPa": {
+             "anyOf": [
+@@ -15448,7 +15645,8 @@
+                 "type": "null"
+               }
+             ],
+-            "title": "Temperature 200Hpa"
++            "title": "Temperature 200Hpa",
++            "description": "200 hPa 温度 (°C)"
+           }
+         },
+         "type": "object",
+@@ -17688,7 +17886,18 @@
+         "type": "apiKey",
+         "in": "header",
+         "name": "X-API-Key"
++      },
++      "SessionAuth": {
++        "type": "apiKey",
++        "in": "cookie",
++        "name": "cgda_session",
++        "description": "HttpOnly session cookie (cgda_session)."
++      },
++      "BearerAuth": {
++        "type": "http",
++        "scheme": "bearer",
++        "description": "User personal API token (Authorization: Bearer <token>)."
+       }
+     }
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/Code/frontend/src/components/MapCanvas.vue b/Code/frontend/src/components/MapCanvas.vue
+index e4860ed..213d970 100644
+--- a/Code/frontend/src/components/MapCanvas.vue
++++ b/Code/frontend/src/components/MapCanvas.vue
+@@ -682,18 +682,7 @@ async function handleLocateMe() {
+       <span>{{ weatherTileStatusModel.error }}</span>
+     </div>
+ 
+-    <!-- Map chips -->
+-    <div class="map-overlay">
+-      <span class="chip">
+-        {{ stageDisplayModel.basemapChipLabel }}
+-      </span>
+-      <span class="chip">{{ stageDisplayModel.hourChipLabel }}</span>
+-      <span class="chip secondary">{{ stageDisplayModel.layerChipLabel }}</span>
+-      <span class="chip" :class="stageDisplayModel.availabilityChipClass">
+-        {{ stageDisplayModel.availabilityChipLabel }}
+-      </span>
+-    </div>
+-
++    <!-- Map chips（已移除：避免与顶栏信息重复，保持地图聚焦） -->
+     <!-- Layer info card -->
+     <div class="map-note">
+       <h2>{{ stageDisplayModel.noteTitle }}</h2>
+@@ -1022,50 +1011,7 @@ async function handleLocateMe() {
+   opacity: 0 !important;
+ }
+ 
+-.map-overlay {
+-  position: absolute;
+-  z-index: 21;
+-  top: 0;
+-  left: 0;
+-  right: auto;
+-  display: flex;
+-  gap: 0.38rem;
+-  flex-wrap: wrap;
+-  padding: 0.8rem 0.8rem 0;
+-  box-sizing: border-box;
+-  align-content: flex-start;
+-}
+-
+-.chip {
+-  padding: 0.24rem 0.48rem;
+-  border-radius: 999px;
+-  background: rgba(8, 18, 33, 0.52);
+-  border: 1px solid rgba(136, 192, 255, 0.12);
+-  color: #eff7ff;
+-  font-size: 0.64rem;
+-}
+-
+-.chip.secondary {
+-  color: #eaf7ff;
+-  border-color: rgba(90, 162, 255, 0.36);
+-  background: rgba(36, 90, 170, 0.16);
+-}
+-
+-.chip-ready {
+-  color: #9ff8cf;
+-  border-color: rgba(114, 255, 207, 0.2);
+-  background: rgba(114, 255, 207, 0.08);
+-}
+-.chip-partial {
+-  color: #ffd38a;
+-  border-color: rgba(255, 196, 120, 0.18);
+-  background: rgba(255, 196, 120, 0.08);
+-}
+-.chip-empty {
+-  color: #d7c1ff;
+-  border-color: rgba(187, 137, 255, 0.18);
+-  background: rgba(187, 137, 255, 0.08);
+-}
++/* 注释：.chip / .map-overlay 样式已移除（左上角 chip 组件已删） */
+ 
+ .map-note {
+   position: absolute;
+@@ -1362,11 +1308,6 @@ async function handleLocateMe() {
+   .map-stage {
+     min-height: calc(100vh - 1rem);
+   }
+-  .map-overlay {
+-    top: 0;
+-    left: 0;
+-    padding: 0.75rem 0.75rem 0;
+-  }
+   .map-note {
+     left: 0.75rem;
+     right: 0.75rem;
+diff --git a/Code/frontend/src/components/ModeToolbar.vue b/Code/frontend/src/components/ModeToolbar.vue
+index 3cd1e00..552c584 100644
+--- a/Code/frontend/src/components/ModeToolbar.vue
++++ b/Code/frontend/src/components/ModeToolbar.vue
+@@ -1,5 +1,5 @@
+ <script setup lang="ts">
+-import { computed, onMounted, watch } from 'vue'
++import { computed, onMounted, ref, watch } from 'vue'
+ import { storeToRefs } from 'pinia'
+ 
+ import {
+@@ -32,12 +32,23 @@ import {
+ } from '../ui-copy'
+ import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
+ import DataImportMenu from '../data-manager/ui/DataImportMenu.vue'
++import AppButton from './ui/AppButton.vue'
++import IconButton from './ui/IconButton.vue'
++import Chip from './ui/Chip.vue'
++import { useThemeStore } from '../stores/theme'
+ 
+ const layersStore = useLayersStore()
+ const uiStore = useUiStore()
+ const logStore = useLogStore()
+ const settingsStore = useSettingsStore()
+ const authStore = useAuthStore()
++const themeStore = useThemeStore()
++
++// 顶栏工具收起状态：true=收起（仅留模式组 + 展开按钮），false=展开（默认）
++const toolsCollapsed = ref(false)
++function toggleTools() {
++  toolsCollapsed.value = !toolsCollapsed.value
++}
+ const weatherTileManager = useWeatherTileManager()
+ const weatherSyncStatus = useWeatherSyncStatusStore()
+ const { workflowSummary } = storeToRefs(layersStore)
+@@ -108,7 +119,6 @@ const sourcesByStyle = computed(() => {
+ 
+   for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
+     const standard = sources.filter((s) => s.isStandard)
+-    // Keep key-locked sources visible but marked unusable so users know to configure keys
+     if (standard.some((s) => s.isStandard)) {
+       result.push({
+         style,
+@@ -181,11 +191,23 @@ function handleWorkflowEditor() {
+ function sourcePillLabel(source: TileSourceConfig): string {
+   return basemapProviderShort(source.id, source.provider)
+ }
++
++// ── SVG 图标路径（统一样式） ──
++const ICONS = {
++  screenshot: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
++  workflow: 'M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5',
++  settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z',
++  log: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
++  move: 'M5 9L2 12l3 3 M9 5l3-3 3 3 M15 19l-3 3-3-3 M19 9l3 3-3 3 M2 12h20 M12 2v20',
++  select: 'M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z',
++  measure: 'M21 3L3 21 M21 3a2 2 0 0 1 0 4 2 2 0 0 1-4 0 2 2 0 0 1 4-4z M3 21a2 2 0 0 1 0-4 2 2 0 0 1 4 0 2 2 0 0 1-4 4z',
++  delete: 'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
++}
+ </script>
+ 
+ <template>
+   <header class="toolbar">
+-    <!-- 左侧：主工具栏 -->
++    <!-- 左侧：品牌 + 主工具栏 -->
+     <div class="toolbar-primary">
+       <div class="brand">
+         <div class="brand-mark"></div>
+@@ -196,143 +218,150 @@ function sourcePillLabel(source: TileSourceConfig): string {
+       </div>
+ 
+       <div class="primary-tools">
+-        <!-- 数据导入 / 导出 -->
+-        <DataImportMenu />
+-
+-        <!-- 移动 / 选择 模式 -->
+-        <div class="mode-group">
+-          <button
+-            class="mode-btn"
+-            :class="{ active: uiStore.interactionMode === 'move' }"
+-            type="button"
+-            title="移动模式（拖动平移地图）"
++        <!-- 移动 / 选择 / 测量 模式（常驻，不收起） -->
++        <div class="mode-group" role="group" aria-label="交互模式">
++          <IconButton
++            size="sm"
++            :icon="ICONS.move"
++            :active="uiStore.interactionMode === 'move'"
++            label="移动模式"
+             @click="setInteractionMode('move')"
+-          >
+-            <svg
+-              width="14"
+-              height="14"
+-              viewBox="0 0 24 24"
+-              fill="none"
+-              stroke="currentColor"
+-              stroke-width="2"
+-              stroke-linecap="round"
+-              stroke-linejoin="round"
+-            >
+-              <polyline points="5 9 2 12 5 15" />
+-              <polyline points="9 5 12 2 15 5" />
+-              <polyline points="15 19 12 22 9 19" />
+-              <polyline points="19 9 22 12 19 15" />
+-              <line x1="2" y1="12" x2="22" y2="12" />
+-              <line x1="12" y1="2" x2="12" y2="22" />
+-            </svg>
+-          </button>
+-          <button
+-            class="mode-btn"
+-            :class="{ active: uiStore.interactionMode === 'select' }"
+-            type="button"
+-            title="点查模式（点击查询）"
++          />
++          <IconButton
++            size="sm"
++            :icon="ICONS.select"
++            :active="uiStore.interactionMode === 'select'"
++            label="点查模式"
+             @click="setInteractionMode('select')"
+-          >
+-            <svg
+-              width="14"
+-              height="14"
+-              viewBox="0 0 24 24"
+-              fill="none"
+-              stroke="currentColor"
+-              stroke-width="2"
+-              stroke-linecap="round"
+-              stroke-linejoin="round"
+-            >
+-              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+-            </svg>
+-          </button>
+-          <button
+-            class="mode-btn"
+-            :class="{ active: uiStore.interactionMode === 'measure' }"
+-            type="button"
+-            title="测量模式（点击打点，双击完成，右键撤销）"
++          />
++          <IconButton
++            size="sm"
++            :icon="ICONS.measure"
++            :active="uiStore.interactionMode === 'measure'"
++            label="测量模式"
+             @click="setInteractionMode('measure')"
+-          >
+-            <svg
+-              width="14"
+-              height="14"
+-              viewBox="0 0 24 24"
+-              fill="none"
+-              stroke="currentColor"
+-              stroke-width="2"
+-              stroke-linecap="round"
+-              stroke-linejoin="round"
+-            >
+-              <path d="M21 3L3 21" />
+-              <circle cx="21" cy="3" r="2" fill="currentColor" />
+-              <circle cx="3" cy="21" r="2" fill="currentColor" />
+-            </svg>
+-          </button>
+-          <button
++          />
++          <IconButton
+             v-if="uiStore.interactionMode === 'measure' && uiStore.measureState.points.length > 0"
+-            class="mode-btn clear-btn"
+-            type="button"
+-            title="清除测量路径"
++            size="sm"
++            :icon="ICONS.delete"
++            label="清除测量"
++            class="clear-btn"
+             @click="clearMeasure"
+-          >
+-            <svg
+-              width="14"
+-              height="14"
+-              viewBox="0 0 24 24"
+-              fill="none"
+-              stroke="currentColor"
+-              stroke-width="2"
+-              stroke-linecap="round"
+-              stroke-linejoin="round"
+-            >
+-              <path d="M3 6h18" />
+-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+-            </svg>
+-          </button>
++          />
+         </div>
+ 
+-        <!-- 截图 -->
+-        <button class="tool-btn" type="button" title="导出截图" @click="handleScreenshot">
+-          <span class="btn-icon" aria-hidden="true">◫</span>
+-          <span class="btn-label">截图</span>
+-        </button>
+-
+-        <!-- 工作流 -->
+-        <button
+-          class="tool-btn"
+-          type="button"
+-          :title="WORKFLOW_COPY.entryTitle"
+-          @click="handleWorkflowEditor"
+-        >
+-          <span class="btn-icon" aria-hidden="true">⬡</span>
+-          <span class="btn-label">{{ WORKFLOW_COPY.entry }}</span>
+-        </button>
++        <!-- 可收起工具组：数据/截图/工作流/设置/日志/主题 -->
++        <div class="tools-collapsible" :class="{ 'tools-collapsible--collapsed': toolsCollapsed }">
++          <div class="tools-collapsible-inner">
++            <DataImportMenu />
++
++            <!-- 截图 -->
++            <AppButton
++              size="sm"
++              variant="secondary"
++              title="导出截图"
++              @click="handleScreenshot"
++            >
++              <span class="btn-icon">◫</span>
++              <span>截图</span>
++            </AppButton>
++
++            <!-- 工作流 -->
++            <AppButton
++              size="sm"
++              variant="secondary"
++              :title="WORKFLOW_COPY.entryTitle"
++              @click="handleWorkflowEditor"
++            >
++              <span class="btn-icon">⬡</span>
++              <span>{{ WORKFLOW_COPY.entry }}</span>
++            </AppButton>
++
++            <!-- 设置 -->
++            <AppButton
++              size="sm"
++              variant="secondary"
++              :title="SETTINGS_COPY.panelTitle"
++              @click="handleSettings"
++            >
++              <span class="btn-icon">⚙</span>
++              <span>{{ SETTINGS_COPY.panelTitle }}</span>
++            </AppButton>
++
++            <!-- 日志 -->
++            <AppButton
++              size="sm"
++              variant="secondary"
++              title="系统日志"
++              class="log-btn"
++              @click="emit('openLog')"
++            >
++              <span class="btn-icon">📋</span>
++              <span>日志</span>
++              <span v-if="logStore.errorCount > 0" class="log-badge">{{ logStore.errorCount }}</span>
++            </AppButton>
++
++            <!-- 主题切换 -->
++            <IconButton
++              size="sm"
++              :label="themeStore.mode === 'dark' ? '切换到浅色模式' : '切换到暗色模式'"
++              :title="themeStore.mode === 'dark' ? '切换到浅色模式' : '切换到暗色模式'"
++              @click="themeStore.toggle()"
++            >
++              <svg
++                v-if="themeStore.mode === 'dark'"
++                width="16"
++                height="16"
++                viewBox="0 0 24 24"
++                fill="none"
++                stroke="currentColor"
++                stroke-width="1.5"
++                stroke-linecap="round"
++                stroke-linejoin="round"
++                aria-hidden="true"
++              >
++                <circle cx="12" cy="12" r="4" />
++                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
++              </svg>
++              <svg
++                v-else
++                width="16"
++                height="16"
++                viewBox="0 0 24 24"
++                fill="none"
++                stroke="currentColor"
++                stroke-width="1.5"
++                stroke-linecap="round"
++                stroke-linejoin="round"
++                aria-hidden="true"
++              >
++                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
++              </svg>
++            </IconButton>
++          </div>
++        </div>
+ 
+-        <!-- 设置 -->
++        <!-- 收起/展开 toggle 按钮 -->
+         <button
+-          class="tool-btn"
++          class="tools-toggle"
+           type="button"
+-          :title="SETTINGS_COPY.panelTitle"
+-          @click="handleSettings"
++          :aria-label="toolsCollapsed ? '展开工具栏' : '收起工具栏'"
++          :title="toolsCollapsed ? '展开工具栏' : '收起工具栏'"
++          @click="toggleTools"
+         >
+-          <span class="btn-icon" aria-hidden="true">⚙</span>
+-          <span class="btn-label">{{ SETTINGS_COPY.panelTitle }}</span>
+-        </button>
+-
+-        <!-- 日志 -->
+-        <button class="tool-btn" type="button" title="系统日志" @click="emit('openLog')">
+-          <span class="btn-icon" aria-hidden="true">📋</span>
+-          <span class="btn-label">日志</span>
+-          <span v-if="logStore.errorCount > 0" class="log-badge">{{ logStore.errorCount }}</span>
++          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
++            <polyline v-if="toolsCollapsed" points="9 18 15 12 9 6" />
++            <polyline v-else points="15 18 9 12 15 6" />
++          </svg>
+         </button>
+       </div>
+     </div>
+ 
+-    <!-- 右侧：保留元素 -->
++    <!-- 右侧：状态集群 -->
+     <div class="toolbar-main">
+-      <!-- Row 1: style tabs + workflow status + availability + 2D -->
+       <div class="toolbar-strip">
++        <!-- 底图风格标签 -->
+         <div class="style-tabs" role="tablist" aria-label="底图风格">
+           <button
+             v-for="group in sourcesByStyle"
+@@ -348,27 +377,15 @@ function sourcePillLabel(source: TileSourceConfig): string {
+           </button>
+         </div>
+ 
+-        <!-- Workflow status -->
++        <!-- 状态集群 -->
+         <WorkflowStatusButton
+           :summary="mergedWorkflowSummary"
+           @click="emit('openWorkflowStatus')"
+         />
+-
+-        <!-- Availability status chip -->
+-        <div
+-          v-if="activeLayerCount > 0"
+-          class="status-chip"
+-          :class="`availability-${activeLayer.availabilityState}`"
+-          :title="activeLayer.availabilityDescription"
+-        >
+-          {{ activeLayer.availabilityLabel }}
+-        </div>
+-
+-        <!-- 2D/3D dimension indicator -->
+-        <div class="status-chip dim-mode">2D</div>
++        <Chip variant="default" class="dim-chip">2D</Chip>
+       </div>
+ 
+-      <!-- Row 2: source selector + time + layer info -->
++      <!-- Row 2: 源 + 时间 + 图层 -->
+       <div class="toolbar-strip">
+         <div v-if="activeStyle !== 'none'" class="source-pill">
+           <button
+@@ -392,12 +409,12 @@ function sourcePillLabel(source: TileSourceConfig): string {
+ 
+         <div class="time-chip">{{ hourLabel }}</div>
+ 
+-        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
+-        <div v-else class="status-chip">{{ LAYERS_COPY.emptyTitle }}</div>
+-        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
+-        <div v-if="currentSourceLocked" class="status-chip warning">
++        <Chip v-if="activeLayerCount > 0">{{ activeLayer.name }}</Chip>
++        <Chip v-else>{{ LAYERS_COPY.emptyTitle }}</Chip>
++        <Chip v-if="activeLayerCount > 0">{{ activeLayerCount }} 个图层</Chip>
++        <Chip v-if="currentSourceLocked" variant="warning">
+           {{ BASEMAP_COPY.needApiKey }}
+-        </div>
++        </Chip>
+       </div>
+     </div>
+   </header>
+@@ -409,18 +426,13 @@ function sourcePillLabel(source: TileSourceConfig): string {
+   justify-content: space-between;
+   gap: 0.8rem;
+   align-items: center;
+-  padding: 0.48rem 0.7rem;
+-  border: 1px solid rgba(145, 197, 255, 0.14);
+-  border-radius: 1rem;
+-  background:
+-    linear-gradient(180deg, rgba(8, 17, 31, 0.52), rgba(7, 15, 28, 0.44)), rgba(8, 18, 33, 0.42);
+-  backdrop-filter: blur(18px);
+-  box-shadow:
+-    0 18px 42px rgba(1, 8, 16, 0.22),
+-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
++  padding: 0.35rem 0.5rem;
++  background: transparent;
++  border: none;
++  box-shadow: none;
+ }
+ 
+-/* ── 左侧主工具栏 ─────────────────────────────────────────────────── */
++/* ── 左侧主工具栏 ── */
+ .toolbar-primary {
+   display: flex;
+   align-items: center;
+@@ -455,7 +467,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
+ 
+ .eyebrow {
+   margin: 0 0 0.08rem;
+-  color: #88dfff;
++  color: var(--accent-strong);
+   font-size: 0.62rem;
+   letter-spacing: 0.08em;
+   text-transform: uppercase;
+@@ -471,122 +483,121 @@ h1 {
+ .primary-tools {
+   display: flex;
+   align-items: center;
+-  gap: 0.3rem;
++  gap: 0.4rem;
+   padding-left: 0.62rem;
+   border-left: 1px solid rgba(136, 192, 255, 0.1);
+ }
+ 
+-/* 统一工具按钮样式 */
+-.tool-btn {
+-  position: relative;
+-  display: inline-flex;
++/* 可收起工具组：用 max-width + opacity 做平滑动画 */
++.tools-collapsible {
++  display: flex;
+   align-items: center;
+-  gap: 0.24rem;
+-  border: 1px solid rgba(136, 192, 255, 0.1);
+-  border-radius: 0.5rem;
+-  padding: 0.3rem 0.46rem;
+-  background: rgba(4, 12, 23, 0.6);
+-  color: #9fb6cc;
+-  cursor: pointer;
+-  font: inherit;
+-  font-size: 0.62rem;
+-  font-weight: 500;
+-  white-space: nowrap;
++  max-width: 600px;
++  opacity: 1;
++  overflow: hidden;
+   transition:
+-    border-color 0.18s ease,
+-    color 0.18s ease,
+-    background 0.18s ease;
+-}
+-
+-.tool-btn:hover {
+-  border-color: rgba(90, 213, 255, 0.3);
+-  color: #5ad5ff;
+-  background: rgba(10, 132, 255, 0.12);
++    max-width var(--motion-slow) var(--ease-emphasized),
++    opacity var(--motion-base) var(--ease-standard),
++    margin var(--motion-slow) var(--ease-emphasized);
+ }
+ 
+-.tool-btn.active {
+-  border-color: rgba(90, 213, 255, 0.4);
+-  color: #5ad5ff;
+-  background: rgba(10, 132, 255, 0.2);
+-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
++.tools-collapsible--collapsed {
++  max-width: 0;
++  opacity: 0;
++  margin-left: -0.4rem;
++  pointer-events: none;
+ }
+ 
+-.btn-icon {
+-  font-size: 0.72rem;
+-  opacity: 0.9;
+-}
+-.btn-label {
+-  font-size: 0.6rem;
+-}
+-
+-.log-badge {
+-  position: absolute;
+-  top: -0.36rem;
+-  right: -0.36rem;
+-  min-width: 0.82rem;
+-  height: 0.82rem;
++.tools-collapsible-inner {
+   display: flex;
+   align-items: center;
+-  justify-content: center;
+-  padding: 0 0.18rem;
+-  border-radius: 999px;
+-  background: rgba(10, 132, 255, 0.8);
+-  color: #fff;
+-  font-size: 0.48rem;
+-  font-weight: 700;
+-}
+-
+-/* 移动 / 选择 模式按钮组 */
+-.mode-group {
+-  display: inline-flex;
+-  gap: 0.12rem;
+-  padding: 0.16rem;
+-  border: 1px solid rgba(136, 192, 255, 0.1);
+-  border-radius: 0.5rem;
+-  background: rgba(4, 12, 23, 0.6);
++  gap: 0.4rem;
++  white-space: nowrap;
+ }
+ 
+-.mode-btn {
+-  width: 1.56rem;
+-  height: 1.56rem;
++/* 收起/展开 toggle 按钮 */
++.tools-toggle {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+-  border: 1px solid transparent;
+-  border-radius: 0.36rem;
+-  background: transparent;
+-  color: #6e8ba0;
++  width: 28px;
++  height: 28px;
++  min-width: 28px;
++  border: 1px solid var(--border-default);
++  border-radius: var(--radius-md);
++  background: var(--surface-2);
++  color: var(--text-secondary);
+   cursor: pointer;
++  flex: 0 0 auto;
+   transition:
+-    background 0.16s ease,
+-    color 0.16s ease,
+-    border-color 0.16s ease;
++    background-color var(--motion-fast) var(--ease-standard),
++    color var(--motion-fast) var(--ease-standard),
++    border-color var(--motion-fast) var(--ease-standard);
+ }
+ 
+-.mode-btn:hover {
+-  background: rgba(136, 192, 255, 0.1);
+-  color: #c8dff0;
++.tools-toggle:hover {
++  background: var(--surface-hover);
++  color: var(--accent);
++  border-color: var(--border-strong);
++}
++
++.tools-toggle:focus-visible {
++  outline: 2px solid var(--accent);
++  outline-offset: 2px;
++}
++
++/* 主工具栏按钮图标尺寸 */
++.primary-tools .btn-icon {
++  display: inline-flex;
++  font-size: 0.9rem;
++  line-height: 1;
++  opacity: 0.9;
++  flex: 0 0 auto;
++}
++
++/* 模式按钮组 */
++.mode-group {
++  display: inline-flex;
++  gap: 0.1rem;
++  padding: 0.14rem;
++  border: 1px solid var(--border-default);
++  border-radius: var(--radius-md);
++  background: var(--surface-sunken);
+ }
+ 
+-.mode-btn.active {
+-  background: rgba(60, 120, 200, 0.32);
+-  border-color: rgba(136, 192, 255, 0.38);
+-  color: #f4fbff;
++/* 清除测量按钮 */
++.clear-btn {
++  --danger: #ff8c64;
++}
++.clear-btn :deep(svg) {
++  color: #ff8c64;
+ }
+ 
+-/* 清除测量路径按钮（仅在 measure 模式且有路径时显示） */
+-.mode-btn.clear-btn {
+-  background: rgba(180, 60, 60, 0.18);
+-  border-color: rgba(255, 120, 120, 0.32);
+-  color: #ff9a9a;
++/* 日志徽标 */
++.log-btn {
++  position: relative;
+ }
+ 
+-.mode-btn.clear-btn:hover {
+-  background: rgba(220, 80, 80, 0.28);
+-  color: #ffb0b0;
++.log-badge {
++  position: absolute;
++  top: -0.36rem;
++  right: -0.36rem;
++  min-width: 0.9rem;
++  height: 0.9rem;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  padding: 0 0.2rem;
++  border-radius: 999px;
++  background: var(--accent);
++  color: #06121f;
++  font-size: 0.65rem;
++  font-weight: 700;
++  line-height: 1;
++  pointer-events: none;
+ }
+ 
+-/* ── 右侧保留区 ───────────────────────────────────────────────────── */
++/* ── 右侧状态区 ── */
+ .toolbar-main {
+   display: flex;
+   flex-direction: column;
+@@ -613,9 +624,9 @@ h1 {
+   display: inline-flex;
+   gap: 0.18rem;
+   padding: 0.16rem;
+-  border: 1px solid rgba(136, 192, 255, 0.14);
++  border: 1px solid var(--border-default);
+   border-radius: 999px;
+-  background: rgba(4, 12, 23, 0.82);
++  background: var(--surface-sunken);
+ }
+ 
+ .style-tab {
+@@ -626,28 +637,28 @@ h1 {
+   border-radius: 999px;
+   padding: 0.26rem 0.52rem;
+   background: transparent;
+-  color: #8aa8bf;
++  color: var(--text-muted);
+   cursor: pointer;
+   font: inherit;
+-  font-size: 0.64rem;
++  font-size: var(--font-size-caption);
+   transition:
+-    background-color 0.2s ease,
+-    color 0.2s ease,
+-    transform 0.2s ease;
++    background-color var(--motion-fast) var(--ease-standard),
++    color var(--motion-fast) var(--ease-standard),
++    transform var(--motion-fast) var(--ease-standard);
+   white-space: nowrap;
+ }
+ 
+ .style-tab:hover {
+-  color: #f0f8ff;
+-  background: rgba(136, 192, 255, 0.1);
++  color: var(--text-strong);
++  background: var(--surface-sunken);
+   transform: translateY(-1px);
+ }
+ 
+ .style-tab.active {
+   background: rgba(10, 132, 255, 0.5);
+-  color: #f0faff;
+-  font-weight: 600;
+-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.2);
++  color: var(--text-strong);
++  font-weight: var(--font-weight-medium);
++  box-shadow: inset 0 0 0 1px var(--border-accent);
+ }
+ 
+ .style-icon {
+@@ -665,9 +676,9 @@ h1 {
+   align-items: center;
+   gap: 0.14rem;
+   padding: 0.16rem 0.22rem 0.16rem 0.3rem;
+-  border: 1px solid rgba(136, 192, 255, 0.1);
++  border: 1px solid var(--border-default);
+   border-radius: 999px;
+-  background: rgba(4, 12, 23, 0.6);
++  background: var(--surface-sunken);
+ }
+ 
+ .source-btn {
+@@ -677,29 +688,29 @@ h1 {
+   border-radius: 0.4rem;
+   padding: 0 0.28rem;
+   background: transparent;
+-  color: #6e8ba0;
++  color: var(--text-faint);
+   cursor: pointer;
+   font: inherit;
+-  font-size: 0.58rem;
+-  font-weight: 600;
++  font-size: var(--font-size-caption);
++  font-weight: var(--font-weight-medium);
+   letter-spacing: 0.01em;
+   white-space: nowrap;
+   transition:
+-    background 0.16s ease,
+-    color 0.16s ease,
+-    transform 0.16s ease;
++    background var(--motion-fast) var(--ease-standard),
++    color var(--motion-fast) var(--ease-standard),
++    transform var(--motion-fast) var(--ease-standard);
+ }
+ 
+ .source-btn:hover {
+-  background: rgba(136, 192, 255, 0.1);
+-  color: #c8dff0;
++  background: var(--surface-sunken);
++  color: var(--text-secondary);
+   transform: scale(1.06);
+ }
+ 
+ .source-btn.active {
+   background: rgba(10, 132, 255, 0.22);
+-  color: #5ad5ff;
+-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.3);
++  color: var(--accent);
++  box-shadow: inset 0 0 0 1px var(--border-accent);
+ }
+ 
+ .source-btn.locked {
+@@ -713,49 +724,6 @@ h1 {
+   color: #ffb090;
+ }
+ 
+-/* Status chips */
+-.status-chip {
+-  display: inline-flex;
+-  align-items: center;
+-  max-width: 8rem;
+-  padding: 0.24rem 0.46rem;
+-  border-radius: 999px;
+-  background: rgba(4, 12, 23, 0.42);
+-  border: 1px solid rgba(136, 192, 255, 0.1);
+-  color: #d8e6f5;
+-  font-size: 0.6rem;
+-  white-space: nowrap;
+-  overflow: hidden;
+-  text-overflow: ellipsis;
+-}
+-
+-.availability-ready {
+-  color: #9ff8cf;
+-  border-color: rgba(114, 255, 207, 0.18);
+-  background: rgba(114, 255, 207, 0.1);
+-}
+-.availability-partial {
+-  color: #ffd38a;
+-  border-color: rgba(255, 196, 120, 0.18);
+-  background: rgba(255, 196, 120, 0.08);
+-}
+-.availability-empty {
+-  color: #d7c1ff;
+-  border-color: rgba(187, 137, 255, 0.2);
+-  background: rgba(187, 137, 255, 0.1);
+-}
+-.status-chip.warning {
+-  color: #ffc878;
+-  border-color: rgba(255, 180, 80, 0.2);
+-  background: rgba(255, 160, 60, 0.1);
+-}
+-.status-chip.dim-mode {
+-  color: #5ad5ff;
+-  border-color: rgba(90, 213, 255, 0.24);
+-  background: rgba(10, 132, 255, 0.12);
+-  font-weight: 600;
+-}
+-
+ /* Time chip */
+ .time-chip {
+   display: inline-flex;
+@@ -764,17 +732,26 @@ h1 {
+   min-width: 3.2rem;
+   padding: 0.24rem 0.56rem;
+   border-radius: 999px;
+-  background: rgba(4, 12, 23, 0.42);
+-  border: 1px solid rgba(136, 192, 255, 0.12);
+-  color: #eff8ff;
+-  font-size: 0.66rem;
+-  font-weight: 600;
++  background: var(--surface-sunken);
++  border: 1px solid var(--border-default);
++  color: var(--text-strong);
++  font-size: var(--font-size-caption);
++  font-weight: var(--font-weight-medium);
+   font-variant-numeric: tabular-nums;
+   letter-spacing: 0.04em;
+   text-align: center;
+   white-space: nowrap;
+ }
+ 
++/* 2D 维度指示：高对比度，确保可读 */
++.dim-chip {
++  background: var(--surface-3) !important;
++  border-color: var(--border-strong) !important;
++  color: var(--text-strong) !important;
++  font-weight: var(--font-weight-medium);
++  letter-spacing: 0.02em;
++}
++
+ @media (max-width: 1100px) {
+   .toolbar {
+     flex-direction: column;
+@@ -797,4 +774,4 @@ h1 {
+     flex-wrap: wrap;
+   }
+ }
+-</style>
++</style>
+\ No newline at end of file
+diff --git a/Code/frontend/src/main.ts b/Code/frontend/src/main.ts
+index 7f294b4..41fb471 100644
+--- a/Code/frontend/src/main.ts
++++ b/Code/frontend/src/main.ts
+@@ -8,15 +8,19 @@ import { BRAND } from './ui-copy/brand'
+ import './styles/main.css'
+ import { installClientErrorCapture } from './utils/client-error-capture'
+ import { installPerfGlobal } from './utils/perf-probe'
++import { useThemeStore } from './stores/theme'
+ 
+ installPerfGlobal()
+ 
+ document.title = BRAND.fullName
+ 
+ const app = createApp(App)
+-
+-app.use(createPinia())
++const pinia = createPinia()
++app.use(pinia)
+ app.use(router)
+ installClientErrorCapture(app)
+ 
++// 初始化主题（在 mount 前应用 data-theme，避免闪屏）
++useThemeStore(pinia)
++
+ app.mount('#app')
+diff --git a/Code/frontend/src/styles/main.css b/Code/frontend/src/styles/main.css
+index 7d76e6b..ae0aafc 100644
+--- a/Code/frontend/src/styles/main.css
++++ b/Code/frontend/src/styles/main.css
+@@ -19,7 +19,7 @@ body,
+   line-height: 1.5;
+   font-weight: 400;
+   font-size: 15px;
+-  color: #d9e6f2;
++  color: var(--text-primary);
+   background:
+     radial-gradient(circle at top, rgba(17, 94, 160, 0.24), transparent 30rem),
+     linear-gradient(180deg, #020814 0%, #071120 45%, #091425 100%);
+@@ -29,6 +29,14 @@ body,
+   -moz-osx-font-smoothing: grayscale;
+ }
+ 
++/* 浅色主题：暖白底背景 */
++[data-theme='light'] {
++  color: var(--text-primary);
++  background:
++    radial-gradient(circle at top, rgba(10, 143, 196, 0.08), transparent 30rem),
++    linear-gradient(180deg, #eef2f7 0%, #e6ecf3 45%, #dde5ee 100%);
++}
++
+ html,
+ body,
+ #app {
+diff --git a/Code/frontend/src/styles/tokens.css b/Code/frontend/src/styles/tokens.css
+index 7df31a0..4e61056 100644
+--- a/Code/frontend/src/styles/tokens.css
++++ b/Code/frontend/src/styles/tokens.css
+@@ -1,57 +1,180 @@
+-/* 设计令牌层（发布就绪 P1-10 最小止血）。
++/**
++ * CGDA 前端设计系统 Token 层（发布就绪 V1.0 — 商业级升级）
+  *
+- * 现状问题：main.css 此前 0 个 CSS 变量，各 .vue 内联 hex 共 229 个唯一值，
+- * 主题无法统一调整。本文件建立设计令牌（颜色/圆角/间距/字号）单一真源，
+- * 后续组件逐步迁移到 var(--*) 引用。
++ * 单一真源：所有颜色/间距/字号/动效/层级 token 定义于此，禁止组件内联 hex 或硬编码值。
++ * 迁移策略：229 个内联 hex → 统一 token 引用，分阶段组件改造（S1 token → S2 基础组件 → S3 迁移）。
+  *
+- * 说明：字号下限（正文 ≥12px）涉及全局密排暗色 UI 的视觉回归，需视觉 QA 后
+- * 再统一抬升——此处先定义令牌刻度（含 floor），不在本次盲改各组件字号。
++ * 颜色主题：深空蓝青（品牌 #5ad5ff）+ 低透明黑玻璃层级 + WCAG AA 对比度。
++ * 排版基线：root=15px；正文 floor ≥12px（商业化可读下限）；仅 400/500 两字重。
++ * 动效哲学：克制（120–320ms）、缓出、有物理感（translateY / shadow 不用 scale）。
++ *
++ * 规范出处：deliverables/design-system-spec.md §2 设计令牌（Design Tokens）
+  */
+ 
+ :root {
+-  /* ── 颜色：文本 ── */
+-  --text-strong: #f0faff;
+-  --text-primary: #d8e6f5;
+-  --text-secondary: #9fb6cc;
+-  --text-muted: #8aa8bf;
+-  --text-faint: #6e8ba0;
+-  --text-disabled: #5a7080;
+-
+-  /* ── 颜色：强调 / 状态 ── */
+-  --accent: #5ad5ff;
+-  --accent-strong: #88dfff;
+-  --accent-warm: #ffc878;
++  /* ═══ 颜色：文本分层 ═══ */
++  --text-strong: #f0faff;         /* 最亮，标题 / 强调 */
++  --text-primary: #d8e6f5;        /* 正文 / 默认 */
++  --text-secondary: #9fb6cc;      /* 辅助文本 */
++  --text-muted: #8aa8bf;          /* 禁用 / 第三层 */
++  --text-faint: #6e8ba0;          /* 极淡，很少用 */
++  --text-disabled: #5a7080;       /* 禁用态文本 */
++
++  /* ═══ 颜色：品牌 / 强调 ═══ */
++  --accent: #5ad5ff;              /* 主品牌色（亮青） */
++  --accent-strong: #88dfff;       /* 强调色（更亮） */
++  --accent-warm: #ffc878;         /* 暖强调（橙） */
++
++  /* ═══ 颜色：语义三件套（文字 + 表面 + 边框）═══ */
++  /* Success */
+   --success: #9ff8cf;
++  --success-surface: rgba(159, 248, 207, 0.12);
++  --success-border: rgba(159, 248, 207, 0.30);
++
++  /* Warning */
+   --warning: #ffb070;
++  --warning-surface: rgba(255, 176, 112, 0.12);
++  --warning-border: rgba(255, 176, 112, 0.30);
++
++  /* Danger / Error */
+   --danger: #ff8c64;
++  --danger-surface: rgba(255, 140, 100, 0.12);
++  --danger-border: rgba(255, 140, 100, 0.30);
++
++  /* Info (= accent) */
++  --info: var(--accent);
++  --info-surface: rgba(90, 213, 255, 0.12);
++  --info-border: rgba(90, 213, 255, 0.30);
++
++  /* ═══ 颜色：表面层级（暗色。越上层越不透明） ═══ */
++  --surface-base: #020814;        /* 最底，背景 */
++  --surface-sunken: rgba(4, 12, 23, 0.60);      /* 低 */
++  --surface-1: rgba(8, 17, 31, 0.86);          /* 浮层底（升 from .60 → .86 保证地图强数据时可读） */
++  --surface-2: rgba(13, 23, 39, 0.92);         /* 面板壳 / 对话框 */
++  --surface-3: rgba(18, 30, 48, 0.96);         /* 最高 */
++  --surface-hover: rgba(20, 40, 66, 0.98);     /* 交互态 */
++
++  /* ═══ 颜色：边框四级 ═══ */
++  --border-subtle: rgba(136, 192, 255, 0.08);  /* 极淡（divider / optional） */
++  --border-default: rgba(136, 192, 255, 0.16); /* 默认 */
++  --border-strong: rgba(90, 213, 255, 0.36);   /* 重 */
++  --border-accent: rgba(90, 213, 255, 0.28);   /* 强调 */
++
++  /* ═══ 圆角 ═══ */
++  --radius-sm: 0.32rem;   /* 6px — 小控件 */
++  --radius-md: 0.5rem;    /* 8px — 按钮 / 输入框 */
++  --radius-lg: 1rem;      /* 16px — 卡片 / 面板（推荐） */
++  --radius-xl: 1.4rem;    /* 21px — 大面板 / 对话框 */
++  --radius-pill: 999px;   /* 全圆 — 芯片 / 徽章 */
++
++  /* ═══ 间距（4px 基数） ═══ */
++  --space-1: 0.22rem;     /* 3.3px — 极紧 */
++  --space-2: 0.32rem;     /* 4.8px — 紧凑 */
++  --space-3: 0.52rem;     /* 7.8px — 标准 */
++  --space-4: 0.72rem;     /* 10.8px — 宽 */
++  --space-5: 1.2rem;      /* 18px — 很宽 */
++  --space-6: 1.6rem;      /* 24px — 极宽 */
++  --space-7: 2.4rem;      /* 36px — 分组间 */
++
++  /* ═══ 字号（root=15px，正文 floor ≥12px） ═══ */
++  /* 注：仅保留规范所需五档，淘汰 micro 8.7px、caption 9.3px */
++  --font-size-caption: 0.8rem;    /* 12px — floor，标签 / 辅助（新 floor） */
++  --font-size-body: 0.87rem;      /* 13px — 正文 */
++  --font-size-title: 0.93rem;     /* 14px — 小标题 / 面板标题 */
++  --font-size-subtitle: 1.07rem;  /* 16px — 区块标题 */
++  --font-size-h2: 1.33rem;        /* 20px — 次级大标题 */
++  --font-size-h1: 1.6rem;         /* 24px — 主标题 */
++
++  /* ═══ 字重（仅两档：克制） ═══ */
++  --font-weight-regular: 400;
++  --font-weight-medium: 500;
++
++  /* ═══ Elevation（暗色实现：低透明阴影 + 内高光） ═══ */
++  --glass-blur: 16px;  /* 统一玻璃模糊（替代当前 12/18 不一） */
++
++  --elevation-1:
++    0 1px 2px rgba(0, 0, 0, 0.30),
++    inset 0 1px 0 rgba(255, 255, 255, 0.04);
++
++  --elevation-2:
++    0 6px 16px rgba(0, 0, 0, 0.35),
++    inset 0 1px 0 rgba(255, 255, 255, 0.05);
++
++  --elevation-3:
++    0 16px 40px rgba(0, 0, 0, 0.45),
++    inset 0 1px 0 rgba(255, 255, 255, 0.06);
++
++  --elevation-modal:
++    0 30px 70px rgba(0, 0, 0, 0.55),
++    inset 0 1px 0 rgba(255, 255, 255, 0.07);
++
++  /* ═══ 动效（克制 + 物理感） ═══ */
++  --motion-fast: 120ms;
++  --motion-base: 200ms;
++  --motion-slow: 320ms;
++
++  /* 缓动函数 */
++  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);      /* 标准出 */
++  --ease-emphasized: cubic-bezier(0.3, 0, 0.2, 1);      /* 强调 */
++  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);        /* 减速 */
++
++  /* ═══ z-index 层级 ═══ */
++  --z-map: 0;           /* 地图基底 */
++  --z-overlay: 20;      /* 地图浮层 / 信息窗 */
++  --z-panel: 24;        /* 浮层面板 dock */
++  --z-popover: 60;      /* 下拉菜单 / 气泡 */
++  --z-modal: 80;        /* 模态对话框 */
++  --z-toast: 100;       /* 消息提示 / 通知 */
++  --z-debug: 999;       /* 调试工具（最高） */
++}
++
++/* ═══════════════════════════════════════════════════════════════════
++ * 浅色主题覆盖（data-theme="light"）
++ * 仅覆盖颜色 token；间距/字号/动效/圆角/z-index 复用 :root
++ * 设计：暖白底 + 深蓝灰文字 + 品牌青强调，WCAG AA 对比度
++ * ═══════════════════════════════════════════════════════════════════ */
++[data-theme='light'] {
++  /* 文本（深色，保证在浅底上可读） */
++  --text-strong: #0a1626;
++  --text-primary: #1a2b42;
++  --text-secondary: #4a6076;
++  --text-muted: #6b8094;
++  --text-faint: #8a9db0;
++  --text-disabled: #b0bccc;
++
++  /* 品牌 / 强调（加深以保证浅底对比度） */
++  --accent: #0a8fc4;
++  --accent-strong: #00709e;
++  --accent-warm: #c97a14;
++
++  /* 语义三件套（浅底版本：文字色加深，表面更淡） */
++  --success: #0a7a4e;
++  --success-surface: rgba(10, 122, 78, 0.10);
++  --success-border: rgba(10, 122, 78, 0.30);
++
++  --warning: #a55a08;
++  --warning-surface: rgba(165, 90, 8, 0.10);
++  --warning-border: rgba(165, 90, 8, 0.30);
++
++  --danger: #b8311a;
++  --danger-surface: rgba(184, 49, 26, 0.10);
++  --danger-border: rgba(184, 49, 26, 0.30);
++
++  --info: var(--accent);
++  --info-surface: rgba(10, 143, 196, 0.10);
++  --info-border: rgba(10, 143, 196, 0.30);
++
++  /* 表面层级（浅色：越上层越白） */
++  --surface-base: #eef2f7;
++  --surface-sunken: rgba(255, 255, 255, 0.6);
++  --surface-1: rgba(255, 255, 255, 0.82);
++  --surface-2: rgba(255, 255, 255, 0.92);
++  --surface-3: rgba(255, 255, 255, 0.98);
++  --surface-hover: rgba(240, 245, 252, 0.98);
+ 
+-  /* ── 颜色：表面 / 边框（深色 GIS 主题）── */
+-  --surface-base: #020814;
+-  --surface-panel: rgba(8, 17, 31, 0.96);
+-  --surface-raised: rgba(4, 12, 23, 0.6);
+-  --surface-sunken: rgba(4, 12, 23, 0.5);
+-  --border-subtle: rgba(136, 192, 255, 0.08);
+-  --border-default: rgba(136, 192, 255, 0.16);
+-  --border-strong: rgba(90, 213, 255, 0.36);
+-  --border-accent: rgba(90, 213, 255, 0.28);
+-
+-  /* ── 圆角 ── */
+-  --radius-sm: 0.32rem;
+-  --radius-md: 0.5rem;
+-  --radius-lg: 1rem;
+-  --radius-pill: 999px;
+-
+-  /* ── 间距基数 ── */
+-  --space-1: 0.22rem;
+-  --space-2: 0.32rem;
+-  --space-3: 0.52rem;
+-  --space-4: 0.72rem;
+-  --space-5: 1.2rem;
+-
+-  /* ── 字号刻度（root=15px）。floor 令牌定义商业化可读下限，应用需视觉 QA ── */
+-  --font-size-micro: 0.58rem; /* 8.7px —— 当前最小，待视觉 QA 后收敛 */
+-  --font-size-caption: 0.62rem; /* 9.3px */
+-  --font-size-body: 0.72rem; /* 10.8px */
+-  --font-size-title: 0.8rem; /* 12px —— 商业化可读下限（floor） */
+-  --font-size-floor: 0.8rem; /* = 12px，正文/标签的最低字号目标 */
++  /* 边框（浅色：深蓝灰） */
++  --border-subtle: rgba(30, 60, 100, 0.08);
++  --border-default: rgba(30, 60, 100, 0.16);
++  --border-strong: rgba(10, 143, 196, 0.40);
++  --border-accent: rgba(10, 143, 196, 0.30);
+ }
+diff --git a/Code/frontend/src/types/api-contracts.ts b/Code/frontend/src/types/api-contracts.ts
+index 73ee696..96f46c0 100644
+--- a/Code/frontend/src/types/api-contracts.ts
++++ b/Code/frontend/src/types/api-contracts.ts
+@@ -4015,6 +4015,22 @@ export interface components {
+          * @enum {string}
+          */
+         ExecutionStatus: "accepted" | "queued" | "running" | "succeeded" | "failed" | "cancelled" | "retry_pending";
++        /** ExportBBox */
++        ExportBBox: {
++            /** West */
++            west: number;
++            /** South */
++            south: number;
++            /** East */
++            east: number;
++            /** North */
++            north: number;
++            /**
++             * Crs
++             * @default EPSG:4326
++             */
++            crs: string;
++        };
+         /** ExportBatchBody */
+         ExportBatchBody: {
+             /** Layer Ids */
+@@ -4036,6 +4052,13 @@ export interface components {
+             async_mode: boolean;
+             /** Time */
+             time?: string | null;
++            /** Times */
++            times?: string[] | null;
++            bbox?: components["schemas"]["ExportBBox"] | null;
++            /** Output Crs */
++            output_crs?: string | null;
++            /** Fields */
++            fields?: string[] | null;
+         };
+         /** ExportBody */
+         ExportBody: {
+@@ -4055,6 +4078,11 @@ export interface components {
+             time?: string | null;
+             /** Times */
+             times?: string[] | null;
++            bbox?: components["schemas"]["ExportBBox"] | null;
++            /** Output Crs */
++            output_crs?: string | null;
++            /** Fields */
++            fields?: string[] | null;
+         };
+         /**
+          * ExportTaskStatusResponse
+@@ -4746,6 +4774,29 @@ export interface components {
+                 [key: string]: string;
+             };
+         };
++        /**
++         * OpenMeteoSyncStatusResponse
++         * @description Open-Meteo 本地数据同步任务状态（N-4：finished_at 类型化为 datetime）。
++         */
++        OpenMeteoSyncStatusResponse: {
++            /** Task Id */
++            task_id: string;
++            /** State */
++            state?: string | null;
++            /** Info */
++            info?: unknown;
++            /**
++             * Mode
++             * @default local_thread
++             */
++            mode: string;
++            /** Finished At */
++            finished_at?: string | null;
++            /** Error */
++            error?: string | null;
++            /** Domains */
++            domains?: string[] | null;
++        };
+         /**
+          * OpenMeteoSyncTriggerRequest
+          * @description Optional one-shot domains override (does not persist OPEN_METEO_SYNC_DOMAINS).
+@@ -5770,23 +5821,50 @@ export interface components {
+             dew_point_2m?: number | null;
+             /** Visibility */
+             visibility?: number | null;
+-            /** Wind Speed 850Hpa */
++            /**
++             * Wind Speed 850Hpa
++             * @description 850 hPa 风速 (m/s)
++             */
+             wind_speed_850hPa?: number | null;
+-            /** Wind Direction 850Hpa */
++            /**
++             * Wind Direction 850Hpa
++             * @description 850 hPa 风向 (°)
++             */
+             wind_direction_850hPa?: number | null;
+-            /** Temperature 850Hpa */
++            /**
++             * Temperature 850Hpa
++             * @description 850 hPa 温度 (°C)
++             */
+             temperature_850hPa?: number | null;
+-            /** Wind Speed 500Hpa */
++            /**
++             * Wind Speed 500Hpa
++             * @description 500 hPa 风速 (m/s)
++             */
+             wind_speed_500hPa?: number | null;
+-            /** Wind Direction 500Hpa */
++            /**
++             * Wind Direction 500Hpa
++             * @description 500 hPa 风向 (°)
++             */
+             wind_direction_500hPa?: number | null;
+-            /** Temperature 500Hpa */
++            /**
++             * Temperature 500Hpa
++             * @description 500 hPa 温度 (°C)
++             */
+             temperature_500hPa?: number | null;
+-            /** Wind Speed 200Hpa */
++            /**
++             * Wind Speed 200Hpa
++             * @description 200 hPa 风速 (m/s)
++             */
+             wind_speed_200hPa?: number | null;
+-            /** Wind Direction 200Hpa */
++            /**
++             * Wind Direction 200Hpa
++             * @description 200 hPa 风向 (°)
++             */
+             wind_direction_200hPa?: number | null;
+-            /** Temperature 200Hpa */
++            /**
++             * Temperature 200Hpa
++             * @description 200 hPa 温度 (°C)
++             */
+             temperature_200hPa?: number | null;
+         };
+         /** WeatherPointHourlyEntry */
+@@ -7999,7 +8077,7 @@ export interface operations {
+                     [name: string]: unknown;
+                 };
+                 content: {
+-                    "application/json": unknown;
++                    "application/json": components["schemas"]["OpenMeteoSyncStatusResponse"];
+                 };
+             };
+             /** @description Validation Error */
+diff --git a/Code/shared/contracts/api_contracts.py b/Code/shared/contracts/api_contracts.py
+index 2a27ae6..21c99aa 100644
+--- a/Code/shared/contracts/api_contracts.py
++++ b/Code/shared/contracts/api_contracts.py
+@@ -617,15 +617,16 @@ class WeatherPointCurrent(BaseModel):
+     visibility: float | None = None
+     # 气压层变量（Open-Meteo pressure_levels 参数对应字段）
+     # 当前值取自 hourly 数组首小时；保留 None 表示未请求气压层
+-    wind_speed_850hPa: float | None = None
+-    wind_direction_850hPa: float | None = None
+-    temperature_850hPa: float | None = None
+-    wind_speed_500hPa: float | None = None
+-    wind_direction_500hPa: float | None = None
+-    temperature_500hPa: float | None = None
+-    wind_speed_200hPa: float | None = None
+-    wind_direction_200hPa: float | None = None
+-    temperature_200hPa: float | None = None
++    # 字段名 hPa 后缀为 snake_case 正式命名例外（见 shared/contracts/README.md N-3）
++    wind_speed_850hPa: float | None = Field(None, description="850 hPa 风速 (m/s)")
++    wind_direction_850hPa: float | None = Field(None, description="850 hPa 风向 (°)")
++    temperature_850hPa: float | None = Field(None, description="850 hPa 温度 (°C)")
++    wind_speed_500hPa: float | None = Field(None, description="500 hPa 风速 (m/s)")
++    wind_direction_500hPa: float | None = Field(None, description="500 hPa 风向 (°)")
++    temperature_500hPa: float | None = Field(None, description="500 hPa 温度 (°C)")
++    wind_speed_200hPa: float | None = Field(None, description="200 hPa 风速 (m/s)")
++    wind_direction_200hPa: float | None = Field(None, description="200 hPa 风向 (°)")
++    temperature_200hPa: float | None = Field(None, description="200 hPa 温度 (°C)")
+ 
+ 
+ class WeatherPointHourlyEntry(BaseModel):
+@@ -656,6 +657,18 @@ class WeatherPointResponse(BaseModel):
+     diagnostics: list[str] = Field(default_factory=list)
+ 
+ 
++class OpenMeteoSyncStatusResponse(BaseModel):
++    """Open-Meteo 本地数据同步任务状态（N-4：finished_at 类型化为 datetime）。"""
++
++    task_id: str
++    state: str | None = None
++    info: Any = None
++    mode: str = "local_thread"
++    finished_at: datetime | None = None
++    error: str | None = None
++    domains: list[str] | None = None
++
++
+ class RuntimeConfigPatch(BaseModel):
+     scope: RuntimeConfigScope
+     key: str
+diff --git a/launch/commands.py b/launch/commands.py
+index 6305f00..fe5d896 100644
+--- a/launch/commands.py
++++ b/launch/commands.py
+@@ -306,6 +306,10 @@ def cmd_stop(args: argparse.Namespace | None = None) -> int:
+             "start_celery_worker.py",
+             "start_celery_beat.py",
+             "start_fastapi.py",
++            # uvicorn reload/workers 模式下子进程命令行含 spawn_main 或 uvicorn，
++            # 父进程被 SIGTERM 后子进程成为孤儿仍监听 :8000（ghost uvicorn）。
++            "spawn_main",
++            "uvicorn",
+         ]
+     )
+ 

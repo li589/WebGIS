@@ -1,0 +1,27 @@
+........................................................................ [ 11%]
+........................................................................ [ 23%]
+........................................................................ [ 35%]
+...................................................................... [ 47%]
+........................................................................ [ 59%]
+........................................................................ [ 70%]
+........................................................................ [ 82%]
+........................................................................ [ 94%]
+................................                                         [100%]
+============================== warnings summary ===============================
+Test/backend/test_crs_transformer.py::TestTransformPoint::test_wgs84_to_epsg3857_matches_legacy
+  D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Test\backend\test_crs_transformer.py:43: DeprecationWarning: coordinate_transform_service is deprecated; use app.services.crs
+    legacy = wgs84_to_epsg3857(lng, lat)
+
+Test/backend/test_crs_transformer.py::TestTransformPoint::test_gcj02_to_epsg3857_via_wgs84
+  D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Test\backend\test_crs_transformer.py:175: DeprecationWarning: coordinate_transform_service is deprecated; use app.services.crs
+    expected = wgs84_to_epsg3857(w.lng, w.lat)
+
+Test/backend/test_import_quota_reimport.py: 1 warning
+Test/backend/test_import_raster_crs.py: 6 warnings
+Test/backend/test_raster_timeseries_upsert.py: 3 warnings
+  D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Env\Python312\Lib\site-packages\rasterio\io.py:143: NotGeoreferencedWarning: Dataset has no geotransform, gcps, or rpcs. The identity matrix will be returned.
+    rd = writer(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+606 passed, 12 warnings, 2 subtests passed in 131.45s (0:02:11)
+exit=0

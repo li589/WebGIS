@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_single",
+      "batch": "F",
+      "run_id": "run-28890d9441bd",
+      "status": "succeeded",
+      "elapsed_s": 135.91,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; output/map_layer stripped"
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "open_data_nasa_earthdata_sample",
+      "batch": "E",
+      "run_id": "run-e503f4028da1",
+      "status": "succeeded",
+      "elapsed_s": 6.08,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "NASA LP DAAC MCD43A4 browse jpg (public) download-only (archive/extract/variable skipped)"
+      }
+    }
+  ]
+}

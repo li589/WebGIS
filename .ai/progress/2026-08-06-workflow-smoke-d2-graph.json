@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "omega_avg_daily_smap_single",
+      "batch": "F",
+      "run_id": "run-e1486b27a771",
+      "status": "succeeded",
+      "elapsed_s": 117.49,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days)"
+      }
+    }
+  ]
+}

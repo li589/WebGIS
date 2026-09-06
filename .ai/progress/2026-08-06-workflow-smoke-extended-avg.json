@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "omega_avg_daily_smap_single",
+      "batch": "F",
+      "run_id": "run-85a147278795",
+      "status": "timeout",
+      "elapsed_s": 301.28,
+      "blocker": "timeout",
+      "detail": "服务层正在执行真实工作流。",
+      "extras": {
+        "note": "flatten submit as omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke"
+      }
+    }
+  ]
+}

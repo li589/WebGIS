@@ -1,0 +1,69 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 32
+  },
+  "rows": [
+    {
+      "workflow_id": "preprocess_mask_resample_basic",
+      "batch": "H",
+      "run_id": "run-1da1932393e7",
+      "status": "succeeded",
+      "elapsed_s": 2.07,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
+      }
+    },
+    {
+      "workflow_id": "gis_vector_raster_roundtrip_basic",
+      "batch": "H",
+      "run_id": "run-0932ce1ef5a8",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
+      }
+    },
+    {
+      "workflow_id": "gis_contour_slope_basic",
+      "batch": "H",
+      "run_id": "run-9dfb2a66263d",
+      "status": "succeeded",
+      "elapsed_s": 2.06,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_trend_anomaly_basic",
+      "batch": "H",
+      "run_id": "run-12285b93d720",
+      "status": "succeeded",
+      "elapsed_s": 2.01,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
+      }
+    },
+    {
+      "workflow_id": "fusion_multi_source_merge_basic",
+      "batch": "H",
+      "run_id": "run-c657ffb73f53",
+      "status": "succeeded",
+      "elapsed_s": 2.07,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
+      }
+    }
+  ]
+}

@@ -43,14 +43,14 @@ SERVERS = {
     "win11": {
         "base_url": "https://win11file.personaltunnel.dpdns.org",
         "username": "user",
-        "password": "remotefangwen123",
+        "password": "********",
         "label": "Win11 E盘",
         "description": "映射了远端电脑 E 盘，包含数据和软件",
     },
     "nas": {
         "base_url": "https://nasfile.personaltunnel.dpdns.org",
         "username": "user",
-        "password": "remotefangwen123",
+        "password": "********",
         "label": "NAS Z盘",
         "description": "映射了 NAS 网络驱动器 Z 盘，包含课题组成员数据",
     },

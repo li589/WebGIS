@@ -1,0 +1,57 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 36
+  },
+  "rows": [
+    {
+      "workflow_id": "gis_watershed_basic",
+      "batch": "I",
+      "run_id": "run-d47c1289c164",
+      "status": "succeeded",
+      "elapsed_s": 2.04,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_correlation_basic",
+      "batch": "I",
+      "run_id": "run-49996c68970b",
+      "status": "succeeded",
+      "elapsed_s": 2.03,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_correlation_report_basic",
+      "batch": "I",
+      "run_id": "run-d08a47e0dc96",
+      "status": "succeeded",
+      "elapsed_s": 2.07,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_summary_chart_basic",
+      "batch": "I",
+      "run_id": "run-e486ddcd8d77",
+      "status": "succeeded",
+      "elapsed_s": 2.06,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    }
+  ]
+}

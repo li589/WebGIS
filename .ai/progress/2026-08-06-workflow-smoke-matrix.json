@@ -1,0 +1,227 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "weather/tiles/temperature",
+      "batch": "A",
+      "run_id": "",
+      "status": "succeeded",
+      "elapsed_s": 1.54,
+      "blocker": "",
+      "detail": "HTTP 200 bytes=99693",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather/tiles/wind-field",
+      "batch": "A",
+      "run_id": "",
+      "status": "succeeded",
+      "elapsed_s": 1.37,
+      "blocker": "",
+      "detail": "HTTP 200 bytes=71792",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_temperature_grid_demo",
+      "batch": "B",
+      "run_id": "run-a59b84f7db82",
+      "status": "succeeded",
+      "elapsed_s": 22.24,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_wind_field_demo",
+      "batch": "B",
+      "run_id": "run-cbe51ba50297",
+      "status": "succeeded",
+      "elapsed_s": 20.22,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_histogram_basic",
+      "batch": "C",
+      "run_id": "run-b771749bd8f0",
+      "status": "succeeded",
+      "elapsed_s": 4.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_timeseries_curve",
+      "batch": "C",
+      "run_id": "run-4ffa210913d8",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_zonal_stats_aligned",
+      "batch": "C",
+      "run_id": "run-58b438675b59",
+      "status": "succeeded",
+      "elapsed_s": 2.01,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "smap_soil_moisture_local",
+      "batch": "D",
+      "run_id": "run-de9763a6c0a2",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_noaa_grib_sample",
+      "batch": "D",
+      "run_id": "run-1aa13b1cc19b",
+      "status": "failed",
+      "elapsed_s": 12.15,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] HTTP materialize failed for https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?file=gfs.t12z.pgrb2.0p25.f000&lev_2_m_above_ground=on&var_TMP=on&subregion=&leftlon=113&rightlo",
+      "extras": {
+        "note": "NOMADS GFS filter gfs.20260806/12 (download-only light smoke; archive/extract+cfgrib skipped)"
+      }
+    },
+    {
+      "workflow_id": "open_data_nasa_earthdata_sample",
+      "batch": "E",
+      "run_id": "run-42038cf12a79",
+      "status": "succeeded",
+      "elapsed_s": 4.04,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "NASA LP DAAC MCD43A4 browse jpg (public) download-only (archive/extract/variable skipped)"
+      }
+    },
+    {
+      "workflow_id": "open_data_nsidc_smap_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:runtime (Earthdata ready; NSIDC SMAP granules too large for light smoke — needs curated small path)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_esa_product_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:creds (copernicus profile) + REPLACE_* path",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_block_smap_single",
+      "batch": "F",
+      "run_id": "run-badd58750590",
+      "status": "timeout",
+      "elapsed_s": 1200.83,
+      "blocker": "timeout",
+      "detail": "服务层正在执行真实工作流。",
+      "extras": {
+        "note": "time_range overridden to 2025-11-01..02 (available mats); compiled graph timeseries_bundle → omega_block"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_single",
+      "batch": "F",
+      "run_id": "run-252870bf0eb0",
+      "status": "succeeded",
+      "elapsed_s": 274.42,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days)"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_fy_single",
+      "batch": "F",
+      "run_id": "run-b52c5ba614fa",
+      "status": "succeeded",
+      "elapsed_s": 600.96,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days)"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_dual",
+      "batch": "F",
+      "run_id": "run-75da6a8d1733",
+      "status": "succeeded",
+      "elapsed_s": 306.71,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days); DUAL temp_scheme with local GLDAS .mat; use_gldas_template=true"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:config (online download template + needs h5→mat bridge; earthdata portal ready; not light-smoke)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_gldas_online",
+      "batch": "F",
+      "run_id": "run-ebda2953191e",
+      "status": "failed",
+      "elapsed_s": 405.31,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Earthdata credentials are required; missing username, password. Set BACKEND_EARTHDATA_USERNAME/BACKEND_EARTHDATA_PASSWORD or EARTHDATA_USERNAME/EARTHDATA_PASSWORD.",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days); gldas_online graph=D2 only (gldas_download/nc4→mat verified separately); use_gldas_template=true"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_single",
+      "batch": "F",
+      "run_id": "run-dae33bc7a16e",
+      "status": "succeeded",
+      "elapsed_s": 312.36,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_single",
+      "batch": "F",
+      "run_id": "run-c4b28b59fc8e",
+      "status": "succeeded",
+      "elapsed_s": 291.67,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    }
+  ]
+}

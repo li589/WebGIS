@@ -17,7 +17,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
 | `Code/infra/gateway/` | **默认** Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`maintenance/`、`README.md` |
 | `Docs/` | **公开文档仓库**：架构设计 / 规范协议 / 专题研究 / 代码审查 / 结题材料 / HTML 报告 | 见 `Docs/README.md` 索引 |
-| `.ai/` | **AI 工作区（本地专用，不上传 GitHub）**：技能 / 规则 / 计划 / 进度 / 记忆 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/` |
+| `.ai/` | **AI 工作区（随仓库提交；`mcp.json`/`tmp/` 本地除外）**：技能 / 规则 / 计划 / 进度 / 记忆 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/` |
 | `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
 | `Test/` | **测试集中地**（仓库根，不在任何 `Code/` 子树下）：后端 `Test/backend/`、前端 `Test/frontend/`（保留 `src/` 目录结构，相对导入已改写为 `@/`）、算法 `Test/algorithms/`、独立/调试/报告 `Test/{standalone,debug,reports,tools}/` | 运行：`Env/Python312/python.exe -m pytest Test/backend`（后端/算法）；`cd Code/frontend && npm run test`（前端） |
 | `Env/Python312/` | **本地联调唯一 Python 运行时**（Windows: `python.exe`） | 依赖与后端/Worker 必须与此一致 |
@@ -65,7 +65,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:16379`（容器内仍 6379；避开 Windows Hyper-V 保留段）、MinIO `:9100`（Console `:9101`）。
 
-联调缓存分层与排障：`Docs/07-工程保障/联调缓存与生效边界.md`。
+联调缓存分层与排障：`Docs/07-工程保障/联调缓存与生效边界.md`。运维手册（启动故障排障、端口/WinNAT、事故记录）：`Docs/07-工程保障/运维手册.md`。
 
 ## 高风险区
 
@@ -163,11 +163,11 @@ Env\Python312\python.exe Tools/feedback_triage.py --show CGDA-BUG-YYYYMMDD-XXXX 
 
 处理 SOP（扫描 → 分析 → 定位修复 → 测试 → 提交 → 处理台发布进展闭环）见 **`.ai/rules/feedback-triage.md`**（单一真源）；被指派处理具体反馈时加载提示词 **`.ai/prompts/feedback-fix.md`**。
 
-## AI 知识库（`.ai/`，本地专用，不上传 GitHub）
+## AI 知识库（`.ai/`，随仓库提交）
 
-所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档，公开文档在 `Docs/`。
+所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**（随仓库提交，供各 AI 工具与团队成员共享；`.ai/mcp.json` 含本地密钥、`.ai/tmp/` 为临时区，两者 gitignore 除外），根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档，公开文档在 `Docs/`。
 
-- `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`feedback-triage.md`（问题反馈→AI 修复闭环）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作指针，指向此处。
+- `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`feedback-triage.md`（问题反馈→AI 修复闭环）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作本地指针指向此处（**不入库**：`.cursor/`、`.kiro/`、`.trae/`、`.opencode/`、`.github/copilot-instructions.md` 已 gitignore）。
 - `.ai/prompts/` —— 任务提示词模板：`feedback-fix.md`（处理用户反馈的规范化工作流）。
 - `.ai/skills/` —— 可复用技能：`workflow-design`（种子命名/分类/标记与定时器）、`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
 - `.ai/plans/` —— 计划。
