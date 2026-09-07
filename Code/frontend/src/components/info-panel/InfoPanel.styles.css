@@ -301,6 +301,11 @@
   flex-wrap: wrap;
   padding: 0 var(--space-1);
 }
+.panel-stage-row--topline > .workflow-stage-row {
+  margin-right: auto;
+  min-width: 0;
+}
+
 .panel-stage-row--topline .readiness--inline {
   flex: 0 1 auto;
   max-width: 100%;
