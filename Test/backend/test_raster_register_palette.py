@@ -33,12 +33,12 @@ from app.services.overlay_registry import get_overlay_spec, unregister_overlay
 def imports_tmp(tmp_path, monkeypatch):
     imports_dir = tmp_path / "imports"
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_dir)
-        if hasattr(mod, "STAGING_DIR"):
-            monkeypatch.setattr(mod, "STAGING_DIR", imports_dir / "_staging")
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_dir)
-    monkeypatch.setattr(import_paths, "STAGING_DIR", imports_dir / "_staging")
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_dir)
+        if hasattr(mod, "staging_dir"):
+            monkeypatch.setattr(mod, "staging_dir", lambda: imports_dir / "_staging")
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_dir)
+    monkeypatch.setattr(import_paths, "staging_dir", lambda: imports_dir / "_staging")
     import_paths.ensure_imports_root()
     return imports_dir
 

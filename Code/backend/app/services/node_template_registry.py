@@ -790,6 +790,11 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("path", "value:string", description="输出 .mat 目录。"),
             _port("manifest", "data", description="产物清单。"),
+            _port(
+                "gldas_mat",
+                "data:mat",
+                description="GLDAS 温度 mat 产物别名（供下游建立执行序依赖）。",
+            ),
         ],
         "params": [
             _param(
@@ -2928,6 +2933,24 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 required=False,
                 description="输出扩展配置。",
             ),
+            _port(
+                "smap_daily_mat",
+                "data:mat",
+                required=False,
+                description="SMAP 日常 mat（smap_daily 上游转换产物；建立转换→反演执行序依赖）。",
+            ),
+            _port(
+                "fy_daily_mat",
+                "data:mat",
+                required=False,
+                description="FY 日常 mat（fy_daily 上游转换产物；建立转换→反演执行序依赖）。",
+            ),
+            _port(
+                "gldas_mat",
+                "data:mat",
+                required=False,
+                description="GLDAS 温度 mat（gldas_nc4_to_mat 上游转换产物；建立转换→反演执行序依赖）。",
+            ),
         ],
         "outputs": [
             _port("manifest", "data", description="日均/回代产物清单。"),
@@ -3015,6 +3038,18 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "value:any",
                 required=False,
                 description="算法参数覆盖。",
+            ),
+            _port(
+                "smap_daily_mat",
+                "data:mat",
+                required=False,
+                description="SMAP 日常 mat（smap_daily 上游转换产物；建立转换→反演执行序依赖）。",
+            ),
+            _port(
+                "fy_daily_mat",
+                "data:mat",
+                required=False,
+                description="FY 日常 mat（fy_daily 上游转换产物；建立转换→反演执行序依赖）。",
             ),
         ],
         "outputs": [

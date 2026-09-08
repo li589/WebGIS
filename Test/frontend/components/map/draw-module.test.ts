@@ -72,7 +72,11 @@ function makeState(overrides: Partial<DrawStateSnapshot> = {}): DrawStateSnapsho
   }
 }
 
-function makeOptions(state: DrawStateSnapshot, mapMock: MapMock) {
+function makeOptions(
+  state: DrawStateSnapshot,
+  mapMock: MapMock,
+  extras: { omitCompletedFeatures?: () => boolean } = {},
+) {
   return {
     map: mapMock.map,
     getInteractionMode: (): InteractionMode => 'draw',
@@ -100,6 +104,7 @@ function makeOptions(state: DrawStateSnapshot, mapMock: MapMock) {
       state.isDrawing = v
     }),
     scheduleDraftPersist: vi.fn(),
+    ...extras,
   }
 }
 
@@ -159,6 +164,66 @@ describe('draw-module', () => {
       [116.2, 39.95],
       [116.3, 39.99],
     ])
+    module.dispose()
+  })
+
+  it('renders placed path even without hoverPoint (click frame before mousemove)', () => {
+    const state = makeState({
+      isDrawing: true,
+      activeVertices: [
+        { lng: 116.1, lat: 39.9 },
+        { lng: 116.2, lat: 39.95 },
+      ],
+      hoverPoint: null,
+    })
+    const module = createDrawModule(makeOptions(state, mapMock))
+    module.bindEvents()
+    module.applyDrawMode()
+    module.syncFromStore()
+
+    const preview = mapMock.sourceData.get('draw-preview') as {
+      features: Array<{ properties: { kind: string }; geometry: { coordinates: number[][] } }>
+    }
+    expect(preview.features.map((f) => f.properties.kind)).toEqual(['path'])
+    expect(preview.features[0]!.geometry.coordinates).toEqual([
+      [116.1, 39.9],
+      [116.2, 39.95],
+    ])
+    module.dispose()
+  })
+
+  it('omits completed fill/line when omitCompletedFeatures is true (imported shows them)', () => {
+    const ring: [number, number][] = [
+      [116.1, 39.9],
+      [116.2, 39.9],
+      [116.2, 40.0],
+      [116.1, 39.9],
+    ]
+    const state = makeState({
+      isDrawing: false,
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: {},
+        },
+      ],
+    })
+    const module = createDrawModule(
+      makeOptions(state, mapMock, { omitCompletedFeatures: () => true }),
+    )
+    module.bindEvents()
+    module.applyDrawMode()
+    module.syncFromStore()
+
+    const fill = mapMock.sourceData.get('draw-features-fill') as {
+      features: unknown[]
+    }
+    const line = mapMock.sourceData.get('draw-features-line') as {
+      features: unknown[]
+    }
+    expect(fill.features).toEqual([])
+    expect(line.features).toEqual([])
     module.dispose()
   })
 

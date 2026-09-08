@@ -91,11 +91,12 @@ function formatHourLabel(time: string): string {
 }
 
 function formatOverlayTimeLabel(time: string): string {
-  // 8 天块格式: 20240101_20240108 → 01-01 → 01-08
+  // 8 天块格式: 20240101_20240108 → 01-01 → 01-08；
+  // 单日块（start==end，如逐日 ω 产品）折叠为单个 12-03，避免同日重复
   if (/^\d{8}_\d{8}$/.test(time)) {
     const [start, end] = time.split('_')
     const fmt = (d: string) => `${d.slice(4, 6)}-${d.slice(6, 8)}`
-    return `${fmt(start)} → ${fmt(end)}`
+    return start === end ? fmt(start) : `${fmt(start)} → ${fmt(end)}`
   }
   // ISO 日期: 取 MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(time)) {

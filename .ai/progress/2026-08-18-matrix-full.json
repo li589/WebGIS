@@ -1,0 +1,585 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 42
+  },
+  "rows": [
+    {
+      "workflow_id": "weather/tiles/temperature",
+      "batch": "A",
+      "run_id": "",
+      "status": "succeeded",
+      "elapsed_s": 1.43,
+      "blocker": "",
+      "detail": "HTTP 200 bytes=99699",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather/tiles/wind-field",
+      "batch": "A",
+      "run_id": "",
+      "status": "succeeded",
+      "elapsed_s": 1.35,
+      "blocker": "",
+      "detail": "HTTP 200 bytes=71789",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_temperature_grid_demo",
+      "batch": "B",
+      "run_id": "run-3fa2dc54f4c1",
+      "status": "succeeded",
+      "elapsed_s": 10.14,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_wind_field_demo",
+      "batch": "B",
+      "run_id": "run-541b3dc57951",
+      "status": "succeeded",
+      "elapsed_s": 8.11,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_histogram",
+      "batch": "C",
+      "run_id": "run-268732b3c2b9",
+      "status": "succeeded",
+      "elapsed_s": 6.11,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_timeseries_curve",
+      "batch": "C",
+      "run_id": "run-2e586fc0c3ff",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_zonal_stats_aligned",
+      "batch": "C",
+      "run_id": "run-f9f42f9fc99f",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "smap_soil_moisture_local",
+      "batch": "D",
+      "run_id": "run-07a50681a756",
+      "status": "succeeded",
+      "elapsed_s": 2.06,
+      "blocker": "",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_noaa_grib_sample",
+      "batch": "D",
+      "run_id": "run-60487d30c161",
+      "status": "succeeded",
+      "elapsed_s": 6.1,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "NOMADS GFS filter gfs.20260818/00 http_open_data→variable_extract (t2m; archive skipped; cfgrib ok)"
+      }
+    },
+    {
+      "workflow_id": "open_data_nasa_earthdata_sample",
+      "batch": "E",
+      "run_id": "run-dfd4778e4fbd",
+      "status": "failed",
+      "elapsed_s": 16.16,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Authentication with Earthdata Login failed with:\n{\"error\":\"invalid_account_status\",\"error_description\":\"Password reset email has been sent, please reset and log back in\"}",
+      "extras": {
+        "note": "NASA LP DAAC MCD43A4 browse jpg (public) download-only (archive/extract/variable skipped)"
+      }
+    },
+    {
+      "workflow_id": "open_data_nsidc_smap_sample",
+      "batch": "E",
+      "run_id": "run-3bf08c0409a4",
+      "status": "failed",
+      "elapsed_s": 12.15,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] nsidc_smap_download failed: Earthdata 认证失败 (downloaded=0/0, skipped=0, failed=0)",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_esa_product_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:creds (copernicus profile) + REPLACE_* path",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_block_smap_single",
+      "batch": "F",
+      "run_id": "run-92e2ca5015d0",
+      "status": "succeeded",
+      "elapsed_s": 401.89,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "time_range overridden to 2025-11-01..02 (available mats); compiled graph timeseries_bundle → omega_block"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_single",
+      "batch": "F",
+      "run_id": "run-e11759d2d33e",
+      "status": "succeeded",
+      "elapsed_s": 6.1,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days)"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_fy_single",
+      "batch": "F",
+      "run_id": "run-4b2bc21bd16a",
+      "status": "succeeded",
+      "elapsed_s": 6.09,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days)"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_dual",
+      "batch": "F",
+      "run_id": "run-940fddbaf623",
+      "status": "succeeded",
+      "elapsed_s": 6.08,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days); DUAL temp_scheme with local GLDAS .mat; use_gldas_template=true"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:config (online download template + needs h5→mat bridge; earthdata portal ready; not light-smoke)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_gldas_online",
+      "batch": "F",
+      "run_id": "run-e54fd6c92d50",
+      "status": "failed",
+      "elapsed_s": 22.23,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Authentication with Earthdata Login failed with:\n{\"error\":\"invalid_account_status\",\"error_description\":\"Password reset email has been sent, please reset and log back in\"}",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days); gldas_online graph=D2 only (gldas_download/nc4→mat verified separately); use_gldas_template=true"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_single",
+      "batch": "F",
+      "run_id": "run-c83c0983f6d9",
+      "status": "succeeded",
+      "elapsed_s": 117.38,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_single",
+      "batch": "F",
+      "run_id": "run-56bad2ce65be",
+      "status": "succeeded",
+      "elapsed_s": 117.26,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    },
+    {
+      "workflow_id": "preprocess_clip_reproject_basic",
+      "batch": "G",
+      "run_id": "run-c4110aa2aedc",
+      "status": "succeeded",
+      "elapsed_s": 2.03,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_mean_summary_report_basic",
+      "batch": "G",
+      "run_id": "run-0455dd70494b",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "fusion_idw_interpolate_basic",
+      "batch": "G",
+      "run_id": "run-4d283039d5d7",
+      "status": "failed",
+      "elapsed_s": 6.07,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need GeoJSON via port, path, or upstream artifact",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "preprocess_mask_resample_basic",
+      "batch": "H",
+      "run_id": "run-a0c87824ce74",
+      "status": "succeeded",
+      "elapsed_s": 2.03,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_trend_anomaly_basic",
+      "batch": "H",
+      "run_id": "run-61f2ff806ab9",
+      "status": "succeeded",
+      "elapsed_s": 2.03,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "fusion_multi_source_merge_basic",
+      "batch": "H",
+      "run_id": "run-8c6e1fbd92b8",
+      "status": "failed",
+      "elapsed_s": 8.11,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_correlation_basic",
+      "batch": "I",
+      "run_id": "run-2a6b181a0314",
+      "status": "failed",
+      "elapsed_s": 6.06,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need timeseries payload {times, values} via port or JSON path",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_correlation_report_basic",
+      "batch": "I",
+      "run_id": "run-3a85931dabcb",
+      "status": "succeeded",
+      "elapsed_s": 2.03,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "stats_summary_chart_basic",
+      "batch": "I",
+      "run_id": "run-2b39ba22b588",
+      "status": "succeeded",
+      "elapsed_s": 2.07,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / smoke_timeseries.json / smoke_timeseries_b.json)"
+      }
+    },
+    {
+      "workflow_id": "analysis_buffer",
+      "batch": "X",
+      "run_id": "run-ba13ceb8e3d5",
+      "status": "failed",
+      "elapsed_s": 8.09,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need GeoJSON via port, path, or upstream artifact",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_clip",
+      "batch": "X",
+      "run_id": "run-1c955068d948",
+      "status": "failed",
+      "elapsed_s": 6.11,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] could not convert string to float: \"RegionSpec(kind='bbox'\"",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_contour",
+      "batch": "X",
+      "run_id": "run-ae012f6f3683",
+      "status": "failed",
+      "elapsed_s": 8.11,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_raster_calc",
+      "batch": "X",
+      "run_id": "run-5030cf4bf7f1",
+      "status": "failed",
+      "elapsed_s": 8.1,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_raster_to_vector",
+      "batch": "X",
+      "run_id": "run-c3c47dedce53",
+      "status": "failed",
+      "elapsed_s": 8.11,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_reclassify",
+      "batch": "X",
+      "run_id": "run-e45ef8ad5265",
+      "status": "failed",
+      "elapsed_s": 6.07,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_slope_aspect",
+      "batch": "X",
+      "run_id": "run-a1e941fbc7d4",
+      "status": "failed",
+      "elapsed_s": 6.11,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_vector_to_raster",
+      "batch": "X",
+      "run_id": "run-fd13992fac97",
+      "status": "failed",
+      "elapsed_s": 6.05,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need GeoJSON via port, path, or upstream artifact",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_watershed",
+      "batch": "X",
+      "run_id": "run-2fd6f8fecf46",
+      "status": "failed",
+      "elapsed_s": 8.06,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "analysis_zonal_stats",
+      "batch": "X",
+      "run_id": "run-f04da0885144",
+      "status": "failed",
+      "elapsed_s": 8.1,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Need a raster path via port, upstream manifest, or datasource_selection.input_path",
+      "extras": {}
+    },
+    {
+      "workflow_id": "cds_era5_reanalysis_download",
+      "batch": "X",
+      "run_id": "run-2beb2fdf4ccd",
+      "status": "failed",
+      "elapsed_s": 18.19,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] 400 Client Error: Bad Request for url: https://cds.climate.copernicus.eu/api/retrieve/v1/processes/reanalysis-era5-single-levels/execution\ninvalid request\nNone of the data you hav",
+      "extras": {
+        "note": "request date 2026-08-17 (yesterday UTC); cdsapi queue may take minutes"
+      }
+    },
+    {
+      "workflow_id": "cdse_sentinel_download",
+      "batch": "X",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:creds (no copernicus portal account)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fy_tb_local_read",
+      "batch": "X",
+      "run_id": "run-f44867ac8f58",
+      "status": "failed",
+      "elapsed_s": 8.11,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] 不支持的文件格式: .hdf5",
+      "extras": {
+        "note": "synthetic FY MWRI HDF5 (Brightness_Temperature) under {DATA_ROOT}/_runtime/synthetic/fy_mwri (seed default {DATA_ROOT}/FY absent)"
+      }
+    },
+    {
+      "workflow_id": "fy_tb_online_read",
+      "batch": "X",
+      "run_id": "run-910ba9eec684",
+      "status": "failed",
+      "elapsed_s": 2.05,
+      "blocker": "run_failed",
+      "detail": "工作流校验失败：[validation_error] workflow_definition.edges[0].to_port references unknown input port: n2.data; [validation_error] workflow_definition.edges[0].to_port references unknown input port: n2.data",
+      "extras": {
+        "note": "single day 2025-12-03 (NAS fy3dhdf2425 window); auto NSMC→NAS fallback"
+      }
+    },
+    {
+      "workflow_id": "ndvi_gee_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:gee-not-configured (accounts=0 enabled=0)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "ndvi_local_read",
+      "batch": "X",
+      "run_id": "",
+      "status": "failed",
+      "elapsed_s": 0.02,
+      "blocker": "submit_http_422",
+      "detail": "{'detail': {'error_type': 'validation', 'user_message': '请求参数未通过业务校验，请检查表单字段。', 'issues': [{'field': 'datasource_selection.input_dir', 'message': \"Missing required datasource key: 'input_dir'\"}]}, 'request_id': 'req-cb7800e1e4fd'}",
+      "extras": {}
+    },
+    {
+      "workflow_id": "ndvi_online_read",
+      "batch": "X",
+      "run_id": "run-c9b8158a7c5a",
+      "status": "failed",
+      "elapsed_s": 16.2,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] Authentication with Earthdata Login failed with:\n{\"error\":\"invalid_account_status\",\"error_description\":\"User [tessa] is currently locked. Please wait 10 minutes and try again\"}",
+      "extras": {
+        "note": "VNP13C1 16-day window 2025-05-01..16, max_results 5→1 (one ~30MB granule)"
+      }
+    },
+    {
+      "workflow_id": "nomads_gfs_grib_download",
+      "batch": "X",
+      "run_id": "run-745a8dd9e1d3",
+      "status": "failed",
+      "elapsed_s": 28.39,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] nomads_grib_download completed with 1 failures: model=gfs member=- fxx=000: ('Connection aborted.', ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None))",
+      "extras": {
+        "note": "date={YYYYMMDD}→latest; search_string=:TMP:2 m subset"
+      }
+    },
+    {
+      "workflow_id": "omega_avg_daily_fy_online",
+      "batch": "X",
+      "run_id": "run-e9514615eac5",
+      "status": "succeeded",
+      "elapsed_s": 151.67,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "compiled graph → omega_avg_daily; time_range→2025-12-03..05; parallel disabled for smoke; Stage D limited to 2025-12-07..11 (max 5 days); fy_download {YYYYMMDD}→20251203..05 (aligns D2 window)"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_dual",
+      "batch": "X",
+      "run_id": "run-2b88be7d46a7",
+      "status": "succeeded",
+      "elapsed_s": 98.92,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_online",
+      "batch": "X",
+      "run_id": "run-9c81d815e456",
+      "status": "succeeded",
+      "elapsed_s": 260.31,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_dual",
+      "batch": "X",
+      "run_id": "run-66afc77c5e32",
+      "status": "succeeded",
+      "elapsed_s": 98.9,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_online",
+      "batch": "X",
+      "run_id": "run-a3f00343a75a",
+      "status": "failed",
+      "elapsed_s": 308.77,
+      "blocker": "run_failed",
+      "detail": "[transient_upstream] nsidc_smap_download failed: Earthdata 认证失败 (downloaded=0/0, skipped=0, failed=0)",
+      "extras": {
+        "note": "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, max_pixels=400, serial; keeps output/map_layer"
+      }
+    }
+  ]
+}

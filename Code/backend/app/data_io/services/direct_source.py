@@ -9,7 +9,7 @@
   registry 的 lazy-load 委托本模块的形态判定，不自带接入知识。
 
 direct 源图层 = 大数据 COG/GeoTIFF 免烘焙直通动态瓦片：
-IMPORTS_DIR/<layer_id>/ 下仅需 ``source.tif``（或 .cog/.tiff）+
+imports/<layer_id>/ 下仅需 ``source.tif``（或 .cog/.tiff）+
 ``bounds.json``，无 preview.png（has_overview=False，前端全程 XYZ 瓦片）。
 """
 

@@ -18,7 +18,7 @@ from app.data_io.services.dbf_encoding import (
     resolve_export_encoding,
     truncate_to_encoded_bytes,
 )
-from app.data_io.services.paths import IMPORTS_DIR, safe_import_child
+from app.data_io.services.paths import imports_dir, safe_import_child
 from app.data_io.services.vector import load_vector_geojson
 
 BBoxDict = dict[str, Any]
@@ -72,7 +72,7 @@ def export_layer(
     # 安审 2026-08-22（B-4）：先校验再判 exists，穿越尝试直接 ValueError→400
     dest = safe_import_child(layer_id)
     if not dest.exists():
-        # 非 IMPORTS_DIR 图层（prod-/ref-/dem 等注册表 overlay）走专用导出路径
+        # 非 imports 常驻图层（prod-/ref-/dem 等注册表 overlay）走专用导出路径
         return _export_registry_overlay(
             layer_id,
             fmt,
@@ -259,7 +259,7 @@ def _export_vector(
     raise ValueError(f"矢量不支持导出格式: {fmt}")
 
 
-# ── 注册表 overlay 导出（prod-/ref-/dem- 等非 IMPORTS_DIR 图层）───────────────
+# ── 注册表 overlay 导出（prod-/ref-/dem- 等非 imports 常驻图层）───────────────
 
 
 def _overlay_export_meta(layer_id: str, spec: Any) -> dict[str, Any]:
@@ -309,7 +309,7 @@ def _overlay_source_tif_bytes(
     variable = str(getattr(spec, "source_variable", "") or "")
     if not variable:
         raise ValueError(f"图层 {layer_id} 的源为 {ext} 但未配置变量名，无法转换导出")
-    tmp_dir = IMPORTS_DIR / "_tmp"
+    tmp_dir = imports_dir() / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tag = f"{layer_id}_{time_key}" if time_key else layer_id
     tmp_tif = tmp_dir / f"overlay_export_{_safe_filename_base(tag)}.tif"
@@ -479,7 +479,7 @@ def _transform_geotiff_from_bytes(
     output_crs: str | None,
 ) -> bytes:
     """内存版 GeoTIFF 裁剪/重投影（复用 _transform_geotiff 的文件接口）。"""
-    tmp_dir = IMPORTS_DIR / "_tmp"
+    tmp_dir = imports_dir() / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     token = uuid.uuid4().hex[:8]
     src = tmp_dir / f"xform_src_{token}.tif"
@@ -1161,10 +1161,10 @@ def _geotiff_bytes_to_netcdf(tif_bytes: bytes, *, time_key: str) -> bytes:
     with MemoryFile(tif_bytes) as mem:
         with mem.open() as ds:
             arr = ds.read(1)
-    # netCDF4 needs a real path; use temp under IMPORTS_DIR/_exports
+    # netCDF4 needs a real path; use temp under <imports>/_exports
     # 临时文件名须唯一：并发/同批多图层导出会同时落到同一目录，固定名会互相
     # 覆盖或误删（finally unlink 可能删掉其它请求仍在使用中的文件）。
-    exports_dir = IMPORTS_DIR / "_exports"
+    exports_dir = imports_dir() / "_exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
     buf_path = exports_dir / f"_export_tmp_{uuid.uuid4().hex}.nc"
     try:
@@ -1335,7 +1335,7 @@ def export_layers_batch_zip(
     if not layer_ids:
         raise ValueError("layer_ids 不能为空")
 
-    exports_dir = IMPORTS_DIR / "_exports"
+    exports_dir = imports_dir() / "_exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
     _cleanup_exports_dir(exports_dir)
 

@@ -53,7 +53,7 @@ def resolve_overlay_source_path(overlay_layer_id: str) -> Path:
 def _assert_path_under_allowed_roots(path_str: str) -> Path:
     """Reject client path injection outside data / imports / output roots."""
     from app.core.config import settings
-    from app.data_io.services.paths import IMPORTS_DIR
+    from app.data_io.services.paths import imports_dir
 
     candidate = Path(path_str).expanduser()
     try:
@@ -65,7 +65,7 @@ def _assert_path_under_allowed_roots(path_str: str) -> Path:
     for raw in (
         settings.data_root,
         settings.output_root,
-        str(IMPORTS_DIR),
+        str(imports_dir()),
     ):
         if not raw:
             continue
@@ -88,12 +88,12 @@ def _assert_path_under_allowed_roots(path_str: str) -> Path:
 
 
 def resolve_imported_vector_geojson(backend_layer_id: str) -> Path:
-    from app.data_io.services.paths import IMPORTS_DIR
+    from app.data_io.services.paths import imports_dir
 
     layer_id = str(backend_layer_id or "").strip()
     if not layer_id or "/" in layer_id or "\\" in layer_id or ".." in layer_id:
         raise AnalysisRunError("非法导入矢量图层 id")
-    path = (IMPORTS_DIR / layer_id / "data.geojson").resolve(strict=False)
+    path = (imports_dir() / layer_id / "data.geojson").resolve(strict=False)
     _assert_path_under_allowed_roots(str(path))
     if not path.is_file():
         raise AnalysisRunError(f"导入矢量层无 data.geojson: {layer_id}")

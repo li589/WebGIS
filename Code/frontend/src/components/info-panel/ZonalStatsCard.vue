@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 自动统计卡片 — 面要素绘制后实时统计。
+ * 自动统计卡片 — 面要素绘制后实时统计（地图舞台浮层）。
  *
  * 几何统计（前端即算，球面测地线近似）：测地线面积、周长
  * 栅格统计（对可见栅格图层调 /analysis/zonal-stats/sync）：
@@ -14,6 +14,10 @@ import { useUiStore } from '../../stores/ui'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { formatArea, formatLength, geodesicAreaM2, geodesicPerimeterM } from '../map/geometry-stats'
+import { resolveLayerDisplayLabel } from '../../stores/layers/layer-naming'
+import { getCatalogDisplayName } from '../../stores/layers/catalog-builders'
+import type { ActiveLayer } from '../../stores/layers/types'
+import { resolveStatLayerDisplayName } from './stat-layer-display-name'
 import {
   activeLayerHasReadableRaster,
   resolveRasterOverlayIdFromActiveLayer,
@@ -68,6 +72,109 @@ const geomPerimeterM = computed(() =>
 const overlayLayers = computed(() =>
   activeLayers.value.filter((l) => l.visible && activeLayerHasReadableRaster(l)),
 )
+
+const displayLabel = (l: ActiveLayer): string =>
+  resolveLayerDisplayLabel({
+    name: l.name,
+    catalogDisplayName: getCatalogDisplayName(l.catalogId) || null,
+    catalogId: l.catalogId,
+    fileStem: l.importedRaster ? undefined : l.importedVector?.fileName,
+  })
+
+/** overlay/catalog id → 活动层显示名（后端常回落 layer_id） */
+const displayNameByOverlayId = computed(() => {
+  const map = new Map<string, string>()
+  for (const l of activeLayers.value) {
+    const label = displayLabel(l)
+    const oid = resolveRasterOverlayIdFromActiveLayer(l)
+    if (oid) map.set(oid, label)
+    if (l.importedRaster?.overlayLayerId) map.set(l.importedRaster.overlayLayerId, label)
+    // catalogId 可能被同产品多个活动层共享：首例优先，避免后者覆盖前者标签
+    if (l.catalogId && !map.has(l.catalogId)) map.set(l.catalogId, label)
+  }
+  return map
+})
+
+function statDisplayName(item: ZonalStatItem): string {
+  return resolveStatLayerDisplayName({
+    layerId: item.layer_id,
+    layerName: item.layer_name,
+    displayNameByOverlayId: displayNameByOverlayId.value,
+  })
+}
+
+// ── 拖拽（相对地图舞台绝对定位）──
+const position = ref<{ x: number; y: number } | null>(null)
+const cardRef = ref<HTMLElement | null>(null)
+const DRAG_THRESHOLD_PX = 4
+let dragStart: {
+  px: number
+  py: number
+  x: number
+  y: number
+  moved: boolean
+  pointerId: number
+} | null = null
+
+const cardStyle = computed(() => {
+  if (!position.value) return {}
+  return {
+    left: `${position.value.x}px`,
+    top: `${position.value.y}px`,
+    right: 'auto',
+  }
+})
+
+function onHeadPointerDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  if ((e.target as HTMLElement).closest('button')) return
+  e.preventDefault()
+  const el = cardRef.value
+  const parent = el?.offsetParent as HTMLElement | null
+  if (!el || !parent) return
+  const parentRect = parent.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const startX = position.value?.x ?? elRect.left - parentRect.left
+  const startY = position.value?.y ?? elRect.top - parentRect.top
+  dragStart = {
+    px: e.clientX,
+    py: e.clientY,
+    x: startX,
+    y: startY,
+    moved: false,
+    pointerId: e.pointerId,
+  }
+  try {
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    // ignore
+  }
+  const move = (ev: PointerEvent) => {
+    if (!dragStart || ev.pointerId !== dragStart.pointerId) return
+    const dx = ev.clientX - dragStart.px
+    const dy = ev.clientY - dragStart.py
+    if (!dragStart.moved) {
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+      dragStart.moved = true
+    }
+    const maxX = Math.max(8, parent.clientWidth - el.offsetWidth - 8)
+    const maxY = Math.max(8, parent.clientHeight - Math.min(el.offsetHeight, 120) - 8)
+    position.value = {
+      x: Math.min(maxX, Math.max(8, dragStart.x + dx)),
+      y: Math.min(maxY, Math.max(8, dragStart.y + dy)),
+    }
+  }
+  const up = (ev: PointerEvent) => {
+    if (!dragStart || ev.pointerId !== dragStart.pointerId) return
+    dragStart = null
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', up)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', up)
+}
 
 async function fetchStats() {
   const feature = lastPolygonFeature.value
@@ -126,17 +233,24 @@ async function fetchStats() {
   }
 }
 
-// 当最后一个面要素几何变化时自动触发统计（覆盖删除/替换/新增）
+// 面要素几何 / 可见栅格集合变化时自动触发统计
 watch(
+  [
+    () => {
+      const f = lastPolygonFeature.value
+      return f ? JSON.stringify(f.geometry) : null
+    },
+    () =>
+      overlayLayers.value
+        .map((l) => resolveRasterOverlayIdFromActiveLayer(l) ?? '')
+        .filter(Boolean)
+        .join(','),
+    visible,
+  ],
   () => {
-    const f = lastPolygonFeature.value
-    return f ? JSON.stringify(f.geometry) : null
+    if (visible.value) fetchStats()
   },
-  () => {
-    if (visible.value) {
-      fetchStats()
-    }
-  },
+  { immediate: true },
 )
 
 function formatValue(val: number | null): string {
@@ -150,8 +264,14 @@ function formatValue(val: number | null): string {
 
 <template>
   <Transition name="cgda-fade-scale">
-    <div v-if="visible" class="zonal-stats-card">
-      <div class="zonal-stats-header">
+    <div
+      v-if="visible"
+      ref="cardRef"
+      class="zonal-stats-card"
+      :class="{ 'zonal-stats-card--moved': position !== null }"
+      :style="cardStyle"
+    >
+      <div class="zonal-stats-header" title="拖动移动" @pointerdown="onHeadPointerDown">
         <h4 class="zonal-stats-title">自动统计</h4>
         <button
           class="zonal-stats-refresh"
@@ -204,8 +324,8 @@ function formatValue(val: number | null): string {
           </thead>
           <tbody>
             <tr v-for="item in stats" :key="item.layer_id">
-              <td class="stat-name" :title="item.layer_name">
-                {{ item.layer_name }}
+              <td class="stat-name" :title="statDisplayName(item)">
+                {{ statDisplayName(item) }}
                 <span v-if="item.unit" class="stat-unit">({{ item.unit }})</span>
               </td>
               <td class="stat-value">{{ formatValue(item.mean) }}</td>
@@ -238,11 +358,22 @@ function formatValue(val: number | null): string {
   overflow-y: auto;
 }
 
+.zonal-stats-card--moved {
+  right: auto;
+}
+
 .zonal-stats-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.zonal-stats-header:active {
+  cursor: grabbing;
 }
 
 /* 几何统计行：测地线面积 / 周长 */
@@ -389,7 +520,7 @@ function formatValue(val: number | null): string {
 }
 
 .stat-name {
-  max-width: 120px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-primary);

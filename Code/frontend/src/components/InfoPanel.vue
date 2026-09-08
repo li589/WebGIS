@@ -228,6 +228,17 @@ function queryDefaultOverlaySeries() {
                （天气摘要「瓦片按视口自动加载…」/静态提示行/工作流引擎
                「⚡Python 处理器 xxx」）——图层名与摘要重复且属噪音。 -->
           <div class="panel-stage-row panel-stage-row--topline">
+            <!-- 左：工作流执行状态（succeeded 完成 / 运行中…）；无状态时留空 -->
+            <span
+              v-if="wf.showWorkflowStageRow.value"
+              class="workflow-stage-row workflow-stage-row--inline"
+            >
+              <span class="stage-pill" :class="wf.workflowStage.value">{{
+                wf.workflowStage.value
+              }}</span>
+              <span class="stage-copy">{{ wf.workflowStageCopy.value }}</span>
+            </span>
+            <!-- 右：图层名（右对齐） -->
             <span
               class="readiness readiness--inline"
               :title="`${displayLayer.name} · ${stageLabel}`"
@@ -277,13 +288,6 @@ function queryDefaultOverlaySeries() {
               </div>
             </div>
           </template>
-
-          <div v-if="wf.showWorkflowStageRow.value" class="workflow-stage-row">
-            <span class="stage-pill" :class="wf.workflowStage.value">{{
-              wf.workflowStage.value
-            }}</span>
-            <span class="stage-copy">{{ wf.workflowStageCopy.value }}</span>
-          </div>
 
           <div
             v-if="

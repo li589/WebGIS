@@ -16,7 +16,7 @@ from app.data_io.services.dbf_encoding import (
     truncate_to_encoded_bytes,
 )
 from app.data_io.services.paths import (
-    IMPORTS_DIR,
+    imports_dir,
     PREVIEW_FEATURE_LIMIT,
     assert_quota_available,
     ensure_imports_root,
@@ -237,7 +237,7 @@ def _new_layer_dir(prefix: str = "imported-vec") -> tuple[str, Path]:
     ensure_imports_root()
     assert_quota_available()
     layer_id = f"{prefix}-{uuid.uuid4().hex[:12]}"
-    dest = IMPORTS_DIR / layer_id
+    dest = imports_dir() / layer_id
     dest.mkdir(parents=True, exist_ok=True)
     return layer_id, dest
 

@@ -1,0 +1,349 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 36
+  },
+  "rows": [
+    {
+      "workflow_id": "weather/tiles/temperature",
+      "batch": "A",
+      "run_id": "",
+      "status": "succeeded",
+      "elapsed_s": 1.5,
+      "blocker": "",
+      "detail": "HTTP 200 bytes=99690",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather/tiles/wind-field",
+      "batch": "A",
+      "run_id": "",
+      "status": "succeeded",
+      "elapsed_s": 1.54,
+      "blocker": "",
+      "detail": "HTTP 200 bytes=71801",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_temperature_grid_demo",
+      "batch": "B",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'layer_id', 'resource_profile', 'weather_request', 'map_context']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "weather_wind_field_demo",
+      "batch": "B",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'layer_id', 'resource_profile', 'weather_request', 'map_context']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_histogram_basic",
+      "batch": "C",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_timeseries_curve",
+      "batch": "C",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "raster_zonal_stats_aligned",
+      "batch": "C",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "smap_soil_moisture_local",
+      "batch": "D",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_noaa_grib_sample",
+      "batch": "D",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_nasa_earthdata_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_nsidc_smap_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:runtime (Earthdata ready; NSIDC SMAP granules too large for light smoke — needs curated small path)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "open_data_esa_product_sample",
+      "batch": "E",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:creds (copernicus profile) + REPLACE_* path",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_block_smap_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_fy_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_dual",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_smap_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:config (online download template + needs h5→mat bridge; earthdata portal ready; not light-smoke)",
+      "detail": "",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_avg_daily_gldas_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_smap_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "omega_sf_fenkuai_fy_single",
+      "batch": "F",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "preprocess_clip_reproject_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "gis_raster_calc_reclassify_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "gis_buffer_zonal_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_mean_summary_report_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fusion_idw_interpolate_basic",
+      "batch": "G",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "preprocess_mask_resample_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "gis_vector_raster_roundtrip_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'spatial_filter', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "gis_contour_slope_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_trend_anomaly_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "fusion_multi_source_merge_basic",
+      "batch": "H",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "gis_watershed_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_correlation_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_correlation_report_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    },
+    {
+      "workflow_id": "stats_summary_chart_basic",
+      "batch": "I",
+      "run_id": "",
+      "status": "dry_run",
+      "elapsed_s": 0.0,
+      "blocker": "",
+      "detail": "payload_keys=['command_type', 'command_label', 'parameters', 'requested_outputs', 'client', 'algorithm_request', 'time_range', 'resource_profile']",
+      "extras": {}
+    }
+  ]
+}

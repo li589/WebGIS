@@ -53,8 +53,8 @@ def isolated_dirs(
     system_dir = tmp_path / "definitions" / "system"
     user_dir = tmp_path / "definitions" / "user"
     monkeypatch.setattr(wds, "_SEED_SYSTEM_DIR", seed_dir)
-    monkeypatch.setattr(wds, "_SYSTEM_DIR", system_dir)
-    monkeypatch.setattr(wds, "_USER_DIR", user_dir)
+    monkeypatch.setattr(wds, "system_dir", lambda: system_dir)
+    monkeypatch.setattr(wds, "user_dir", lambda: user_dir)
     return seed_dir, system_dir, user_dir
 
 

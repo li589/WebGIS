@@ -706,7 +706,7 @@ def test_node_templates_ssh_sync_profile_server_options(repo_env, monkeypatch, t
         lambda: repo,
     )
     repo.upsert(profile_id="lab-nas", protocol="filebrowser", host="", extra={"base_url": "https://nas.local"})
-    repo.upsert(profile_id="lab-hpc", protocol="sftp", host="172.16.98.184")
+    repo.upsert(profile_id="lab-hpc", protocol="sftp", host="********")
     repo.upsert(profile_id="lab-smb", protocol="smb", host="files")  # 不支持同步 → 不注入
     repo.upsert(profile_id="disabled-fb", protocol="filebrowser", host="", enabled=False)
     ntr.invalidate_portal_options_cache()

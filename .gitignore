@@ -121,8 +121,13 @@ Tools/reports/data_production_e2e_*
 /fix_wsl_vhdx.bat
 /rebuild_env_python.bat
 /wsl_fix_result.log
-.trae/debug-*.png
-.trae/documents/
+# AI editor workspaces (per-tool local config/rules; kept out of the repo)
+.cursor/
+.cursorignore
+.kiro/
+.opencode/
+.trae/
+.github/copilot-instructions.md
 
 # TRAE HTML share packages (temporary export)
 .trae-html-share-packages/
@@ -151,8 +156,13 @@ Code/backend/deployment.config.json
 # Doc task notes (temp)
 Doc/一份任务说明-*.txt
 
-# AI workspace (local-only context: prompts/skills/plans/progress/memory/docs). NOT pushed to GitHub.
-.ai/
+# AI workspace (prompts/skills/plans/progress/memory — committed to the repo).
+# Exceptions: local secrets (MCP server env with tokens) and scratch files.
+.ai/mcp.json
+.ai/tmp/
+# Archive scratch probes contain live credentials (NAS profile, portal passwords) — never commit
+.ai/progress/archive/tmp-*
+.ai/progress/archive/trae-tmp-*/
 
 # WorkBuddy local desktop state (sessions/logs/cache). NOT pushed to GitHub.
 .workbuddy/

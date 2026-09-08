@@ -1,0 +1,19 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "omega_avg_daily_gldas_online",
+      "batch": "F",
+      "run_id": "",
+      "status": "skipped",
+      "elapsed_s": 0.0,
+      "blocker": "blocked:runtime (gldas_download + nc4→mat OK; seed still needs full D1 + multi-day GLDAS mats — not light-smoke)",
+      "detail": "",
+      "extras": {}
+    }
+  ]
+}

@@ -18,6 +18,23 @@
 from __future__ import annotations
 
 import json
+
+def _cred(path: str, default: str = "") -> str:
+    """读取本地凭据文件 Tools/_nas_credentials.json（gitignored，不入库）。"""
+    import json
+    f = Path(__file__).resolve().parent / "_nas_credentials.json"
+    if not f.exists():
+        return default
+    node: object = json.loads(f.read_text(encoding="utf-8"))
+    for part in path.split("/"):
+        if isinstance(node, dict):
+            node = node.get(part)
+        elif isinstance(node, list) and part.isdigit():
+            node = node[int(part)] if int(part) < len(node) else None
+        else:
+            return default
+    return str(node) if node is not None else default
+
 import ssl
 import sys
 import time
@@ -32,12 +49,12 @@ SERVERS = {
     "nas": {
         "base_url": "https://nasfile.personaltunnel.dpdns.org",
         "username": "user",
-        "password": "remotefangwen123",
+        "password": _cred("filebrowser/nasfile/password"),
     },
     "win11": {
         "base_url": "https://win11file.personaltunnel.dpdns.org",
         "username": "user",
-        "password": "remotefangwen123",
+        "password": _cred("filebrowser/win11file/password"),
     },
 }
 

@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "open_data_noaa_grib_sample",
+      "batch": "D",
+      "run_id": "run-8181991fcc99",
+      "status": "succeeded",
+      "elapsed_s": 4.07,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "NOMADS GFS filter gfs.20260806/12 http_open_data→variable_extract (t2m; archive skipped; cfgrib ok)"
+      }
+    }
+  ]
+}

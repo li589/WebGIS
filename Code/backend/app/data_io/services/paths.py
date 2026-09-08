@@ -33,17 +33,25 @@ from pathlib import Path
 from typing import Any
 
 from app.data_io.services._meta_io import save_json_atomic
-from app.core.config import settings
+from app.core import config as _config
 import contextlib
 
 logger = logging.getLogger(__name__)
 
+# CWD 兜底告警只发一次（output_root 现为逐调用惰性解析，避免日志刷屏）
+_CWD_FALLBACK_WARNED = False
 
-def _resolve_output_root() -> Path:
-    """A-3：output_root 解析——production 空值 fail-fast，dev 兜底须显式告警。"""
-    if settings.output_root:
-        return Path(settings.output_root)
-    env = (settings.environment or "").lower()
+
+def output_root() -> Path:
+    """A-3：output_root 解析——production 空值 fail-fast，dev 兜底须显式告警。
+
+    惰性读取当前 ``config.settings``（而非模块导入期快照）：测试替换
+    ``cfg_mod.settings`` / 环境变更后无需重导模块即可隔离。
+    """
+    global _CWD_FALLBACK_WARNED
+    if _config.settings.output_root:
+        return Path(_config.settings.output_root)
+    env = (_config.settings.environment or "").lower()
     if env not in {"development", "dev", "test", "testing"}:
         # 生产空根若静默 CWD 兜底，导入产物会落入仓库/工作目录
         raise RuntimeError(
@@ -51,19 +59,31 @@ def _resolve_output_root() -> Path:
             "(imports storage would silently fall back to the process CWD)."
         )
     fallback = Path.cwd() / "imports_output"
-    logger.warning(
-        "[paths] BACKEND_OUTPUT_ROOT 未配置，data_io 导入产物回退 CWD：%s"
-        "（生产环境将拒绝启动，请显式配置）",
-        fallback,
-    )
+    if not _CWD_FALLBACK_WARNED:
+        _CWD_FALLBACK_WARNED = True
+        logger.warning(
+            "[paths] BACKEND_OUTPUT_ROOT 未配置，data_io 导入产物回退 CWD：%s"
+            "（生产环境将拒绝启动，请显式配置）",
+            fallback,
+        )
     return fallback
 
 
-_OUTPUT_ROOT = _resolve_output_root()
-IMPORTS_DIR = _OUTPUT_ROOT / "imports"
-STAGING_DIR = IMPORTS_DIR / "_staging"
-JOBS_DIR = IMPORTS_DIR / "_jobs"
-DOC_SESSIONS_DIR = IMPORTS_DIR / "_documents"
+def imports_dir() -> Path:
+    return output_root() / "imports"
+
+
+def staging_dir() -> Path:
+    return imports_dir() / "_staging"
+
+
+def jobs_dir() -> Path:
+    return imports_dir() / "_jobs"
+
+
+def doc_sessions_dir() -> Path:
+    return imports_dir() / "_documents"
+
 
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB
 
@@ -100,11 +120,11 @@ DOC_PREVIEW_ROW_LIMIT = 5000
 
 
 def ensure_imports_root() -> Path:
-    IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    STAGING_DIR.mkdir(parents=True, exist_ok=True)
-    JOBS_DIR.mkdir(parents=True, exist_ok=True)
-    DOC_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    return IMPORTS_DIR
+    imports_dir().mkdir(parents=True, exist_ok=True)
+    staging_dir().mkdir(parents=True, exist_ok=True)
+    jobs_dir().mkdir(parents=True, exist_ok=True)
+    doc_sessions_dir().mkdir(parents=True, exist_ok=True)
+    return imports_dir()
 
 
 def _is_ephemeral_import_child(name: str) -> bool:
@@ -116,7 +136,7 @@ def dir_size_bytes(path: Path, *, include_ephemeral: bool = True) -> int:
         return 0
     total = 0
     # 顶层配额统计时可跳过 _staging/_tmp 等临时目录
-    if path.resolve() == IMPORTS_DIR.resolve() and not include_ephemeral:
+    if path.resolve() == imports_dir().resolve() and not include_ephemeral:
         for child in path.iterdir():
             if not child.is_dir():
                 if child.is_file():
@@ -146,8 +166,8 @@ def effective_soft_reserve_bytes() -> int:
 def get_quota_usage() -> dict[str, Any]:
     """返回导入目录配额用量（仅计永久 imported-*，不含 staging/tmp）。"""
     ensure_imports_root()
-    used = dir_size_bytes(IMPORTS_DIR, include_ephemeral=False)
-    ephemeral = dir_size_bytes(IMPORTS_DIR) - used
+    used = dir_size_bytes(imports_dir(), include_ephemeral=False)
+    ephemeral = dir_size_bytes(imports_dir()) - used
     limit = MAX_IMPORTS_TOTAL_BYTES
     soft = effective_soft_reserve_bytes()
     free = max(0, limit - used)
@@ -158,7 +178,7 @@ def get_quota_usage() -> dict[str, Any]:
         "free_bytes": free,
         "soft_reserve_bytes": soft,
         "used_ratio": (used / limit) if limit else 1.0,
-        "imports_dir": str(IMPORTS_DIR),
+        "imports_dir": str(imports_dir()),
     }
 
 
@@ -174,7 +194,7 @@ def safe_import_child(child_id: str, *, root: Path | None = None) -> Path:
     Raises:
         ValueError: 校验失败。
     """
-    target_root = root if root is not None else IMPORTS_DIR
+    target_root = root if root is not None else imports_dir()
     raw = str(child_id or "").strip()
     if (
         not raw
@@ -318,7 +338,7 @@ def reclaim_import_space(
     **绝不**删除用户已导入的 ``imported-*`` 图层（覆盖/用户删除另论）。
     """
     ensure_imports_root()
-    before = dir_size_bytes(IMPORTS_DIR)
+    before = dir_size_bytes(imports_dir())
     phases: list[dict[str, Any]] = []
     needed = max(0, int(needed_bytes))
 
@@ -333,10 +353,10 @@ def reclaim_import_space(
         removed_n = cleanup_expired_staging(ttl_seconds=STAGING_TTL_SECONDS)
     except Exception:
         removed_n = 0
-    mid = dir_size_bytes(IMPORTS_DIR)
+    mid = dir_size_bytes(imports_dir())
     _record("expired_staging", max(0, before - mid), removed_sessions=removed_n)
     if needed and _enough_free(needed):
-        after = dir_size_bytes(IMPORTS_DIR)
+        after = dir_size_bytes(imports_dir())
         return {
             "before_bytes": before,
             "after_bytes": after,
@@ -349,8 +369,8 @@ def reclaim_import_space(
     # Phase 2: 已 complete 但仍滞留的 staging（可安全删，永久层已落盘）
     now = time.time()
     completed_freed = 0
-    if STAGING_DIR.exists():
-        for child in list(STAGING_DIR.iterdir()):
+    if staging_dir().exists():
+        for child in list(staging_dir().iterdir()):
             if not child.is_dir():
                 continue
             created, complete = _staging_meta(child)
@@ -363,7 +383,7 @@ def reclaim_import_space(
             completed_freed += size
     _record("completed_staging", completed_freed)
     if needed and _enough_free(needed):
-        after = dir_size_bytes(IMPORTS_DIR)
+        after = dir_size_bytes(imports_dir())
         return {
             "before_bytes": before,
             "after_bytes": after,
@@ -379,8 +399,8 @@ def reclaim_import_space(
 
     # Phase 3: 紧张时清理较旧的未完成 staging
     pressure_freed = 0
-    if pressure and STAGING_DIR.exists():
-        for child in list(STAGING_DIR.iterdir()):
+    if pressure and staging_dir().exists():
+        for child in list(staging_dir().iterdir()):
             if not child.is_dir():
                 continue
             created, complete = _staging_meta(child)
@@ -395,16 +415,16 @@ def reclaim_import_space(
 
     # Phase 4: _tmp
     tmp_ttl = 0 if (pressure and aggressive) else TMP_TTL_SECONDS
-    tmp_freed = _purge_dir_children(IMPORTS_DIR / "_tmp", older_than=tmp_ttl)
+    tmp_freed = _purge_dir_children(imports_dir() / "_tmp", older_than=tmp_ttl)
     _record("tmp", tmp_freed, ttl_seconds=tmp_ttl)
 
     # Phase 5: _exports
     exports_freed = _purge_dir_children(
-        IMPORTS_DIR / "_exports", older_than=EXPORTS_TTL_SECONDS
+        imports_dir() / "_exports", older_than=EXPORTS_TTL_SECONDS
     )
     _record("exports", exports_freed)
 
-    after = dir_size_bytes(IMPORTS_DIR)
+    after = dir_size_bytes(imports_dir())
     return {
         "before_bytes": before,
         "after_bytes": after,
@@ -427,13 +447,13 @@ def assert_quota_available(
     ensure_imports_root()
     net_extra = max(0, int(extra_bytes) - max(0, int(replace_bytes)))
     budget = MAX_IMPORTS_TOTAL_BYTES - effective_soft_reserve_bytes()
-    used = dir_size_bytes(IMPORTS_DIR, include_ephemeral=False)
+    used = dir_size_bytes(imports_dir(), include_ephemeral=False)
     projected = used - max(0, int(replace_bytes)) + max(0, int(extra_bytes))
     if projected <= budget:
         return
 
     reclaim_import_space(needed_bytes=net_extra, aggressive=True)
-    used = dir_size_bytes(IMPORTS_DIR, include_ephemeral=False)
+    used = dir_size_bytes(imports_dir(), include_ephemeral=False)
     projected = used - max(0, int(replace_bytes)) + max(0, int(extra_bytes))
     if projected <= budget:
         return

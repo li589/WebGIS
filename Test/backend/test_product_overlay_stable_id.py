@@ -63,9 +63,9 @@ def test_stable_overlay_id_with_layer_id(raster_product, tmp_path, monkeypatch):
     from app.data_io.services import raster_register as register_mod
 
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_root)
     import_paths.ensure_imports_root()
 
     from app.services.python_provider_result_builder import PythonProviderResultBuilder
@@ -95,9 +95,9 @@ def test_stable_id_sanitizes_illegal_chars(raster_product, tmp_path, monkeypatch
     from app.data_io.services import raster_register as register_mod
 
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_root)
     import_paths.ensure_imports_root()
 
     from app.services.python_provider_result_builder import PythonProviderResultBuilder
@@ -127,9 +127,9 @@ def test_product_palette_aligns_with_descriptor(raster_product, tmp_path, monkey
     from app.data_io.services import raster_register as register_mod
 
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_root)
     import_paths.ensure_imports_root()
 
     from app.services.python_provider_result_builder import PythonProviderResultBuilder
@@ -147,7 +147,7 @@ def test_product_palette_aligns_with_descriptor(raster_product, tmp_path, monkey
     assert hint["palette"] == "brg", f"render_hint.palette 应对齐 descriptor brg，实际 {hint['palette']}"
     # 注册侧 overlay palette 也应同步（读缓存 spec）
     import json
-    bounds_file = import_paths.IMPORTS_DIR / "imported-aridity-cn-00" / "bounds.json"
+    bounds_file = import_paths.imports_dir() / "imported-aridity-cn-00" / "bounds.json"
     assert bounds_file.exists(), "产物 overlay bounds.json 应存在"
     meta = json.loads(bounds_file.read_text(encoding="utf-8"))["meta"]
     assert meta.get("palette") == "brg", f"注册 meta.palette 应对齐 brg，实际 {meta.get('palette')}"
@@ -161,9 +161,9 @@ def test_run_derived_id_without_layer_id(raster_product, tmp_path, monkeypatch):
     from app.data_io.services import raster_register as register_mod
 
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_root)
     import_paths.ensure_imports_root()
 
     from app.services.python_provider_result_builder import PythonProviderResultBuilder
@@ -231,9 +231,9 @@ def test_mat_map_layer_product_registers_overlay(tmp_path, monkeypatch):
     from app.data_io.services import raster_register as register_mod
 
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_root)
     import_paths.ensure_imports_root()
 
     import scipy.io as sio

@@ -42,6 +42,18 @@ function extractExecutionRetryCount(payload: unknown): number | undefined {
   return typeof raw === 'number' && raw > 0 ? raw : undefined
 }
 
+/**
+ * 资产类 run（asset_bake / online_sync）：地图资产由 overlay 注册表直渲，
+ * 无 map_layer 产物——对它们跑 attach 会误报「工作流已完成，但未生成可显示的
+ * 地图图层」横幅（地图其实正常显示）。Poller succeeded 分支据此豁免。
+ */
+export function isAssetOnlyWorkflowRun(run: {
+  executor_metadata?: { workflow_kind?: string }
+}): boolean {
+  const kind = run.executor_metadata?.workflow_kind
+  return kind === 'asset_bake' || kind === 'online_sync'
+}
+
 export interface WorkflowPollerDeps {
   // ── 状态读 ──
   getJobLayer: (jobId: string) => JobLayerItem | undefined
@@ -527,7 +539,11 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       if (!mergedJobLayer.isAnalysisToolRun) {
         deps.removeActiveCatalog(catalogId)
       }
-      if (mergedJobLayer.status === 'succeeded' && !deps.isRunDismissed(run.run_id)) {
+      if (
+        mergedJobLayer.status === 'succeeded' &&
+        !deps.isRunDismissed(run.run_id) &&
+        !isAssetOnlyWorkflowRun(run)
+      ) {
         void deps
           .attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
           .then((boundCount) => {

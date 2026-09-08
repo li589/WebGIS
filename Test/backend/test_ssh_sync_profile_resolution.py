@@ -47,16 +47,16 @@ def test_resolve_sftp_profile_with_secret(storage_repo):
     storage_repo.upsert(
         profile_id="lab-hpc",
         protocol="sftp",
-        host="172.16.98.184",
+        host="********",
         port=22,
-        username="likr6008",
+        username="********",
         secret="pw",
     )
     cfg = _resolve("lab-hpc")
     assert cfg.server_type == "hpc"
-    assert cfg.host == "172.16.98.184"
+    assert cfg.host == "********"
     assert cfg.port == 22
-    assert cfg.username == "likr6008"
+    assert cfg.username == "********"
     assert cfg.password == "pw"
     assert cfg.private_key_pem == ""
 
@@ -80,7 +80,7 @@ def test_resolve_honors_manual_alt_path(storage_repo):
     storage_repo.upsert(
         profile_id="lab-hpc",
         protocol="sftp",
-        host="172.16.98.184",
+        host="********",
         port=22,
         username="u",
         secret="p",

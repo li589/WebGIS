@@ -41,6 +41,23 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+
+def _cred(path: str, default: str = "") -> str:
+    """读取本地凭据文件 Tools/_nas_credentials.json（gitignored，不入库）。"""
+    import json
+    f = Path(__file__).resolve().parent / "_nas_credentials.json"
+    if not f.exists():
+        return default
+    node: object = json.loads(f.read_text(encoding="utf-8"))
+    for part in path.split("/"):
+        if isinstance(node, dict):
+            node = node.get(part)
+        elif isinstance(node, list) and part.isdigit():
+            node = node[int(part)] if int(part) < len(node) else None
+        else:
+            return default
+    return str(node) if node is not None else default
+
 import shutil
 import sys
 import time
@@ -57,7 +74,7 @@ LOG_DIR = resolve_data_root() / "_runtime" / "logs"
 
 # 回退默认凭据（建议通过环境变量 EARTHDATA_USERNAME / EARTHDATA_PASSWORD 覆盖）
 DEFAULT_USERNAME = "Rejoyce"
-DEFAULT_PASSWORD = "Diandian143"
+DEFAULT_PASSWORD = _cred("earthdata/password")
 
 SHORT_NAME = "SPL3SMP_E"  # SMAP L3 Soil Moisture Passive Enhanced
 VERSION = "6"

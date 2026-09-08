@@ -161,14 +161,15 @@ export class DrawCanvas {
     const { width, height } = this.layout
     ctx.clearRect(0, 0, width, height)
 
-    // 矩形模式预览由 draw-module 的 GeoJSON preview 层渲染，本层不重复绘制
+    // 矩形模式预览由 draw-module 的 GeoJSON preview 层渲染，本层不重复绘制；
+    // 已放置折线同样由 MapLibre preview `path` 层渲染（实线、随地图变换），本层不再重复画
 
     // 顶点手柄
     if (this.vertices.length > 0) {
       this.renderVertexHandles(ctx)
     }
 
-    // 预览线
+    // 预览线（末点→光标）
     if (this.isDrawing && this.hoverPoint && this.vertices.length > 0) {
       this.renderPreviewLine(ctx)
     }

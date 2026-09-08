@@ -163,8 +163,12 @@ export const useDrawStore = defineStore('draw', () => {
   function removeFeature(index: number) {
     pushUndoState()
     features.value.splice(index, 1)
-    if (selectedFeatureIndex.value === index) {
+    const sel = selectedFeatureIndex.value
+    if (sel === null) return
+    if (sel === index) {
       selectedFeatureIndex.value = null
+    } else if (sel > index) {
+      selectedFeatureIndex.value = sel - 1
     }
   }
 

@@ -265,9 +265,14 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
           </div>
         </header>
 
-        <!-- 内容区 -->
-        <div v-show="!collapsed" :class="bodyClass">
-          <slot />
+        <!-- 内容区：grid 行动画裁剪容器，收起/展开平滑过渡（0fr ⇄ 1fr） -->
+        <div
+          class="panel-dock__body-clip"
+          :class="{ 'panel-dock__body-clip--collapsed': collapsed }"
+        >
+          <div :class="bodyClass" :inert="collapsed">
+            <slot />
+          </div>
         </div>
 
         <!-- 缩放手柄 -->
@@ -397,7 +402,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   transition:
     opacity var(--motion-sheet-duration) var(--ease-decelerate),
     transform var(--motion-sheet-duration) var(--motion-sheet-ease),
-    box-shadow var(--motion-sheet-duration) var(--motion-surface-ease);
+    box-shadow var(--motion-sheet-duration) var(--motion-surface-ease),
+    height var(--motion-sheet-duration) var(--motion-surface-ease);
   overflow: visible;
   min-height: 0;
   border: 1px solid var(--border-default);
@@ -434,8 +440,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 }
 
 .panel-dock__frame.panel-dock--collapsed:hover {
+  /* 不做位移：边缘 hover 时 translateY 会让光标出界 → hover 循环丢失 → 透明度闪烁 */
   opacity: 1;
-  transform: translateY(-2px);
   border-color: var(--border-strong);
   box-shadow: var(--elevation-3);
 }
@@ -473,6 +479,33 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 }
 
 .panel-dock--timeline .panel-dock__body {
+  overflow: hidden;
+}
+
+/* ═══ 内容区收起/展开动画（grid 行 1fr ⇄ 0fr）═══ */
+.panel-dock__body-clip {
+  display: grid;
+  grid-template-rows: 1fr;
+  /* 原 body 作为 frame 直接 flex 子元素持有 flex:1（撑满剩余高度）；
+     引入裁剪容器后由本层接管，否则内容高度不足时内卡下缘与外框分离 */
+  flex: 1 1 auto;
+  min-height: 0;
+  transition:
+    grid-template-rows var(--motion-sheet-duration) var(--motion-surface-ease),
+    visibility 0s linear;
+}
+
+.panel-dock__body-clip--collapsed {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  /* 展开动画结束后才隐藏内容，避免收起过程中内容瞬间消失 */
+  transition:
+    grid-template-rows var(--motion-sheet-duration) var(--motion-surface-ease),
+    visibility 0s linear var(--motion-sheet-duration);
+}
+
+.panel-dock__body-clip > .panel-dock__body {
+  min-height: 0;
   overflow: hidden;
 }
 

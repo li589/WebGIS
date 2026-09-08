@@ -1657,13 +1657,10 @@ class PythonProviderResultBuilder:
 
         # 保护：资产工作流（asset_bake）或非 NDVI 任务绝对不自愈注入 NDVI 产物
         is_asset_bake = workflow_kind == "asset_bake"
-        is_ndvi_eligible = (
-            not is_asset_bake
-            and (
-                "ndvi" in target_layer
-                or "ndvi" in cmd_label
-                or "omega_avg_daily" in cmd_label
-            )
+        is_ndvi_eligible = not is_asset_bake and (
+            "ndvi" in target_layer
+            or "ndvi" in cmd_label
+            or "omega_avg_daily" in cmd_label
         )
 
         ndvi_dir: Path | None = None
@@ -1760,36 +1757,35 @@ class PythonProviderResultBuilder:
             workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
             runtime_candidates: list[Path] = []
             # 保护：仅当图层确属反演类任务时，才允许扫描全局 omega_sf_fenkuai 运行时目录
-            is_inversion_eligible = (
-                not is_asset_bake
-                and (
-                    any(
-                        keyword in target_layer
-                        for keyword in (
-                            "omega",
-                            "soil_moisture",
-                            "soil-moisture",
-                            "vod",
-                            "inversion",
-                            "fenkuai",
-                        )
+            is_inversion_eligible = not is_asset_bake and (
+                any(
+                    keyword in target_layer
+                    for keyword in (
+                        "omega",
+                        "soil_moisture",
+                        "soil-moisture",
+                        "vod",
+                        "inversion",
+                        "fenkuai",
                     )
-                    or any(
-                        keyword in cmd_label
-                        for keyword in (
-                            "omega",
-                            "soil_moisture",
-                            "soil-moisture",
-                            "vod",
-                            "inversion",
-                            "fenkuai",
-                        )
+                )
+                or any(
+                    keyword in cmd_label
+                    for keyword in (
+                        "omega",
+                        "soil_moisture",
+                        "soil-moisture",
+                        "vod",
+                        "inversion",
+                        "fenkuai",
                     )
                 )
             )
             if is_inversion_eligible:
                 if workspace.parts:
-                    runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
+                    runtime_candidates.append(
+                        workspace / "products" / "omega_sf_fenkuai"
+                    )
                 if data_root.parts:
                     runtime_candidates.append(
                         data_root

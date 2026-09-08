@@ -27,6 +27,15 @@ interface CreateMapCanvasNonWeatherLayerSyncModuleOptions {
     }>,
   ) => void
   restoreMapCursor?: () => void
+  /**
+   * 绘制/编辑会话中抑制草稿层在 imported-layer 路径上的二次渲染，
+   * 避免与 draw-module 叠加导致删要素后边界残留。
+   */
+  shouldSuppressImportedMapRender?: (instanceId: string) => boolean
+  /** 叠序应用后回调（绘制层需重新置顶） */
+  onAfterLayerStackOrder?: () => void
+  /** 抑制键变化时重同步 imported 可见性（进入/退出绘制） */
+  getImportedMapSuppressKey?: () => string
 }
 
 export interface MapCanvasNonWeatherLayerSyncModule {
@@ -65,6 +74,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       getOverlayRasterLayerId: (overlayLayerId) =>
         overlayImageModule.getRasterLayerId(overlayLayerId),
     })
+    options.onAfterLayerStackOrder?.()
   }
 
   function publishOverlayTimeStates() {
@@ -159,7 +169,8 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       loadedIds.delete(layer.instanceId)
     }
     for (const layer of imported) {
-      importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
+      const suppress = options.shouldSuppressImportedMapRender?.(layer.instanceId) === true
+      importedLayerModule.setLayerVisibility(layer.instanceId, suppress ? false : layer.visible)
       const payload = layer.importedVector
       const label = resolveLayerDisplayLabel({
         name: layer.name,
@@ -261,7 +272,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
               (l) =>
                 `${l.instanceId}:${l.name ?? ''}:${l.visible}:${l.opacity}:${l.importedVector!.revision ?? 0}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
             )
-            .join(',')}`,
+            .join(',')}|${options.getImportedMapSuppressKey?.() ?? ''}`,
         () => {
           syncImportedLayers({ fitNew: true })
         },

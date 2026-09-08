@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "omega_block_smap_single",
+      "batch": "F",
+      "run_id": "run-3e80dbc627b0",
+      "status": "succeeded",
+      "elapsed_s": 537.06,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "time_range overridden to 2025-11-01..02 (available mats); compiled graph timeseries_bundle → omega_block"
+      }
+    }
+  ]
+}

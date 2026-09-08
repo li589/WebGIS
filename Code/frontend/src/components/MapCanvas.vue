@@ -855,6 +855,17 @@ onMounted(async () => {
         drawStore.isDrawing = v
       },
       scheduleDrawPersist: () => drawStore.scheduleDraftPersist(),
+      shouldSuppressImportedMapRender: (instanceId) =>
+        // 仅在「正在落点」时隐藏草稿层二次渲染；闭合后恢复可见，避免整面消失
+        uiStore.interactionMode === 'draw' &&
+        drawStore.isDrawing &&
+        (instanceId === drawStore.draftLayerId || instanceId === drawStore.editingLayerId),
+      getImportedMapSuppressKey: () =>
+        `${uiStore.interactionMode}:${drawStore.isDrawing ? 1 : 0}:${drawStore.draftLayerId ?? ''}:${drawStore.editingLayerId ?? ''}`,
+      // 闭合后 imported 已展示完成面：draw fill/line 省略，避免双路径叠色。
+      // 不限定 interactionMode：退出绘制态（草稿层仍在）时同样省略，防双渲染。
+      omitCompletedDrawFeatures: () =>
+        !drawStore.isDrawing && Boolean(drawStore.draftLayerId || drawStore.editingLayerId),
     })
     state.resources.basemapModule = moduleBundle.basemapModule
     state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule

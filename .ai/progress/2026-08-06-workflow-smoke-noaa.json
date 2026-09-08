@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 24
+  },
+  "rows": [
+    {
+      "workflow_id": "open_data_noaa_grib_sample",
+      "batch": "D",
+      "run_id": "run-1456e607422f",
+      "status": "succeeded",
+      "elapsed_s": 4.07,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "NOMADS GFS filter gfs.20260806/06 (download-only light smoke; archive/extract+cfgrib skipped)"
+      }
+    }
+  ]
+}

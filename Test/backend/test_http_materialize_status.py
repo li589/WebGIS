@@ -30,7 +30,7 @@ def test_http_materialize_marks_ready_after_download(
     fake_body = b"GEOTIFF-BYTES"
 
     class _Resp:
-        """最小 urlopen 响应：真实响应总有 .headers（HTTPMessage），mock 用 dict 模拟 .get。"""
+        """最小 _open_http_request 响应：真实响应总有 .headers（HTTPMessage），mock 用 dict 模拟 .get。"""
 
         def __init__(self) -> None:
             self._buf = fake_body
@@ -52,7 +52,7 @@ def test_http_materialize_marks_ready_after_download(
         def __exit__(self, *args):
             return False
 
-    monkeypatch.setattr(http_mod, "urlopen", lambda *a, **k: _Resp())
+    monkeypatch.setattr(http_mod, "_open_http_request", lambda *a, **k: _Resp())
     out = source.materialize(resource, target_dir=tmp_path)
 
     assert out.metadata.get("materialization_status") == "ready"
@@ -101,7 +101,7 @@ def test_minio_materialize_refuses_without_credentials(
 
 
 class _ScriptedResp:
-    """可脚本化的 urlopen 响应：按调用序返回响应或抛异常。"""
+    """可脚本化的 _open_http_request 响应：按调用序返回响应或抛异常。"""
 
     def __init__(self, chunks: list[bytes | Exception], *, status: int = 200):
         self._chunks = list(chunks)
@@ -143,7 +143,7 @@ def test_http_download_resumes_after_mid_stream_failure(
 
     requests_seen: list[dict] = []
 
-    def fake_urlopen(req, timeout=None, context=None):
+    def fake_urlopen(req, timeout=None, ssl_ctx=None):
         headers = {k.lower(): v for k, v in req.header_items()}
         requests_seen.append(headers)
         if len(requests_seen) == 1:
@@ -153,7 +153,7 @@ def test_http_download_resumes_after_mid_stream_failure(
         assert headers.get("range") == "bytes=4-"
         return _ScriptedResp([b"56"], status=206)
 
-    monkeypatch.setattr(http_mod, "urlopen", fake_urlopen)
+    monkeypatch.setattr(http_mod, "_open_http_request", fake_urlopen)
     monkeypatch.setattr(http_mod.time, "sleep", lambda _s: None)
 
     out = _materialize_simple(http_mod.HttpSource(), tmp_path, monkeypatch)
@@ -178,7 +178,7 @@ def test_http_download_full_rewrite_when_server_ignores_range(
 
     requests_seen: list[dict] = []
 
-    def fake_urlopen(req, timeout=None, context=None):
+    def fake_urlopen(req, timeout=None, ssl_ctx=None):
         headers = {k.lower(): v for k, v in req.header_items()}
         requests_seen.append(headers)
         if len(requests_seen) == 1:
@@ -190,7 +190,7 @@ def test_http_download_full_rewrite_when_server_ignores_range(
         assert headers.get("range") == "bytes=2-"
         return _ScriptedResp([b"cdef"], status=206)
 
-    monkeypatch.setattr(http_mod, "urlopen", fake_urlopen)
+    monkeypatch.setattr(http_mod, "_open_http_request", fake_urlopen)
     monkeypatch.setattr(http_mod.time, "sleep", lambda _s: None)
 
     out = _materialize_simple(http_mod.HttpSource(), tmp_path, monkeypatch)
@@ -206,11 +206,11 @@ def test_http_download_terminal_4xx_fails_fast(
 
     calls: list[int] = []
 
-    def fake_urlopen(req, timeout=None, context=None):
+    def fake_urlopen(req, timeout=None, ssl_ctx=None):
         calls.append(1)
         raise HTTPError(req.full_url, 404, "Not Found", None, None)
 
-    monkeypatch.setattr(http_mod, "urlopen", fake_urlopen)
+    monkeypatch.setattr(http_mod, "_open_http_request", fake_urlopen)
     monkeypatch.setattr(http_mod.time, "sleep", lambda _s: None)
 
     with pytest.raises(ValueError, match="404"):
@@ -226,11 +226,11 @@ def test_http_download_5xx_retries_then_raises_connection_error(
 
     calls: list[int] = []
 
-    def fake_urlopen(req, timeout=None, context=None):
+    def fake_urlopen(req, timeout=None, ssl_ctx=None):
         calls.append(1)
         raise HTTPError(req.full_url, 503, "Service Unavailable", None, None)
 
-    monkeypatch.setattr(http_mod, "urlopen", fake_urlopen)
+    monkeypatch.setattr(http_mod, "_open_http_request", fake_urlopen)
     monkeypatch.setattr(http_mod.time, "sleep", lambda _s: None)
 
     with pytest.raises(ConnectionError, match="transient"):

@@ -49,7 +49,10 @@ export interface RunLayersSliceDeps {
     jobLayer?: JobLayerItem,
     options?: { skipAutoRun?: boolean },
   ) => void
-  removeLayer: (instanceId: string) => void
+  removeLayer: (
+    instanceId: string,
+    opts?: { dismiss?: boolean; deleteBackendFile?: boolean },
+  ) => void
   assignLayerAccent: (preferred?: string | null) => {
     accentColor: string
     accentGlow: string
@@ -76,6 +79,7 @@ export interface RunLayersSliceDeps {
       nativeStep?: string | null
       timeList?: string[]
       followPolicy?: import('../../utils/temporal-interval').TemporalFollowPolicy
+      defaultTime?: string
     },
   ) => ActiveLayer
 }
@@ -739,6 +743,10 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
               nativeStep: nativeStep || (timeList?.length ? '8d' : null),
               timeList,
               followPolicy: timeList?.length ? 'containing' : undefined,
+              defaultTime:
+                (item as { defaultTime?: string }).defaultTime ??
+                matMeta?.default_time ??
+                undefined,
             })
         groupMember.dataState = 'imported'
         if (
@@ -776,6 +784,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
+          defaultTime:
+            (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
         })
         groupMember.dataState = 'imported'
         if (
@@ -805,7 +815,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
                 l.jobLayer?.status === 'cancelled'),
           )
         for (const red of redundantMembers) {
-          deps.removeLayer(red.instanceId)
+          deps.removeLayer(red.instanceId, { dismiss: false, deleteBackendFile: false })
           groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
             (id) => id !== red.instanceId,
           )
@@ -830,6 +840,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             nativeStep: nativeStep || (timeList?.length ? '8d' : null),
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
           })
           omegaPlaceholder.dataState = 'imported'
           omegaPlaceholder.name = productTagLabel('OMEGA')
@@ -863,10 +875,25 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
       // 保护校验：产物 tag 与目标图层语义是否兼容，防止算法产物跨品类误并入用户图层
       // （例如：NDVI 产物严禁并入粗糙度参数 smap-aux-h、gebco 等不兼容图层导致突变）
-      const isTagCompatibleWithTarget = (targetCid: string, productTag: string): boolean => {
+      const isTagCompatibleWithTarget = (
+        targetCid: string,
+        productTag: string,
+        callerNominated = false,
+      ): boolean => {
         const normTag = normalizeProductTag(productTag)
-        if (!normTag) return true
         const cid = targetCid.toLowerCase()
+        // 显式黑名单：辅助参数/地形图层，无论 tag 与绑定来源都不可并入
+        if (cid.startsWith('smap-aux-') || cid.startsWith('aux-') || cid === 'gebco-dem-cn') {
+          return false
+        }
+        if (!normTag) return true
+        // wf-out-* 是用户自己的工作流产出图层（output store 已按产物名匹配），
+        // 对全部产物 tag 兼容——否则自产产物绑定回输出层会被误判为跨品类。
+        if (cid.startsWith('wf-out-')) {
+          return true
+        }
+        // 发起层（preferredCatalogId 回退）由调用方显式指定，信任其语义
+        if (callerNominated) return true
         if (normTag === 'NDVI') {
           return cid === 'ndvi' || cid.includes('ndvi')
         }
@@ -880,15 +907,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             cid.startsWith('wf-run-')
           )
         }
-        // 辅助图层（如 smap-aux-*）或明确不是算法计算的图层不可绑定外部产物
-        if (cid.startsWith('smap-aux-') || cid.startsWith('aux-') || cid === 'gebco-dem-cn') {
-          return false
-        }
         return true
       }
 
       const existingActive =
-        candidateActive && isTagCompatibleWithTarget(candidateActive.catalogId, tag)
+        candidateActive &&
+        isTagCompatibleWithTarget(candidateActive.catalogId, tag, targetCatalogId ? false : true)
           ? candidateActive
           : null
 
@@ -907,6 +931,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
+          defaultTime:
+            (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
         })
         existingActive.dataState = 'imported'
         if (userPalette) existingActive.paletteOverride = userPalette
@@ -982,6 +1008,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           nativeStep: nativeStep || (timeList?.length ? '8d' : null),
           timeList,
           followPolicy: timeList?.length ? 'containing' : undefined,
+          defaultTime:
+            (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
         })
         slot.dataState = 'imported'
         if (!slot.name || isEnglishInversionCatalogId(slot.name)) {
@@ -1007,7 +1035,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
                 l.jobLayer?.status === 'cancelled'),
           )
         for (const red of redundantMembers) {
-          deps.removeLayer(red.instanceId)
+          deps.removeLayer(red.instanceId, { dismiss: false, deleteBackendFile: false })
           groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
             (id) => id !== red.instanceId,
           )
@@ -1032,6 +1060,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             nativeStep: nativeStep || (timeList?.length ? '8d' : null),
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
+            defaultTime:
+              (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
           })
           catalogTarget.dataState = 'imported'
           if (!catalogTarget.name || isEnglishInversionCatalogId(catalogTarget.name)) {
@@ -1046,6 +1076,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         nativeStep: nativeStep || (timeList?.length ? '8d' : null),
         timeList,
         followPolicy: timeList?.length ? 'containing' : undefined,
+        defaultTime:
+          (item as { defaultTime?: string }).defaultTime ?? matMeta?.default_time ?? undefined,
       })
       if (added && groupByRun) {
         added.runGroupId = groupByRun.groupId
@@ -1356,7 +1388,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     }
     for (const instanceId of removeIds) {
       // 占位无 overlay：removeLayer 不会删后端文件
-      deps.removeLayer(instanceId)
+      deps.removeLayer(instanceId, { dismiss: false, deleteBackendFile: false })
     }
 
     const left = runLayerGroups.value.find((x) => x.groupId === g.groupId)
@@ -1418,7 +1450,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       }
       if (deadIds.length) {
         for (const id of deadIds) {
-          deps.removeLayer(id)
+          deps.removeLayer(id, { dismiss: false, deleteBackendFile: false })
         }
         g.memberInstanceIds = g.memberInstanceIds.filter((id) => !deadIds.includes(id))
       }

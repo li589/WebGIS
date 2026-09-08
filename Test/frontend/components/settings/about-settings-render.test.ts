@@ -96,14 +96,14 @@ describe('AboutSettings 组件渲染', () => {
 })
 
 describe('AboutSettings 项目信息', () => {
-  it('渲染五项字段：项目名称（平台英文显示名）/ 版本 / 描述 / 后端服务 / 前端界面（浏览器内核）', () => {
+  it('渲染六项字段：项目名称（平台英文显示名）/ 版本 / 描述 / 后端服务 / 前端界面（浏览器内核）/ GitHub 项目', () => {
     setActivePinia(createPinia())
     const store = useSettingsStore()
     store.aboutInfo = aboutInfoFixture
     const wrapper = mount(AboutSettings)
 
     const rows = wrapper.findAll('.info-row')
-    expect(rows).toHaveLength(5)
+    expect(rows).toHaveLength(6)
 
     expect(rows[0].find('.info-label').text()).toBe('项目名称')
     expect(rows[0].find('.info-value').text()).toBe('Satellite-Ground Fusion Soil Data Platform')
@@ -123,6 +123,13 @@ describe('AboutSettings 项目信息', () => {
 
     expect(rows[4].find('.info-label').text()).toBe('当前浏览器')
     expect(rows[4].find('.info-value').text()).not.toBe('')
+
+    expect(rows[5].find('.info-label').text()).toBe('GitHub 项目')
+    const link = rows[5].find('a.info-link')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('https://github.com/li589/WebGIS')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.text()).toContain('github.com/li589/WebGIS')
   })
 })
 

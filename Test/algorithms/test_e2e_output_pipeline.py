@@ -312,6 +312,21 @@ class TestOutputCoordinatorManifestBuilding(unittest.TestCase):
             print(f"  [OK] manifest.json 组装正常: {manifest_path.name}")
 
 
+from ingest.ndvi import NdviStackInfo
+
+
+def _ndvi_stack_info(stack, dates):
+    """与 ingest.ndvi.load_ndvi_stack_full 返回结构对齐（模块消费 stack/dates/transform/crs）。"""
+    return NdviStackInfo(
+        stack=stack,
+        dates=dates,
+        transform=None,
+        crs=None,
+        width=int(stack.shape[1]),
+        height=int(stack.shape[0]),
+    )
+
+
 class TestNdviModuleWithOutputCoordinator(unittest.TestCase):
     """测试 NdviDailyModule 完整执行：MAT + COG + preview + manifest"""
 
@@ -395,8 +410,8 @@ class TestNdviModuleWithOutputCoordinator(unittest.TestCase):
 
             with (
                 patch(
-                    "modules.ndvi.load_ndvi_stack",
-                    return_value=(ndvi_stack, observation_dates),
+                    "modules.ndvi.load_ndvi_stack_full",
+                    return_value=_ndvi_stack_info(ndvi_stack, observation_dates),
                 ),
                 patch(
                     "modules.ndvi.process_ndvi_stack_to_daily",

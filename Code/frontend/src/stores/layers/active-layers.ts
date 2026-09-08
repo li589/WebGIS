@@ -351,6 +351,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       nativeStep?: string | null
       timeList?: string[]
       followPolicy?: import('../../utils/temporal-interval').TemporalFollowPolicy
+      defaultTime?: string
     },
   ): ActiveLayer {
     const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
@@ -363,6 +364,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       latOffset: options?.latOffset,
       nativeStep: options?.nativeStep,
       timeList: options?.timeList,
+      defaultTime: options?.defaultTime,
       followPolicy: options?.followPolicy,
     })
     const accent = assignLayerAccent('#7eb8e0')
@@ -424,7 +426,13 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     }
   }
 
-  function removeLayer(instanceId: string) {
+  function removeLayer(
+    instanceId: string,
+    opts?: { dismiss?: boolean; deleteBackendFile?: boolean },
+  ) {
+    // 内部对账（attach 去重/自愈清理）传 dismiss:false + deleteBackendFile:false：
+    // 确定性 overlay id 会被复用，删除后端目录或登记 dismissed 会把后续
+    // attach 的产物一并抹掉（FY 在线反演完成但地图空白的根因）。
     const idx = activeLayers.value.findIndex((l) => l.instanceId === instanceId)
     if (idx === -1) return
     pendingVisibilitySync.delete(instanceId)
@@ -460,7 +468,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       weatherTileManager.clearLayer(layer.catalogId)
     }
     const overlayId = layer.importedRaster?.overlayLayerId
-    if (overlayId) {
+    if (overlayId && opts?.deleteBackendFile !== false) {
       void deleteImportedRaster(overlayId).catch((err) => {
         console.warn('[layers] deleteImportedRaster failed', overlayId, err)
         safeLog(
@@ -485,14 +493,15 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
         }),
       )
     }
-    rememberDismissedLayer({
-      overlayLayerId: overlayId,
-      catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
-      vectorBackendLayerId: layer.importedVector?.backendLayerId,
-      // 持久化真实 runId：否则刷新恢复会重新发现仍在运行/稍后完成的 run，
-      // 造成“移除后过一会儿又出现”。
-      runId: runIdHint,
-    })
+    if (opts?.dismiss !== false)
+      rememberDismissedLayer({
+        overlayLayerId: overlayId,
+        catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
+        vectorBackendLayerId: layer.importedVector?.backendLayerId,
+        // 持久化真实 runId：否则刷新恢复会重新发现仍在运行/稍后完成的 run，
+        // 造成“移除后过一会儿又出现”。
+        runId: runIdHint,
+      })
 
     deps.clearWindForCatalog(layer.catalogId)
     if (layer.runGroupId) {

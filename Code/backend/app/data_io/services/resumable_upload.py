@@ -32,7 +32,7 @@ from app.data_io.services._meta_io import meta_lock as _io_meta_lock
 from app.data_io.services._meta_io import save_meta as _io_save_meta
 from app.data_io.services.paths import (
     MAX_UPLOAD_BYTES,
-    STAGING_DIR,
+    staging_dir,
     assert_quota_available,
     ensure_imports_root,
     safe_import_child,
@@ -98,7 +98,7 @@ def init_resumable(
         raise ValueError(str(exc)) from exc
 
     upload_id = f"up-{uuid.uuid4().hex[:16]}"
-    dest = STAGING_DIR / upload_id
+    dest = staging_dir() / upload_id
     dest.mkdir(parents=True, exist_ok=True)
     meta = {
         "upload_id": upload_id,
@@ -127,7 +127,7 @@ def init_resumable(
 
 def _load_meta(upload_id: str) -> tuple[Path, dict[str, Any]]:
     """加载 manifest 模式的 meta.json（含 mode 校验）。"""
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     meta = _io_load_meta(dest)
     if meta.get("mode") != "manifest":
         raise ValueError(f"上传会话非 manifest 模式: {upload_id}")
@@ -157,7 +157,7 @@ def upload_chunk_by_index(
     Returns:
         ``{upload_id, chunk_index, received_chunks, total_chunks, complete}``
     """
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
 
     with _meta_lock(dest):
         dest, meta = _load_meta(upload_id)
@@ -248,7 +248,7 @@ def complete_resumable(upload_id: str) -> dict[str, Any]:
 
     幂等：若已完成，直接返回已有结果。
     """
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     # 持锁防与 upload_chunk_by_index 并发（块写入与 complete 拼接/清理竞争）
     # 及双 complete 竞争，与 upload_chunk_by_index 的锁对称。
     with _meta_lock(dest):
@@ -342,7 +342,7 @@ def complete_resumable(upload_id: str) -> dict[str, Any]:
 
 def _discard_resumable(upload_id: str) -> None:
     """清理 manifest 模式上传目录。"""
-    dest = safe_import_child(upload_id, root=STAGING_DIR)
+    dest = safe_import_child(upload_id, root=staging_dir())
     if dest.exists():
         import shutil
 

@@ -119,9 +119,12 @@ def _read_ndvi_array_from_file(file_path: Path) -> tuple[Any, Any, Any]:
 
         arr = data_arr.astype(np.float64)
         height, width = arr.shape
-        if (height, width) == (1624, 3856):
-            from data_access.ease_grid_constants import EASE2_GLOBAL_BOUNDS
+        from data_access.ease_grid_constants import (
+            EASE2_GLOBAL_BOUNDS,
+            EASE2_SHAPE_9KM,
+        )
 
+        if (height, width) == EASE2_SHAPE_9KM:
             transform = from_bounds(*EASE2_GLOBAL_BOUNDS, width, height)
             crs = rasterio.crs.CRS.from_epsg(6933)
             return arr, transform, crs

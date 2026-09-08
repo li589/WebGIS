@@ -1,0 +1,69 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 27
+  },
+  "rows": [
+    {
+      "workflow_id": "preprocess_clip_reproject_basic",
+      "batch": "G",
+      "run_id": "run-7787899bd785",
+      "status": "succeeded",
+      "elapsed_s": 2.05,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+      }
+    },
+    {
+      "workflow_id": "gis_raster_calc_reclassify_basic",
+      "batch": "G",
+      "run_id": "run-3768ace758fa",
+      "status": "succeeded",
+      "elapsed_s": 2.06,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+      }
+    },
+    {
+      "workflow_id": "gis_buffer_zonal_basic",
+      "batch": "G",
+      "run_id": "run-b734305fa23a",
+      "status": "succeeded",
+      "elapsed_s": 2.08,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+      }
+    },
+    {
+      "workflow_id": "stats_mean_summary_report_basic",
+      "batch": "G",
+      "run_id": "run-14bd7605aa00",
+      "status": "succeeded",
+      "elapsed_s": 2.06,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+      }
+    },
+    {
+      "workflow_id": "fusion_idw_interpolate_basic",
+      "batch": "G",
+      "run_id": "run-58993c2a6a74",
+      "status": "succeeded",
+      "elapsed_s": 2.04,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+      }
+    }
+  ]
+}

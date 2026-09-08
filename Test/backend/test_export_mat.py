@@ -21,8 +21,8 @@ from app.data_io.services.export_layer import export_layer, export_layers_batch_
 def imports_tmp(tmp_path, monkeypatch):
     imports_dir = tmp_path / "imports"
     imports_dir.mkdir()
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_dir)
-    monkeypatch.setattr(export_mod, "IMPORTS_DIR", imports_dir)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_dir)
+    monkeypatch.setattr(export_mod, "imports_dir", lambda: imports_dir)
     return imports_dir
 
 

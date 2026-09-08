@@ -894,10 +894,23 @@ class GldasNc4ToMatModule(BaseModule):
         PortSpec(
             name="algorithm_params", kind="config", data_class="dict", required=False
         ),
+        # download/gldas_download.path 直连（execute 内 inputs["data"] 消费）；
+        # 未声明会被图校验拒绝：unknown input port。
+        PortSpec(name="data", kind="data", data_class="string", required=False),
     ]
     output_ports = [
         PortSpec(name="path", kind="value", data_class="string"),
         PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+        PortSpec(
+            name="gldas_mat",
+            kind="data",
+            data_class="mat",
+            severity="soft",
+            description=(
+                "GLDAS 温度 mat 输出目录路径（dependency-only；与模板 data:mat 对齐；"
+                "供下游建立转换→反演执行序依赖，数据读取仍走 datasource_selection）。"
+            ),
+        ),
     ]
     default_params: dict[str, object] = {
         "input_dir": "",
@@ -919,6 +932,19 @@ class GldasNc4ToMatModule(BaseModule):
         ds = dict(inputs.get("datasource_selection", {}))
         ap = dict(inputs.get("algorithm_params", {}))
         resolved = {**self.default_params, **params, **ap, **ds}
+
+        # download/gldas_download.path 直连（execute 内 inputs["data"] 消费）；
+        # 有上游下载目录时优先于静态 input_dir，保证「下载→转换」同目录衔接。
+        raw_data = inputs.get("data")
+        if raw_data is not None:
+            if isinstance(raw_data, dict):
+                for key in ("path", "uri", "local_path", "input_dir"):
+                    text = str(raw_data.get(key) or "").strip()
+                    if text:
+                        resolved["input_dir"] = text
+                        break
+            else:
+                resolved["input_dir"] = str(raw_data)
 
         input_dir = str(resolved.get("input_dir") or "").strip()
         if not input_dir:
@@ -971,7 +997,7 @@ class GldasNc4ToMatModule(BaseModule):
                 f"{error_summary}"
             )
 
-        return _store_path_manifest(
+        result_manifest = _store_path_manifest(
             ctx,
             module_name=self.name,
             path=output_dir,
@@ -987,6 +1013,9 @@ class GldasNc4ToMatModule(BaseModule):
                 "dry_run": dry_run,
             },
         )
+        # Alias: directory path string（PortSpec data:mat；仅建执行序依赖）
+        result_manifest["gldas_mat"] = result_manifest["path"]
+        return result_manifest
 
 
 # ─── FY 预处理节点 ────────────────────────────────────────────────────────────

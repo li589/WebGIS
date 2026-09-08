@@ -45,8 +45,8 @@ def ts_import_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "app.data_io.services.paths.IMPORTS_DIR",
-        imports,
+        "app.data_io.services.paths.imports_dir",
+        lambda: imports,
     )
     # Clear any prior registry entry
     reg.unregister_overlay("imported-ts-lazy")

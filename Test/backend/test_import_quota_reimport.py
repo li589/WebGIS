@@ -11,13 +11,7 @@ import pytest
 from app.data_io.services import paths as import_paths
 from app.data_io.services import raster_commit as commit_mod
 from app.data_io.services import raster_register as register_mod
-from app.data_io.services.paths import (
-    QuotaExceededError,
-    assert_quota_available,
-    get_quota_usage,
-    reclaim_import_space,
-    stable_import_layer_id,
-)
+from app.data_io.services.paths import (QuotaExceededError, assert_quota_available, get_quota_usage, reclaim_import_space, stable_import_layer_id)
 from app.data_io.services.raster_register import register_geotiff_as_imported
 
 
@@ -26,15 +20,15 @@ def imports_tmp(tmp_path, monkeypatch):
     root = tmp_path / "imports_output"
     imports_dir = root / "imports"
     for mod in (import_paths, register_mod, commit_mod):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_dir)
-        if hasattr(mod, "STAGING_DIR"):
-            monkeypatch.setattr(mod, "STAGING_DIR", imports_dir / "_staging")
-    # raster_register imports IMPORTS_DIR from paths at import time — patch paths too
-    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_dir)
-    monkeypatch.setattr(import_paths, "STAGING_DIR", imports_dir / "_staging")
-    monkeypatch.setattr(import_paths, "JOBS_DIR", imports_dir / "_jobs")
-    monkeypatch.setattr(import_paths, "DOC_SESSIONS_DIR", imports_dir / "_documents")
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_dir)
+        if hasattr(mod, "staging_dir"):
+            monkeypatch.setattr(mod, "staging_dir", lambda: imports_dir / "_staging")
+    # raster_register imports imports_dir() from paths at import time — patch paths too
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_dir)
+    monkeypatch.setattr(import_paths, "staging_dir", lambda: imports_dir / "_staging")
+    monkeypatch.setattr(import_paths, "jobs_dir", lambda: imports_dir / "_jobs")
+    monkeypatch.setattr(import_paths, "doc_sessions_dir", lambda: imports_dir / "_documents")
     monkeypatch.setattr(import_paths, "MAX_IMPORTS_TOTAL_BYTES", 5 * 1024 * 1024)
     monkeypatch.setattr(import_paths, "SOFT_RESERVE_BYTES", 256 * 1024)
     import_paths.ensure_imports_root()

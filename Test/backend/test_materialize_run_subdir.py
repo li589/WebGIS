@@ -59,6 +59,7 @@ def test_materialize_map_layers_finds_mat_in_run_subdir(
     run_status = SimpleNamespace(
         status="succeeded",
         command_type=WorkflowCommandType.analysis,
+        command_label="",
         layer_id="omega_sf_fenkuai_smap_online",
         result_dto=None,
         result_refs=[],

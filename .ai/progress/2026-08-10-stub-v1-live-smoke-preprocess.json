@@ -1,0 +1,21 @@
+{
+  "infra": {
+    "base": "http://127.0.0.1:8000",
+    "data_root": "I:\\Geograph_DataSet",
+    "definitions_count": 27
+  },
+  "rows": [
+    {
+      "workflow_id": "preprocess_clip_reproject_basic",
+      "batch": "G",
+      "run_id": "run-0699b0513e05",
+      "status": "succeeded",
+      "elapsed_s": 2.03,
+      "blocker": "",
+      "detail": "",
+      "extras": {
+        "note": "stub_v1 fixtures under {DATA_ROOT}/_runtime (smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+      }
+    }
+  ]
+}

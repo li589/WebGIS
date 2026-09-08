@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from typing import Any, Literal
@@ -1414,12 +1415,26 @@ class LayerGroupRepository:
 
     def invalidate_cache(self) -> None:
         self._assignment_cache.clear()
+        invalidate_scope_cache()
         from app.services.permission_repository import invalidate_access_cache
 
         invalidate_access_cache(None)
 
     def close(self) -> None:
         self._pool.close_all()
+
+
+# ── 消费端 scope 解析缓存 ────────────────────────────────────────────────────
+# /layers 与 /layers/categories 热路径每请求都会解析 scope（user→theme→preset
+# 共 2-3 次 SQLite 读）；与 layer_router 就绪缓存同款 30s TTL。
+# 写路径（分组/预设/归属）统一经 invalidate_cache() 立即失效；用户换绑主题
+# 走 TTL 自然过期（最长 30s 陈旧，对分组目录可接受）。
+_SCOPE_CACHE_TTL_SECONDS = 30.0
+_scope_cache: dict[tuple[int | None, str | None], tuple[CatalogGroupScope, float]] = {}
+
+
+def invalidate_scope_cache() -> None:
+    _scope_cache.clear()
 
 
 def resolve_catalog_group_scope(
@@ -1434,7 +1449,35 @@ def resolve_catalog_group_scope(
     reads use their bound theme (same as standard users); editors pass an
     explicit ``theme_id`` query on write/preview endpoints instead of the
     legacy personal workspace.
+
+    The consumer path (no explicit ``theme_id``) is cached with a short TTL;
+    admin preview always resolves fresh.
     """
+    if theme_id is not None:
+        return _resolve_catalog_group_scope_uncached(
+            user_id=user_id, role=role, theme_id=theme_id
+        )
+    cache_key = (user_id, role)
+    now = time.monotonic()
+    hit = _scope_cache.get(cache_key)
+    if hit is not None:
+        scope, cached_at = hit
+        if now - cached_at < _SCOPE_CACHE_TTL_SECONDS:
+            return scope
+        _scope_cache.pop(cache_key, None)
+    scope = _resolve_catalog_group_scope_uncached(
+        user_id=user_id, role=role, theme_id=None
+    )
+    _scope_cache[cache_key] = (scope, now)
+    return scope
+
+
+def _resolve_catalog_group_scope_uncached(
+    *,
+    user_id: int | None,
+    role: str | None,
+    theme_id: int | None,
+) -> CatalogGroupScope:
     tid = theme_id
     if tid is None and user_id is not None:
         try:
@@ -1474,3 +1517,4 @@ def reset_layer_group_repository_for_tests() -> None:
     if _repo is not None:
         _repo.close()
     _repo = None
+    invalidate_scope_cache()

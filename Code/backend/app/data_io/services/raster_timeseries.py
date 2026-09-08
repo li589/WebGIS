@@ -111,8 +111,8 @@ def resolve_block_timeseries_layer_id(
     if not is_omega:
         return layer_id
     legacy = stable_imported_layer_id(key, "OMEGA_BLOCK", variable_id)
-    legacy_dir = import_paths.IMPORTS_DIR / legacy
-    new_dir = import_paths.IMPORTS_DIR / layer_id
+    legacy_dir = import_paths.imports_dir() / legacy
+    new_dir = import_paths.imports_dir() / layer_id
     # 已有旧目录且尚未迁到新 id 时继续写旧目录，避免重复层
     if legacy_dir.is_dir() and not new_dir.is_dir():
         return legacy
@@ -200,7 +200,12 @@ def list_block_mats(
             continue
         if end and block_start > end:
             continue
-        out.append((f"{block_start}_{block_end}", path))
+        # 单日块标签归一：YYYYMMDD（start==end 时不重复后缀，FE 显示
+        # "12-03 → 12-03" 的同日重复即源于此）。8 日块保持 start_end。
+        label = (
+            block_start if block_end == block_start else f"{block_start}_{block_end}"
+        )
+        out.append((label, path))
     out.sort(key=lambda x: x[0])
     return out
 
@@ -267,9 +272,9 @@ def upsert_block_dir_timeseries(
     layer_id = resolve_block_timeseries_layer_id(
         run_id, display_label, variable_id, layer_key=layer_key
     )
-    dest_dir = import_paths.IMPORTS_DIR / layer_id
+    dest_dir = import_paths.imports_dir() / layer_id
     dest_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = import_paths.IMPORTS_DIR / "_locks" / f"{layer_id}.lock"
+    lock_path = import_paths.imports_dir() / "_locks" / f"{layer_id}.lock"
 
     with _exclusive_path_lock(lock_path):
         return _upsert_block_dir_timeseries_locked(
@@ -327,7 +332,7 @@ def _upsert_block_dir_timeseries_locked(
             valid_count_by_time[time_label] = _count_valid_geotiff_pixels(tif_path)
             continue
 
-        tmp_tif = import_paths.IMPORTS_DIR / "_tmp" / f"{layer_id}_{time_label}.tif"
+        tmp_tif = import_paths.imports_dir() / "_tmp" / f"{layer_id}_{time_label}.tif"
         tmp_tif.parent.mkdir(parents=True, exist_ok=True)
         extract_meta = extract_variable_to_geotiff(
             mat_path,

@@ -36,14 +36,14 @@ def imports_tmp(tmp_path, monkeypatch):
         jobs_mod,
         resumable_mod,
     ):
-        if hasattr(mod, "IMPORTS_DIR"):
-            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_dir)
-        if hasattr(mod, "STAGING_DIR"):
-            monkeypatch.setattr(mod, "STAGING_DIR", staging)
-        if hasattr(mod, "JOBS_DIR"):
-            monkeypatch.setattr(mod, "JOBS_DIR", jobs)
-        if hasattr(mod, "DOC_SESSIONS_DIR"):
-            monkeypatch.setattr(mod, "DOC_SESSIONS_DIR", docs)
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_dir)
+        if hasattr(mod, "staging_dir"):
+            monkeypatch.setattr(mod, "staging_dir", lambda: staging)
+        if hasattr(mod, "jobs_dir"):
+            monkeypatch.setattr(mod, "jobs_dir", lambda: jobs)
+        if hasattr(mod, "doc_sessions_dir"):
+            monkeypatch.setattr(mod, "doc_sessions_dir", lambda: docs)
 
     import_paths.ensure_imports_root()
     return root
