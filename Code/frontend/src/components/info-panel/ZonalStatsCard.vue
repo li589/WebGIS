@@ -89,7 +89,8 @@ const displayNameByOverlayId = computed(() => {
     const oid = resolveRasterOverlayIdFromActiveLayer(l)
     if (oid) map.set(oid, label)
     if (l.importedRaster?.overlayLayerId) map.set(l.importedRaster.overlayLayerId, label)
-    if (l.catalogId) map.set(l.catalogId, label)
+    // catalogId 可能被同产品多个活动层共享：首例优先，避免后者覆盖前者标签
+    if (l.catalogId && !map.has(l.catalogId)) map.set(l.catalogId, label)
   }
   return map
 })

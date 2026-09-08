@@ -4,14 +4,15 @@
 export function looksLikeLayerId(text: string): boolean {
   const t = text.trim()
   if (!t) return true
+  // 系统内 layer_id 均带确定前缀；裸 snake_case 更可能是字段/变量名
+  // （如 Brightness_Temperature），不应判为 id 而吞掉真实显示名。
   return (
     t.startsWith('imported-') ||
     t.startsWith('wf-run-') ||
     t.startsWith('wf-out-') ||
     t.startsWith('ref-') ||
     t.startsWith('method-') ||
-    t.startsWith('prod-') ||
-    /^[a-z0-9]+(?:[_-][a-z0-9]+)+$/i.test(t)
+    t.startsWith('prod-')
   )
 }
 

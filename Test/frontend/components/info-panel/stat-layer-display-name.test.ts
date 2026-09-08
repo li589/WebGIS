@@ -10,9 +10,13 @@ describe('stat-layer-display-name', () => {
     expect(looksLikeLayerId('wf-run-1')).toBe(true)
     expect(looksLikeLayerId('ref-fy-tb-202512-mwri')).toBe(true)
     expect(looksLikeLayerId('method-smap-omega')).toBe(true)
-    expect(looksLikeLayerId('Soil_Moisture')).toBe(true)
+    expect(looksLikeLayerId('prod-omega-daily')).toBe(true)
+    // 裸 snake_case 是字段/变量名风格，不应判为 id
+    expect(looksLikeLayerId('Soil_Moisture')).toBe(false)
+    expect(looksLikeLayerId('Brightness_Temperature')).toBe(false)
     expect(looksLikeLayerId('土壤水分')).toBe(false)
     expect(looksLikeLayerId('SMAP L3 Dec 2025')).toBe(false)
+    expect(looksLikeLayerId('')).toBe(true)
   })
 
   it('prefers activity-layer mapping over backend name', () => {

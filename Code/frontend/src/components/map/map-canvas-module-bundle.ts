@@ -275,11 +275,12 @@ export function createMapCanvasModuleBundle(
     },
     getDrawSyncKey: () => {
       const s = options.getDrawState()
-      // 含要素几何摘要：同长度删除/替换也必须触发 sync，避免边界残留
+      // 含要素几何摘要：同长度删除/替换也必须触发 sync，避免边界残留；
+      // 多边形含环数（内环变化同样触发，编辑带洞要素不残留）
       const geomKey = s.features
         .map((f) => {
           const g = f.geometry
-          if (g.type === 'Polygon') return `P${g.coordinates[0]?.length ?? 0}`
+          if (g.type === 'Polygon') return `P${g.coordinates.map((r) => r.length).join('_')}`
           if (g.type === 'LineString') return `L${g.coordinates.length}`
           return g.type
         })

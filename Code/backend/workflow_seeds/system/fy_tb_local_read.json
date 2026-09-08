@@ -83,9 +83,7 @@
         140
       ],
       "properties": {
-        "layer_id": "ref-fy-tb-202512-mwri",
-        "colormap": "viridis",
-        "rescale": "200,320"
+        "layer_id": "ref-fy-tb-202512-mwri"
       }
     }
   ],

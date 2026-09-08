@@ -1,9 +1,12 @@
 /**
  * 流水线时间参数记忆（按用户作用域持久化）。
  *
- * 记录每条流水线（workflow_id）最近一次成功提交的时间范围，下次打开参数
- * 配置时预填——用户不再需要重复手选同样的时段。种子默认值仅在没有记忆时
- * 兜底（PipelineLauncher.handleLaunchClick 的既有逻辑）。
+ * 记录每条流水线（workflow_id）最近一次提交的时间范围，下次打开参数配置时
+ * 预填——用户不再需要重复手选同样的时段。种子默认值仅在没有记忆时兜底
+ * （PipelineLauncher.handleLaunchClick 的既有逻辑）。
+ *
+ * 注意：记忆在「点击确认提交」时写入（此时 run 尚未完成，前端无成功回调），
+ * 故语义是「最近一次提交」，而非「最近一次运行成功」。
  *
  * 存储：`geo:pipeline-last-time-range:v1` →
  *   Record<workflowId, { start_date: string; end_date: string; savedAt: string }>
