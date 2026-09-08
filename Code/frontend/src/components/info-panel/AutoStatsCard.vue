@@ -17,6 +17,7 @@ import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/setting
 import { resolveLayerDisplayLabel } from '../../stores/layers/layer-naming'
 import { getCatalogDisplayName } from '../../stores/layers/catalog-builders'
 import type { ActiveLayer } from '../../stores/layers/types'
+import { resolveStatLayerDisplayName } from './stat-layer-display-name'
 import {
   activeLayerHasReadableRaster,
   resolveRasterOverlayIdFromActiveLayer,
@@ -78,15 +79,20 @@ const displayNameByOverlayId = computed(() => {
     const label = displayLabel(l)
     // 统计请求的 layer_id 既可能是 overlay id（imported-*），也可能是
     // catalog id（wf-run-* 槽位 / catalog 栅格，见 resolveRasterOverlayIdFromActiveLayer）
-    const oid = l.importedRaster?.overlayLayerId
+    const oid = resolveRasterOverlayIdFromActiveLayer(l)
     if (oid) map.set(oid, label)
-    if (l.catalogId && !map.has(l.catalogId)) map.set(l.catalogId, label)
+    if (l.importedRaster?.overlayLayerId) map.set(l.importedRaster.overlayLayerId, label)
+    if (l.catalogId) map.set(l.catalogId, label)
   }
   return map
 })
 
 function statDisplayName(item: ZonalStatItem): string {
-  return displayNameByOverlayId.value.get(item.layer_id) ?? item.layer_name
+  return resolveStatLayerDisplayName({
+    layerId: item.layer_id,
+    layerName: item.layer_name,
+    displayNameByOverlayId: displayNameByOverlayId.value,
+  })
 }
 
 // ── 卡片交互：折叠 / 隐藏（可从恢复条还原）/ 拖动浮离面板 ──
@@ -108,28 +114,63 @@ const floatingStyle = computed(() =>
   floatPos.value ? { left: `${floatPos.value.x}px`, top: `${floatPos.value.y}px` } : {},
 )
 
-let dragStart: { px: number; py: number; x: number; y: number } | null = null
+const DRAG_THRESHOLD_PX = 4
+let dragStart: {
+  px: number
+  py: number
+  x: number
+  y: number
+  moved: boolean
+  pointerId: number
+} | null = null
+
 function onHeadPointerDown(e: PointerEvent) {
+  if (e.button !== 0) return
   if ((e.target as HTMLElement).closest('button')) return
+  e.preventDefault()
   const base = floatPos.value ?? headRectAsFloatPos(e)
-  dragStart = { px: e.clientX, py: e.clientY, x: base.x, y: base.y }
-  floatPos.value = { ...base }
-  saveUiState()
+  dragStart = {
+    px: e.clientX,
+    py: e.clientY,
+    x: base.x,
+    y: base.y,
+    moved: false,
+    pointerId: e.pointerId,
+  }
+  try {
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    // 部分环境无 capture：仍靠 window 监听
+  }
   const move = (ev: PointerEvent) => {
-    if (!dragStart) return
+    if (!dragStart || ev.pointerId !== dragStart.pointerId) return
+    const dx = ev.clientX - dragStart.px
+    const dy = ev.clientY - dragStart.py
+    if (!dragStart.moved) {
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+      // 超过阈值才脱离面板浮起，避免 click/双击被 Teleport 打断
+      dragStart.moved = true
+      floatPos.value = { x: dragStart.x, y: dragStart.y }
+    }
+    const maxX = Math.max(8, window.innerWidth - 120)
+    const maxY = Math.max(8, window.innerHeight - 48)
     floatPos.value = {
-      x: Math.max(8, dragStart.x + (ev.clientX - dragStart.px)),
-      y: Math.max(8, dragStart.y + (ev.clientY - dragStart.py)),
+      x: Math.min(maxX, Math.max(8, dragStart.x + dx)),
+      y: Math.min(maxY, Math.max(8, dragStart.y + dy)),
     }
   }
-  const up = () => {
+  const up = (ev: PointerEvent) => {
+    if (!dragStart || ev.pointerId !== dragStart.pointerId) return
+    const didMove = dragStart.moved
     dragStart = null
-    saveUiState()
+    if (didMove) saveUiState()
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', up)
   }
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', up)
 }
 
 function headRectAsFloatPos(e: PointerEvent): { x: number; y: number } {
@@ -205,9 +246,16 @@ async function fetchStats() {
   }
 }
 
-// 图层数据（revision）或可见栅格集合变化时自动统计
+// 图层数据（revision）/ 可见栅格增减 / 活动层可见性变化时自动统计
 watch(
-  [() => payload.value?.revision ?? 0, () => overlayLayerIds.value.join(',')],
+  [
+    () => payload.value?.revision ?? 0,
+    () => overlayLayerIds.value.join(','),
+    () =>
+      activeLayers.value
+        .map((l) => `${l.instanceId}:${l.visible ? 1 : 0}:${l.dataState ?? ''}`)
+        .join('|'),
+  ],
   () => {
     fetchStats()
   },
@@ -357,6 +405,12 @@ function formatValue(val: number | null): string {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.auto-stats-head:active {
+  cursor: grabbing;
 }
 
 .section-kicker {
@@ -383,8 +437,10 @@ function formatValue(val: number | null): string {
 
 .auto-stats--floating {
   position: fixed;
-  z-index: 60;
+  z-index: 1200;
   width: min(24rem, calc(100vw - 2rem));
+  max-height: min(70vh, 32rem);
+  overflow: auto;
   box-shadow: var(--elevation-3, 0 12px 32px rgba(0, 0, 0, 0.4));
   cursor: grab;
 }
@@ -523,7 +579,8 @@ function formatValue(val: number | null): string {
 }
 
 .auto-stats-table-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: min(40vh, 18rem);
 }
 
 .auto-stats-table {

@@ -7,6 +7,8 @@
 const ARTIFACT_LABELS: Record<string, string> = {
   fy_daily_tif: '逐日亮温（TIF）',
   fy_daily_mat: '逐日亮温（MAT）',
+  smap_daily_mat: 'SMAP 逐日（MAT）',
+  gldas_mat: 'GLDAS 温度（MAT）',
   fy_preprocessed_dir: '风云预处理产物',
   omega_avg_daily: '平均 ω 逐日产物',
 }
@@ -20,6 +22,10 @@ const NODE_LABELS: Record<string, string> = {
   fy_execute: '风云产品执行',
   fy_download: '风云数据下载',
   fy_preprocess: '风云预处理',
+  fy_daily: '风云逐日处理',
+  smap_daily: 'SMAP 逐日处理',
+  gldas_download: 'GLDAS 数据下载',
+  gldas_nc4_to_mat: 'GLDAS nc4→mat',
   omega_avg_daily: '平均 ω 逐日反演',
   omega_sf_fenkuai: '动态 ω 反演',
   ndvi_daily: 'NDVI 逐日产品',

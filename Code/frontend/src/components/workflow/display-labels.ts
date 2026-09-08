@@ -33,6 +33,9 @@ const PORT_LABELS: Record<string, string> = {
   merged: '融合结果',
   a: '输入 A',
   b: '输入 B',
+  smap_daily_mat: 'SMAP 逐日 MAT',
+  fy_daily_mat: '风云逐日 MAT',
+  gldas_mat: 'GLDAS 温度 MAT',
 }
 
 const PARAM_LABELS: Record<string, string> = {

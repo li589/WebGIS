@@ -59,6 +59,10 @@ const NAME_HELP: Record<string, string> = {
     '目标图层标识（如 wind-field、temperature）。用「文本」节点提供，需与目录中的图层 ID 一致。',
   input_dir: '输入数据目录。连接「数据源」；数据源本身还可再接时间/空间过滤。',
   input_mat: '上游 .mat 产品。通常来自日常合成、日常处理或时间序列合成的输出。',
+  smap_daily_mat:
+    'SMAP 日常 .mat 目录。连线主要用于建立「转换→反演」执行序；反演读数仍走数据源配置。',
+  fy_daily_mat: '风云日常 .mat 目录。连线主要用于建立「转换→反演」执行序；反演读数仍走数据源配置。',
+  gldas_mat: 'GLDAS 温度 .mat 目录。连线主要用于建立「转换→反演」执行序；反演读数仍走数据源配置。',
   grid_data: '上游网格栅格。通常来自「网格数据抓取」，再交给各类渲染/瓦片节点。',
   forecast_hours: '向前预报的小时数。可选；不连时使用节点默认或引擎配置。',
   provider_id:

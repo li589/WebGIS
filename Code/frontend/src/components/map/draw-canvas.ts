@@ -163,12 +163,17 @@ export class DrawCanvas {
 
     // 矩形模式预览由 draw-module 的 GeoJSON preview 层渲染，本层不重复绘制
 
+    // 已放置顶点之间的实线折线（不依赖 hover；避免「只见点不见线」）
+    if (this.isDrawing && this.vertices.length >= 2) {
+      this.renderPlacedPath(ctx)
+    }
+
     // 顶点手柄
     if (this.vertices.length > 0) {
       this.renderVertexHandles(ctx)
     }
 
-    // 预览线
+    // 预览线（末点→光标）
     if (this.isDrawing && this.hoverPoint && this.vertices.length > 0) {
       this.renderPreviewLine(ctx)
     }
@@ -177,6 +182,25 @@ export class DrawCanvas {
     if (this.selectedIndex !== null && this.selectedIndex < this.features.length) {
       this.renderSelectedFeature(ctx, this.selectedIndex)
     }
+  }
+
+  private renderPlacedPath(ctx: CanvasRenderingContext2D): void {
+    const onGlobe = isGlobeProjection(this.map)
+    const pts: ScreenPoint[] = []
+    for (const v of this.vertices) {
+      if (onGlobe && !isLngLatOnGlobeVisibleSide(this.map, v.lng, v.lat)) continue
+      pts.push(this.project(v.lng, v.lat))
+    }
+    if (pts.length < 2) return
+    ctx.beginPath()
+    ctx.setLineDash([])
+    ctx.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y)
+    }
+    ctx.strokeStyle = PREVIEW_STROKE
+    ctx.lineWidth = 2.5
+    ctx.stroke()
   }
 
   private renderVertexHandles(ctx: CanvasRenderingContext2D): void {

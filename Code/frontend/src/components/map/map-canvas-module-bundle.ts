@@ -130,6 +130,11 @@ interface CreateMapCanvasModuleBundleOptions {
   clearDrawVertices: () => void
   setDrawDrawingFlag: (v: boolean) => void
   scheduleDrawPersist: () => void
+  /** 绘制会话中抑制草稿/编辑矢量在 imported-layer 上的二次渲染 */
+  shouldSuppressImportedMapRender?: (instanceId: string) => boolean
+  getImportedMapSuppressKey?: () => string
+  /** 闭合后由 imported 展示完成面时，draw fill/line 省略已完成要素 */
+  omitCompletedDrawFeatures?: () => boolean
   dependencies?: {
     createBasemapModule?: typeof createBasemapModule
     createAdminBoundaryModule?: typeof createAdminBoundaryModule
@@ -202,6 +207,8 @@ export function createMapCanvasModuleBundle(
     emitMapPointSelect: options.emitMapPointSelect,
   })
 
+  let drawBringToFront: (() => void) | null = null
+
   const nonWeatherLayerSyncModule = createMapCanvasNonWeatherLayerSyncModuleImpl({
     map: options.map,
     getMapReady: options.getMapReady,
@@ -210,6 +217,10 @@ export function createMapCanvasModuleBundle(
       options.layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
     onOverlayTimeStatesChanged: (states) => options.layersStore.setMapOverlayTimeStates?.(states),
     restoreMapCursor: () => mapInteractionModule.applyInteractionMode(),
+    shouldSuppressImportedMapRender: (instanceId) =>
+      options.shouldSuppressImportedMapRender?.(instanceId) === true,
+    onAfterLayerStackOrder: () => drawBringToFront?.(),
+    getImportedMapSuppressKey: () => options.getImportedMapSuppressKey?.() ?? '',
   })
 
   const hotspotPinsModule = createHotspotPinsModuleImpl({
@@ -246,7 +257,11 @@ export function createMapCanvasModuleBundle(
     clearActiveVertices: options.clearDrawVertices,
     setDrawingFlag: options.setDrawDrawingFlag,
     scheduleDraftPersist: options.scheduleDrawPersist,
+    omitCompletedFeatures: () => options.omitCompletedDrawFeatures?.() === true,
   })
+  drawBringToFront = () => {
+    if (options.getInteractionMode() === 'draw') drawModule.bringToFront()
+  }
 
   const mapCanvasRuntimeModule = createMapCanvasRuntimeModuleImpl({
     getTileSourceId: options.getCurrentTileSourceId,
@@ -260,7 +275,17 @@ export function createMapCanvasModuleBundle(
     },
     getDrawSyncKey: () => {
       const s = options.getDrawState()
-      return `${s.drawMode}:${s.features.length}:${s.activeVertices.length}:${s.isDrawing ? 1 : 0}:${s.selectedFeatureIndex ?? -1}`
+      // 含要素几何摘要：同长度删除/替换也必须触发 sync，避免边界残留
+      const geomKey = s.features
+        .map((f) => {
+          const g = f.geometry
+          if (g.type === 'Polygon') return `P${g.coordinates[0]?.length ?? 0}`
+          if (g.type === 'LineString') return `L${g.coordinates.length}`
+          return g.type
+        })
+        .join(',')
+      const omit = options.omitCompletedDrawFeatures?.() === true ? 1 : 0
+      return `${s.drawMode}:${s.features.length}:${geomKey}:${s.activeVertices.length}:${s.isDrawing ? 1 : 0}:${omit}:${s.selectedFeatureIndex ?? -1}`
     },
     onTileSourceChange: (sourceId) => {
       basemapModule.scheduleTileSourceSwitch(sourceId)

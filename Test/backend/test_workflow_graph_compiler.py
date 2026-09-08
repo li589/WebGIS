@@ -278,3 +278,41 @@ def test_compile_online_seed_download_nodes_bind_request_datasource() -> None:
                 "request:datasource_selection"
             ), f"{seed_name}:{node['node_id']} must bind request:datasource_selection"
         assert matched > 0, f"{seed_name} should contain {download_modules} node(s)"
+
+
+def test_compile_online_seeds_keep_convert_to_inversion_dependency_edges() -> None:
+    """Online 种子须保留转换→反演 data:mat 依赖边（执行序，防并行竞态）。"""
+    import json
+    from pathlib import Path
+
+    seeds_dir = (
+        Path(__file__).resolve().parents[2]
+        / "Code"
+        / "backend"
+        / "workflow_seeds"
+        / "system"
+    )
+    cases = (
+        ("omega_avg_daily_smap_online", "smap_daily_mat", "smap_daily_mat"),
+        ("omega_avg_daily_fy_online", "fy_daily_mat", "fy_daily_mat"),
+        ("omega_avg_daily_gldas_online", "gldas_mat", "gldas_mat"),
+        ("omega_sf_fenkuai_smap_online", "smap_daily_mat", "smap_daily_mat"),
+        ("omega_sf_fenkuai_fy_online", "fy_daily_mat", "fy_daily_mat"),
+    )
+    for seed_name, from_port, to_port in cases:
+        seed = json.loads((seeds_dir / f"{seed_name}.json").read_text(encoding="utf-8"))
+        definition = compile_litegraph_to_workflow_definition(
+            workflow_id=seed["workflow_id"],
+            name=seed.get("name"),
+            nodes=seed.get("nodes") or [],
+            links=seed.get("links") or [],
+        )
+        matched = [
+            e
+            for e in definition["edges"]
+            if e.get("from_port") == from_port and e.get("to_port") == to_port
+        ]
+        assert matched, (
+            f"{seed_name} missing dependency edge "
+            f"*.{from_port} -> *.{to_port}; edges={definition['edges']}"
+        )

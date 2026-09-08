@@ -120,6 +120,17 @@ describe('要素与撤销栈', () => {
     expect(store.features[0].properties.x).toBeUndefined()
   })
 
+  it('removeFeature 删除前方要素时下移选中索引', () => {
+    const store = useDrawStore()
+    store.addFeature(feature('a'))
+    store.addFeature(feature('b'))
+    store.addFeature(feature('c'))
+    store.setSelectedFeature(2)
+    store.removeFeature(0)
+    expect(store.features.map((f) => f.properties.name)).toEqual(['b', 'c'])
+    expect(store.selectedFeatureIndex).toBe(1)
+  })
+
   it('clearAll 归位全部状态且撤销栈清空', () => {
     const store = useDrawStore()
     store.addFeature(feature('a'))

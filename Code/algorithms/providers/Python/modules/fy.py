@@ -99,7 +99,17 @@ class FyDailyModule(BaseModule):
         PortSpec(name="input_dir", kind="value", data_class="string", required=False),
     ]
     output_ports = [
-        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+        PortSpec(
+            name="fy_daily_mat",
+            kind="data",
+            data_class="mat",
+            severity="soft",
+            description=(
+                "FY 日常 mat 输出目录路径（dependency-only；与模板 data:mat 对齐；"
+                "供下游建立转换→反演执行序依赖，数据读取仍走 datasource_selection）。"
+            ),
+        ),
     ]
 
     def execute(
@@ -277,12 +287,15 @@ class FyDailyModule(BaseModule):
                 "artifact_mode": "data_products" if main_layers else "plan_only",
             },
         )
-        return _store_manifest(
+        result = _store_manifest(
             ctx,
             module_name=self.name,
             manifest=manifest,
             metadata={"product_count": len(product_refs)},
         )
+        # Alias: directory path string（PortSpec data:mat；仅建执行序依赖）
+        result["fy_daily_mat"] = str(output_root)
+        return result
 
     def _build_fy_data_products(
         self,

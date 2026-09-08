@@ -18,6 +18,12 @@ describe('humanizeStageMessage', () => {
     expect(humanizeStageMessage('[fy_plan] Artifact ready: fy_daily_tif')).toBe(
       '已生成产物：逐日亮温（TIF）',
     )
+    expect(humanizeStageMessage('[smap_extract] Artifact ready: smap_daily_mat')).toBe(
+      '已生成产物：SMAP 逐日（MAT）',
+    )
+    expect(humanizeStageMessage('[gldas] Artifact ready: gldas_mat')).toBe(
+      '已生成产物：GLDAS 温度（MAT）',
+    )
   })
 
   it('下载与跳过消息', () => {

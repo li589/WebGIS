@@ -165,6 +165,39 @@ class OmegaAvgDailyModule(BaseModule):
         PortSpec(
             name="output_spec_extra", kind="config", data_class="dict", required=False
         ),
+        PortSpec(
+            name="smap_daily_mat",
+            kind="data",
+            data_class="mat",
+            required=False,
+            severity="soft",
+            description=(
+                "SMAP 日常 mat 上游产物（smap_daily 转换后落盘目录；与模板 data:mat 对齐）；"
+                "用于建立转换→反演执行序依赖，数据读取仍走 datasource_selection。"
+            ),
+        ),
+        PortSpec(
+            name="fy_daily_mat",
+            kind="data",
+            data_class="mat",
+            required=False,
+            severity="soft",
+            description=(
+                "FY 日常 mat 上游产物（fy_daily 转换后落盘目录；与模板 data:mat 对齐）；"
+                "用于建立转换→反演执行序依赖，数据读取仍走 datasource_selection。"
+            ),
+        ),
+        PortSpec(
+            name="gldas_mat",
+            kind="data",
+            data_class="mat",
+            required=False,
+            severity="soft",
+            description=(
+                "GLDAS 温度 mat 上游产物（gldas_nc4_to_mat 转换后落盘目录；与模板 data:mat 对齐）；"
+                "用于建立转换→反演执行序依赖，数据读取仍走 datasource_selection。"
+            ),
+        ),
     ]
     output_ports = [
         PortSpec(name="manifest", kind="artifact", data_class="product_manifest")

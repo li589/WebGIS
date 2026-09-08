@@ -391,6 +391,28 @@ class OmegaSfFenkuaiModule(BaseModule):
             name="output_spec_extra", kind="config", data_class="dict", required=False
         ),
         PortSpec(
+            name="smap_daily_mat",
+            kind="data",
+            data_class="mat",
+            required=False,
+            severity="soft",
+            description=(
+                "SMAP 日常 mat 上游产物（smap_daily 转换后落盘目录；与模板 data:mat 对齐）；"
+                "用于建立转换→反演执行序依赖，数据读取仍走 datasource_selection.smap_folder。"
+            ),
+        ),
+        PortSpec(
+            name="fy_daily_mat",
+            kind="data",
+            data_class="mat",
+            required=False,
+            severity="soft",
+            description=(
+                "FY 日常 mat 上游产物（fy_daily 转换后落盘目录；与模板 data:mat 对齐）；"
+                "用于建立转换→反演执行序依赖，数据读取仍走 datasource_selection.fy3d_folder/fy3b_folder。"
+            ),
+        ),
+        PortSpec(
             name="time_window_align_on_zero_intersection",
             kind="config",
             data_class="bool",

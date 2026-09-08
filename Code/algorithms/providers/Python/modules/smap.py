@@ -66,7 +66,17 @@ class SmapDailyModule(BaseModule):
         PortSpec(name="input_dir", kind="value", data_class="string", required=False),
     ]
     output_ports = [
-        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+        PortSpec(
+            name="smap_daily_mat",
+            kind="data",
+            data_class="mat",
+            severity="soft",
+            description=(
+                "SMAP 日常 mat 输出目录路径（dependency-only；与模板 data:mat 对齐；"
+                "供下游建立转换→反演执行序依赖，数据读取仍走 datasource_selection）。"
+            ),
+        ),
     ]
 
     def execute(
@@ -158,6 +168,6 @@ class SmapDailyModule(BaseModule):
             manifest=manifest,
             metadata={"product_count": len(outputs)},
         )
-        # Alias for LiteGraph template output port name
-        result["smap_daily_mat"] = result["manifest"]
+        # Alias: directory path string（PortSpec data:mat；仅建执行序依赖）
+        result["smap_daily_mat"] = str(output_dir)
         return result

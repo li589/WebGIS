@@ -3,16 +3,16 @@ index ca53cd4..d701ed2 100644
 --- a/Code/algorithms/providers/Python/algorithms/omega_sf.py
 +++ b/Code/algorithms/providers/Python/algorithms/omega_sf.py
 @@ -28,6 +28,7 @@ r"""SF 块反演算法核心逻辑（从 Matlab ``omega_sf_fenkuai.m`` 迁移）
- 
+
  from __future__ import annotations
- 
+
 +import json
  import logging
  import math
  import re
 @@ -1479,7 +1480,51 @@ def _check_cancel_requested(cancel_flag_path: str | Path | None) -> None:
- 
- 
+
+
  def _checkpoint_path(output_dir: str | Path) -> Path:
 -    return Path(output_dir) / ".omega_sf_chunk_checkpoint.pkl"
 +    # G4-02: pickle.load → safe deserialization 防 RCE
@@ -60,13 +60,13 @@ index ca53cd4..d701ed2 100644
 +        h_star=float(d.get("h_star", float("nan"))),
 +        alpha_star=float(d.get("alpha_star", float("nan"))),
 +    )
- 
- 
+
+
  def _load_chunk_checkpoint(
 @@ -1490,23 +1535,30 @@ def _load_chunk_checkpoint(
  ) -> tuple[set[int], list[Any]] | None:
      """加载块/chunk 检查点；日期范围不一致则忽略。
- 
+
 -    Security: pickle 仅用于本地可信检查点文件（BACKEND_OUTPUT_ROOT 下），
 -    不接受外部输入。文件大小超过 200MB 视为异常并拒绝加载。
 +    G4-02: pickle.load → safe deserialization 防 RCE
@@ -153,13 +153,13 @@ index ca53cd4..d701ed2 100644
 +            json.dump(payload, fh, allow_nan=True)
      except Exception:
          logger.warning("[CHECKPOINT] 写入失败: %s", path, exc_info=True)
- 
+
 diff --git a/Code/algorithms/providers/Python/ingest/fy_preprocess.py b/Code/algorithms/providers/Python/ingest/fy_preprocess.py
 index 404a5ea..b8ca3de 100644
 --- a/Code/algorithms/providers/Python/ingest/fy_preprocess.py
 +++ b/Code/algorithms/providers/Python/ingest/fy_preprocess.py
 @@ -219,6 +219,7 @@ def _hdf_sds(hdf_path: str, sds_path: str) -> str:
- 
+
  def _run_gdalinfo(target_path: str) -> str:
      cmd = [GDAL_INFO, target_path]
 +    # G4-01: shell=True → list args 防命令注入
@@ -215,7 +215,7 @@ index 404a5ea..b8ca3de 100644
          _check_nodata(
              output_tif_path0, expected=cfg.dst_nodata, label="mosaic→4326 输出"
          )
- 
+
          # 空间范围裁剪 / 重投影
 +        # G4-01: shell=True → list args 防命令注入
          if options.spatial_extent == 0:
@@ -289,10 +289,10 @@ index 404a5ea..b8ca3de 100644
 @@ -699,6 +712,7 @@ class FyPreprocessor:
              ]
              output_tif_path = out1
- 
+
 +        # G4-01: shell=True → list args 防命令注入
          subprocess.run(cmd, check=True)
- 
+
          if options.spatial_extent == 0:
 @@ -796,6 +810,7 @@ class FyPreprocessor:
              mergy_vrt0,
@@ -321,7 +321,7 @@ index 60e351c..34ad589 100644
 -from shared.contracts.api_contracts import WeatherPointResponse
 +from shared.contracts.api_contracts import OpenMeteoSyncStatusResponse, WeatherPointResponse
  import contextlib
- 
+
  router = APIRouter()
 @@ -81,7 +81,21 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
          f"&hourly=temperature_2m&models={model}&forecast_days=16&timezone=Asia%2FShanghai"
@@ -348,8 +348,8 @@ index 60e351c..34ad589 100644
          logger.warning(
 @@ -422,7 +436,7 @@ def trigger_open_meteo_sync(
      return _dispatch_local("Celery unavailable;")
- 
- 
+
+
 -@router.get("/weather/sync/status", tags=["weather"])
 +@router.get("/weather/sync/status", tags=["weather"], response_model=OpenMeteoSyncStatusResponse)
  def get_open_meteo_sync_status(task_id: str):
@@ -366,10 +366,10 @@ index f055843..27d8fa7 100644
  from threading import Lock
 @@ -21,6 +22,7 @@ from shared.contracts.api_contracts import (
  )
- 
+
  router = APIRouter()
 +_logger = logging.getLogger(__name__)
- 
+
  # JSON 事件轮询限流：按「每 IP / 每分钟请求数」（非 SSE 连接数）
  _EVENTS_POLL_RATE_LIMIT = int(
 @@ -293,9 +295,9 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
@@ -381,7 +381,7 @@ index f055843..27d8fa7 100644
          if end_at is not None:
 -            time_end = str(end_at).replace("-", "")[:8]
 +            time_end = end_at.strftime("%Y%m%d") if hasattr(end_at, "strftime") else str(end_at).replace("-", "")[:8]
- 
+
      # Prefer explicit products when present
      if result_dto.get("products"):
 @@ -305,7 +307,7 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
@@ -410,7 +410,7 @@ index 6123950..eb8c603 100644
 --- a/Code/backend/app/main.py
 +++ b/Code/backend/app/main.py
 @@ -5,6 +5,7 @@ from uuid import uuid4
- 
+
  from fastapi import FastAPI, Request
  from fastapi.exceptions import RequestValidationError
 +from fastapi.openapi.utils import get_openapi
@@ -420,7 +420,7 @@ index 6123950..eb8c603 100644
 @@ -296,6 +297,41 @@ def create_app() -> FastAPI:
              "GEE router failed to mount — GEE backend may not be installed or configured."
          )
- 
+
 +    # D-2: 补充 OpenAPI security schemes 声明。
 +    # 后端支持 3 种认证：Session Cookie、User API Token (Bearer)、Service Key (X-API-Key)。
 +    # FastAPI 仅从 Security(_api_key_header) 自动生成 APIKeyHeader scheme；
@@ -457,8 +457,8 @@ index 6123950..eb8c603 100644
 +    app.openapi = _custom_openapi
 +
      return app
- 
- 
+
+
 diff --git a/Code/backend/app/services/download_orchestrator.py b/Code/backend/app/services/download_orchestrator.py
 index 901a4db..2f84d11 100644
 --- a/Code/backend/app/services/download_orchestrator.py
@@ -471,7 +471,7 @@ index 901a4db..2f84d11 100644
 +        except (KeyError, IndexError, ValueError):
 +            # ValueError: 非法格式串（如 {0:d} 传 str）→ 返回原始模板
              return template
- 
+
      # ------------------------------------------------------------------
 diff --git a/Code/backend/app/services/python_provider_result_builder.py b/Code/backend/app/services/python_provider_result_builder.py
 index 7486de1..1129b27 100644
@@ -489,7 +489,7 @@ index 7486de1..1129b27 100644
 @@ -567,7 +567,7 @@ class PythonProviderResultBuilder:
      # Map layer publishing (science products → imported overlays)
      # ------------------------------------------------------------------
- 
+
 -    def _build_product_map_layer_refs(
 +    def build_product_map_layer_refs(
          self,
@@ -502,7 +502,7 @@ index 9122812..2fd4449 100644
 @@ -249,6 +249,34 @@ class LocalFileSourceFetcher(SourceFetcher):
                  fetched_at=fetched_at,
              )
- 
+
 +        # G1-04: 路径包含性校验——阻止 file:// 读取任意本地文件。
 +        # 当 download_source_root 或 data_root 已配置时，要求 local_path 在其内。
 +        from app.core.config import settings as _settings
@@ -555,7 +555,7 @@ index 192d16c..a263ea0 100644
 +++ b/Code/backend/app/services/weather_engine_settings.py
 @@ -138,9 +138,21 @@ def probe_local_open_meteo_reachable(timeout: float = 2.0) -> bool:
      from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
- 
+
      try:
 -        with urlopen(
 -            f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0", timeout=timeout
@@ -926,7 +926,7 @@ index e4860ed..213d970 100644
 @@ -682,18 +682,7 @@ async function handleLocateMe() {
        <span>{{ weatherTileStatusModel.error }}</span>
      </div>
- 
+
 -    <!-- Map chips -->
 -    <div class="map-overlay">
 -      <span class="chip">
@@ -946,7 +946,7 @@ index e4860ed..213d970 100644
 @@ -1022,50 +1011,7 @@ async function handleLocateMe() {
    opacity: 0 !important;
  }
- 
+
 -.map-overlay {
 -  position: absolute;
 -  z-index: 21;
@@ -992,7 +992,7 @@ index e4860ed..213d970 100644
 -  background: rgba(187, 137, 255, 0.08);
 -}
 +/* 注释：.chip / .map-overlay 样式已移除（左上角 chip 组件已删） */
- 
+
  .map-note {
    position: absolute;
 @@ -1362,11 +1308,6 @@ async function handleLocateMe() {
@@ -1016,7 +1016,7 @@ index 3cd1e00..552c584 100644
 -import { computed, onMounted, watch } from 'vue'
 +import { computed, onMounted, ref, watch } from 'vue'
  import { storeToRefs } from 'pinia'
- 
+
  import {
 @@ -32,12 +32,23 @@ import {
  } from '../ui-copy'
@@ -1026,7 +1026,7 @@ index 3cd1e00..552c584 100644
 +import IconButton from './ui/IconButton.vue'
 +import Chip from './ui/Chip.vue'
 +import { useThemeStore } from '../stores/theme'
- 
+
  const layersStore = useLayersStore()
  const uiStore = useUiStore()
  const logStore = useLogStore()
@@ -1043,7 +1043,7 @@ index 3cd1e00..552c584 100644
  const weatherSyncStatus = useWeatherSyncStatusStore()
  const { workflowSummary } = storeToRefs(layersStore)
 @@ -108,7 +119,6 @@ const sourcesByStyle = computed(() => {
- 
+
    for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
      const standard = sources.filter((s) => s.isStandard)
 -    // Keep key-locked sources visible but marked unusable so users know to configure keys
@@ -1067,7 +1067,7 @@ index 3cd1e00..552c584 100644
 +  delete: 'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
 +}
  </script>
- 
+
  <template>
    <header class="toolbar">
 -    <!-- 左侧：主工具栏 -->
@@ -1077,7 +1077,7 @@ index 3cd1e00..552c584 100644
          <div class="brand-mark"></div>
 @@ -196,143 +218,150 @@ function sourcePillLabel(source: TileSourceConfig): string {
        </div>
- 
+
        <div class="primary-tools">
 -        <!-- 数据导入 / 导出 -->
 -        <DataImportMenu />
@@ -1200,7 +1200,7 @@ index 3cd1e00..552c584 100644
 -          </button>
 +          />
          </div>
- 
+
 -        <!-- 截图 -->
 -        <button class="tool-btn" type="button" title="导出截图" @click="handleScreenshot">
 -          <span class="btn-icon" aria-hidden="true">◫</span>
@@ -1307,7 +1307,7 @@ index 3cd1e00..552c584 100644
 +            </IconButton>
 +          </div>
 +        </div>
- 
+
 -        <!-- 设置 -->
 +        <!-- 收起/展开 toggle 按钮 -->
          <button
@@ -1336,7 +1336,7 @@ index 3cd1e00..552c584 100644
          </button>
        </div>
      </div>
- 
+
 -    <!-- 右侧：保留元素 -->
 +    <!-- 右侧：状态集群 -->
      <div class="toolbar-main">
@@ -1349,7 +1349,7 @@ index 3cd1e00..552c584 100644
 @@ -348,27 +377,15 @@ function sourcePillLabel(source: TileSourceConfig): string {
            </button>
          </div>
- 
+
 -        <!-- Workflow status -->
 +        <!-- 状态集群 -->
          <WorkflowStatusButton
@@ -1371,16 +1371,16 @@ index 3cd1e00..552c584 100644
 -        <div class="status-chip dim-mode">2D</div>
 +        <Chip variant="default" class="dim-chip">2D</Chip>
        </div>
- 
+
 -      <!-- Row 2: source selector + time + layer info -->
 +      <!-- Row 2: 源 + 时间 + 图层 -->
        <div class="toolbar-strip">
          <div v-if="activeStyle !== 'none'" class="source-pill">
            <button
 @@ -392,12 +409,12 @@ function sourcePillLabel(source: TileSourceConfig): string {
- 
+
          <div class="time-chip">{{ hourLabel }}</div>
- 
+
 -        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
 -        <div v-else class="status-chip">{{ LAYERS_COPY.emptyTitle }}</div>
 -        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
@@ -1413,14 +1413,14 @@ index 3cd1e00..552c584 100644
 +  border: none;
 +  box-shadow: none;
  }
- 
+
 -/* ── 左侧主工具栏 ─────────────────────────────────────────────────── */
 +/* ── 左侧主工具栏 ── */
  .toolbar-primary {
    display: flex;
    align-items: center;
 @@ -455,7 +467,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
- 
+
  .eyebrow {
    margin: 0 0 0.08rem;
 -  color: #88dfff;
@@ -1437,7 +1437,7 @@ index 3cd1e00..552c584 100644
    padding-left: 0.62rem;
    border-left: 1px solid rgba(136, 192, 255, 0.1);
  }
- 
+
 -/* 统一工具按钮样式 */
 -.tool-btn {
 -  position: relative;
@@ -1474,7 +1474,7 @@ index 3cd1e00..552c584 100644
 +    opacity var(--motion-base) var(--ease-standard),
 +    margin var(--motion-slow) var(--ease-emphasized);
  }
- 
+
 -.tool-btn.active {
 -  border-color: rgba(90, 213, 255, 0.4);
 -  color: #5ad5ff;
@@ -1486,7 +1486,7 @@ index 3cd1e00..552c584 100644
 +  margin-left: -0.4rem;
 +  pointer-events: none;
  }
- 
+
 -.btn-icon {
 -  font-size: 0.72rem;
 -  opacity: 0.9;
@@ -1524,7 +1524,7 @@ index 3cd1e00..552c584 100644
 +  gap: 0.4rem;
 +  white-space: nowrap;
  }
- 
+
 -.mode-btn {
 -  width: 1.56rem;
 -  height: 1.56rem;
@@ -1554,7 +1554,7 @@ index 3cd1e00..552c584 100644
 +    color var(--motion-fast) var(--ease-standard),
 +    border-color var(--motion-fast) var(--ease-standard);
  }
- 
+
 -.mode-btn:hover {
 -  background: rgba(136, 192, 255, 0.1);
 -  color: #c8dff0;
@@ -1587,7 +1587,7 @@ index 3cd1e00..552c584 100644
 +  border-radius: var(--radius-md);
 +  background: var(--surface-sunken);
  }
- 
+
 -.mode-btn.active {
 -  background: rgba(60, 120, 200, 0.32);
 -  border-color: rgba(136, 192, 255, 0.38);
@@ -1599,7 +1599,7 @@ index 3cd1e00..552c584 100644
 +.clear-btn :deep(svg) {
 +  color: #ff8c64;
  }
- 
+
 -/* 清除测量路径按钮（仅在 measure 模式且有路径时显示） */
 -.mode-btn.clear-btn {
 -  background: rgba(180, 60, 60, 0.18);
@@ -1609,7 +1609,7 @@ index 3cd1e00..552c584 100644
 +.log-btn {
 +  position: relative;
  }
- 
+
 -.mode-btn.clear-btn:hover {
 -  background: rgba(220, 80, 80, 0.28);
 -  color: #ffb0b0;
@@ -1631,7 +1631,7 @@ index 3cd1e00..552c584 100644
 +  line-height: 1;
 +  pointer-events: none;
  }
- 
+
 -/* ── 右侧保留区 ───────────────────────────────────────────────────── */
 +/* ── 右侧状态区 ── */
  .toolbar-main {
@@ -1647,7 +1647,7 @@ index 3cd1e00..552c584 100644
 -  background: rgba(4, 12, 23, 0.82);
 +  background: var(--surface-sunken);
  }
- 
+
  .style-tab {
 @@ -626,28 +637,28 @@ h1 {
    border-radius: 999px;
@@ -1668,7 +1668,7 @@ index 3cd1e00..552c584 100644
 +    transform var(--motion-fast) var(--ease-standard);
    white-space: nowrap;
  }
- 
+
  .style-tab:hover {
 -  color: #f0f8ff;
 -  background: rgba(136, 192, 255, 0.1);
@@ -1676,7 +1676,7 @@ index 3cd1e00..552c584 100644
 +  background: var(--surface-sunken);
    transform: translateY(-1px);
  }
- 
+
  .style-tab.active {
    background: rgba(10, 132, 255, 0.5);
 -  color: #f0faff;
@@ -1686,7 +1686,7 @@ index 3cd1e00..552c584 100644
 +  font-weight: var(--font-weight-medium);
 +  box-shadow: inset 0 0 0 1px var(--border-accent);
  }
- 
+
  .style-icon {
 @@ -665,9 +676,9 @@ h1 {
    align-items: center;
@@ -1698,7 +1698,7 @@ index 3cd1e00..552c584 100644
 -  background: rgba(4, 12, 23, 0.6);
 +  background: var(--surface-sunken);
  }
- 
+
  .source-btn {
 @@ -677,29 +688,29 @@ h1 {
    border-radius: 0.4rem;
@@ -1722,7 +1722,7 @@ index 3cd1e00..552c584 100644
 +    color var(--motion-fast) var(--ease-standard),
 +    transform var(--motion-fast) var(--ease-standard);
  }
- 
+
  .source-btn:hover {
 -  background: rgba(136, 192, 255, 0.1);
 -  color: #c8dff0;
@@ -1730,7 +1730,7 @@ index 3cd1e00..552c584 100644
 +  color: var(--text-secondary);
    transform: scale(1.06);
  }
- 
+
  .source-btn.active {
    background: rgba(10, 132, 255, 0.22);
 -  color: #5ad5ff;
@@ -1738,12 +1738,12 @@ index 3cd1e00..552c584 100644
 +  color: var(--accent);
 +  box-shadow: inset 0 0 0 1px var(--border-accent);
  }
- 
+
  .source-btn.locked {
 @@ -713,49 +724,6 @@ h1 {
    color: #ffb090;
  }
- 
+
 -/* Status chips */
 -.status-chip {
 -  display: inline-flex;
@@ -1809,7 +1809,7 @@ index 3cd1e00..552c584 100644
    text-align: center;
    white-space: nowrap;
  }
- 
+
 +/* 2D 维度指示：高对比度，确保可读 */
 +.dim-chip {
 +  background: var(--surface-3) !important;
@@ -1838,11 +1838,11 @@ index 7f294b4..41fb471 100644
  import { installClientErrorCapture } from './utils/client-error-capture'
  import { installPerfGlobal } from './utils/perf-probe'
 +import { useThemeStore } from './stores/theme'
- 
+
  installPerfGlobal()
- 
+
  document.title = BRAND.fullName
- 
+
  const app = createApp(App)
 -
 -app.use(createPinia())
@@ -1850,7 +1850,7 @@ index 7f294b4..41fb471 100644
 +app.use(pinia)
  app.use(router)
  installClientErrorCapture(app)
- 
+
 +// 初始化主题（在 mount 前应用 data-theme，避免闪屏）
 +useThemeStore(pinia)
 +
@@ -1871,7 +1871,7 @@ index 7d76e6b..ae0aafc 100644
 @@ -29,6 +29,14 @@ body,
    -moz-osx-font-smoothing: grayscale;
  }
- 
+
 +/* 浅色主题：暖白底背景 */
 +[data-theme='light'] {
 +  color: var(--text-primary);
@@ -1906,7 +1906,7 @@ index 7df31a0..4e61056 100644
 + *
 + * 规范出处：deliverables/design-system-spec.md §2 设计令牌（Design Tokens）
   */
- 
+
  :root {
 -  /* ── 颜色：文本 ── */
 -  --text-strong: #f0faff;
@@ -2079,7 +2079,7 @@ index 7df31a0..4e61056 100644
 +  --surface-2: rgba(255, 255, 255, 0.92);
 +  --surface-3: rgba(255, 255, 255, 0.98);
 +  --surface-hover: rgba(240, 245, 252, 0.98);
- 
+
 -  /* ── 颜色：表面 / 边框（深色 GIS 主题）── */
 -  --surface-base: #020814;
 -  --surface-panel: rgba(8, 17, 31, 0.96);
@@ -2294,13 +2294,13 @@ index 2a27ae6..21c99aa 100644
 +    wind_speed_200hPa: float | None = Field(None, description="200 hPa 风速 (m/s)")
 +    wind_direction_200hPa: float | None = Field(None, description="200 hPa 风向 (°)")
 +    temperature_200hPa: float | None = Field(None, description="200 hPa 温度 (°C)")
- 
- 
+
+
  class WeatherPointHourlyEntry(BaseModel):
 @@ -656,6 +657,18 @@ class WeatherPointResponse(BaseModel):
      diagnostics: list[str] = Field(default_factory=list)
- 
- 
+
+
 +class OpenMeteoSyncStatusResponse(BaseModel):
 +    """Open-Meteo 本地数据同步任务状态（N-4：finished_at 类型化为 datetime）。"""
 +
@@ -2330,4 +2330,3 @@ index 6305f00..fe5d896 100644
 +            "uvicorn",
          ]
      )
- 

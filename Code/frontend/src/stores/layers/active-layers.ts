@@ -498,8 +498,8 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
         overlayLayerId: overlayId,
         catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
         vectorBackendLayerId: layer.importedVector?.backendLayerId,
-      // 持久化真实 runId：否则刷新恢复会重新发现仍在运行/稍后完成的 run，
-      // 造成“移除后过一会儿又出现”。
+        // 持久化真实 runId：否则刷新恢复会重新发现仍在运行/稍后完成的 run，
+        // 造成“移除后过一会儿又出现”。
         runId: runIdHint,
       })
 

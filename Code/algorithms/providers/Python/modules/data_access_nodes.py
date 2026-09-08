@@ -1264,6 +1264,7 @@ class VariableExtractModule(BaseModule):
                 if p.suffix.lower()
                 in {
                     ".h5",
+                    ".hdf",
                     ".nc",
                     ".tif",
                     ".tiff",

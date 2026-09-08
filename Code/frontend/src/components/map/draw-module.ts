@@ -68,6 +68,11 @@ export interface CreateDrawModuleOptions {
   clearActiveVertices: () => void
   setDrawingFlag: (v: boolean) => void
   scheduleDraftPersist: () => void
+  /**
+   * 为 true 时不把已完成要素画到 draw fill/line（由 imported 草稿层展示），
+   * 避免与 suppress/双渲染打架；预览折线与顶点仍走本模块。
+   */
+  omitCompletedFeatures?: () => boolean
 }
 
 export interface DrawModule {
@@ -192,11 +197,13 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
 
     const { features, activeVertices, isDrawing, hoverPoint } = options.getDrawState()
     const currentMode = options.getDrawState().drawMode
+    const omitCompleted = options.omitCompletedFeatures?.() === true
+    const completedFeatures = omitCompleted ? [] : features
 
     // 已完成的面要素填充
     const fillSource = map.getSource(SOURCE_FEATURES_FILL) as GeoJSONSource | undefined
     if (fillSource) {
-      const polygonFeatures = features.filter((f) => f.geometry.type === 'Polygon')
+      const polygonFeatures = completedFeatures.filter((f) => f.geometry.type === 'Polygon')
       fillSource.setData({
         type: 'FeatureCollection',
         features: polygonFeatures.map((f) => ({
@@ -210,7 +217,7 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     // 已完成的面边界 + 线要素
     const lineSource = map.getSource(SOURCE_FEATURES_LINE) as GeoJSONSource | undefined
     if (lineSource) {
-      const lineFeatures = features.map((f) => {
+      const lineFeatures = completedFeatures.map((f) => {
         if (f.geometry.type === 'Polygon') {
           return {
             type: 'Feature' as const,
@@ -258,7 +265,8 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
           },
           properties: { kind: 'cursor' },
         })
-      } else if (isDrawing && hoverPoint && activeVertices.length > 0) {
+      } else if (isDrawing && activeVertices.length > 0) {
+        // 已放置折线：不依赖 hoverPoint（点击瞬间无 mousemove 时也要看见连线）
         if (activeVertices.length >= 2) {
           previewFeatures.push({
             type: 'Feature',
@@ -269,18 +277,20 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
             properties: { kind: 'path' },
           })
         }
-        const last = activeVertices[activeVertices.length - 1]
-        const cursorCoords: number[][] = [[last.lng, last.lat]]
-        if (currentMode === 'polygon' && isNearFirstVertex(hoverPoint, activeVertices)) {
-          cursorCoords.push([activeVertices[0].lng, activeVertices[0].lat])
-        } else {
-          cursorCoords.push([hoverPoint.lng, hoverPoint.lat])
+        if (hoverPoint) {
+          const last = activeVertices[activeVertices.length - 1]
+          const cursorCoords: number[][] = [[last.lng, last.lat]]
+          if (currentMode === 'polygon' && isNearFirstVertex(hoverPoint, activeVertices)) {
+            cursorCoords.push([activeVertices[0].lng, activeVertices[0].lat])
+          } else {
+            cursorCoords.push([hoverPoint.lng, hoverPoint.lat])
+          }
+          previewFeatures.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: cursorCoords },
+            properties: { kind: 'cursor' },
+          })
         }
-        previewFeatures.push({
-          type: 'Feature',
-          geometry: { type: 'LineString', coordinates: cursorCoords },
-          properties: { kind: 'cursor' },
-        })
       }
 
       previewSource.setData({
@@ -305,6 +315,8 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
   function syncAll(): void {
     syncGeoJSON()
     syncCanvas()
+    // 闭合后仅靠 MapLibre 层显示；数据层后加会压住绘制层，每次同步后置顶
+    bringToFront()
   }
 
   function isNearFirstVertex(hover: DrawVertex, vertices: DrawVertex[]): boolean {

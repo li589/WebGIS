@@ -249,6 +249,25 @@ const browserEngine = detectBrowserEngine()
       <h3 class="section-title">架构概述</h3>
       <p class="arch-summary">{{ aboutInfo.architecture_summary }}</p>
     </section>
+
+    <!-- 开发信息 -->
+    <section class="settings-section">
+      <h3 class="section-title">开发信息</h3>
+      <div class="about-info">
+        <div class="info-row">
+          <span class="info-label">GitHub 项目</span>
+          <a
+            class="info-value info-link"
+            href="https://github.com/li589/WebGIS"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="打开 GitHub 项目主页"
+          >
+            github.com/li589/WebGIS
+          </a>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -312,6 +331,18 @@ const browserEngine = detectBrowserEngine()
   line-height: 1.5;
   /* 长值（英文服务名/中文描述）允许在行内断行，避免溢出容器 */
   overflow-wrap: break-word;
+}
+
+/* 开发信息链接（复用 info-value 行内布局，链接态独立强调） */
+.info-link {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.info-link:hover {
+  text-decoration: underline;
+  color: var(--accent-strong, var(--accent));
 }
 
 .loading-hint {
