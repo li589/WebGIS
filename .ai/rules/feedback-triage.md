@@ -131,4 +131,4 @@ fix(<scope>): 修复反馈 CGDA-BUG-YYYYMMDD-XXXX：<一句话根因与修法>
 - 用户页/处理台/API 文档：`Code/infra/gateway/maintenance/README.md`
 - 后端实现：`app/api/routers/feedback_router.py` + `app/services/feedback_store.py`
 - 测试：`Test/backend/test_feedback_api.py`
-- 工作区记忆：`.workbuddy/memory/MEMORY.md`（反馈入口约定）
+- 工作区记忆：`.ai/memory/MEMORY.md`（反馈入口约定；原位于 `.workbuddy/memory/`，2026-09-10 随工具目录清理迁入）

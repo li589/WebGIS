@@ -2,7 +2,7 @@
 
 > 本文件是 CGDA（综合地理数据分析系统）所有 AI 编程工具共用的**约定单一真源**。
 > 完整架构与目录路由见根目录 `AGENTS.md` / `README.md`。
-> 各工具（Cursor / Trae / Copilot / Qoder / WorkBuddy）的规则文件仅保留指向本文件的**指针**，改动约定请直接改本文件。
+> 本目录即真源本身：2026-09-10 起工具指针文件（`.cursor/`、`.kiro/`、`.trae/`、`.cursorignore`、`.github/copilot-instructions.md`）已从版本库移除，改动约定请直接改本文件。
 
 ---
 
@@ -122,7 +122,7 @@
 - 不要在个人目录（Desktop / Downloads / Documents）做递归删除或 `rm -rf`；本项目数据清理走 `launch.py flush`（受限）。
 - 大规模数据接入（FY/SMAP 等）注意双路 NDVI 与静态辅助数据（ancillary）路径，避免错用源。
 - 不要在 `.gitignore` 已排除的路径（`.data`、`imports_output`、`tmp`、`.pytest_tmp`、`Test/.pytest-*`）里落源码。
-- `.ai/` 为本地专用上下文（AI 提示/技能/计划/进度/记忆/文档），**不进 GitHub**；协作者的工具规则指针文件可保留在 GitHub。
+- `.ai/` 随仓库提交（AI 提示/技能/计划/进度/记忆/文档，2026-09-06 起），例外：`.ai/mcp.json` 与 `.ai/tmp/`；**目录职责**：`.ai/` 放 AI 文档，`Docs/` 放供人阅读的公开文档，根 surface 仅 `AGENTS.md`/`CLAUDE.md`/`README.md`。
 
 ## 8. Git 沙箱安全（2026-08-22 事故沉淀）
 
