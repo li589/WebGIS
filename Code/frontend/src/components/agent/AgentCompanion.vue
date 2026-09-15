@@ -9,6 +9,7 @@ import {
   type CompanionDock,
 } from '../../composables/useAgentCompanionPosition'
 import AgentChatPanel from './AgentChatPanel.vue'
+import companionIcon from '../../assets/agent-companion.png'
 
 defineProps<{
   fitToLayerExtent?: (instanceId: string) => boolean
@@ -306,12 +307,12 @@ watch(open, (v) => {
           <span class="agent-companion-ring" aria-hidden="true" />
           <span class="agent-companion-ripple" aria-hidden="true" />
           <span class="agent-companion-body" aria-hidden="true">
-            <span class="agent-companion-antenna" />
-            <span class="agent-companion-visor">
-              <i class="agent-companion-eye" />
-              <i class="agent-companion-eye" />
-            </span>
-            <span class="agent-companion-mouth" />
+            <img
+              class="agent-companion-icon"
+              :src="companionIcon"
+              alt=""
+              draggable="false"
+            />
             <span class="agent-companion-badge" />
           </span>
           <span
@@ -477,17 +478,18 @@ watch(open, (v) => {
   width: 36px;
   height: 36px;
   border-radius: 13px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--accent-surface) 90%, white),
-      var(--accent-surface)
-    ),
-    var(--surface-1);
-  border: 1px solid var(--accent-border);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
   display: grid;
   place-items: center;
+}
+
+.agent-companion-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+  user-select: none;
 }
 
 .agent-companion-antenna {
