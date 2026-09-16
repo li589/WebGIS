@@ -262,17 +262,26 @@ def ease_grid_transform(src_crs: str, resolution_m: float) -> Any:
 
 def ease_grid_from_shape(
     shape: list[int] | tuple[int, ...] | None,
-) -> tuple[str, str, Any] | None:
+) -> tuple[str, str, Any, bool] | None:
     """按二维 shape 匹配任意 EASE 网格 preset 并构建其 Affine 变换。
 
-    与 :func:`match_grid_preset` 同源匹配（含转置检测——转置只影响数组
-    对齐方式，不改变网格几何），但只接受 EASE（ease1/ease2）类别，
-    返回可直接喂给 ``grid_reproject.reproject_to_mercator_linear`` 的三元组。
+    与 :func:`match_grid_preset` 同源匹配（含转置检测），但只接受 EASE
+    （ease1/ease2）类别，返回可直接喂给
+    ``grid_reproject.reproject_to_mercator_linear`` 的四元组。
+
+    ⚠️ 转置是**调用方的责任**，且必须在重投影**之前**完成：MATLAB v7.3/HDF5
+    常把 ``[rows, cols]`` 存成 ``(cols, rows)``（本项目 SMAP 辅助数据
+    H/Albedo/BD/CF/B/SF/IGBP 实测均为 ``(3856, 1624)`` = (lon, lat)）。
+    而 ``src_transform`` 恒按 ``(rows, cols)`` 语义构建；若数组未先行转置，
+    行会被当作纬度、列被当作经度，重投影结果**经纬颠倒**（陆地取到 NaN、
+    海洋反而有值）。2026-09-17 修复前本函数丢弃了该标志，导致
+    ``smap-aux-*`` 系列图层配准错位。
 
     Returns:
-        (preset_id, crs, src_transform) — 非 EASE 形状返回 None。
+        (preset_id, crs, src_transform, needs_transpose) — 非 EASE 形状返回
+        None。``needs_transpose=True`` 时调用方须先 ``data = data.T``。
     """
-    preset_id, _ = match_grid_preset(shape)
+    preset_id, needs_transpose = match_grid_preset(shape)
     if not preset_id:
         return None
     preset = GRID_PRESETS.get(preset_id)
@@ -286,6 +295,7 @@ def ease_grid_from_shape(
         preset_id,
         str(preset["crs"]),
         from_origin(west, north, res, res),
+        needs_transpose,
     )
 
 

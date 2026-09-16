@@ -98,9 +98,11 @@ class TestEaseShapeMatching:
     def test_match_ease_shapes(self, shape, preset_id, crs) -> None:
         matched = ease_grid_from_shape(shape)
         assert matched is not None
-        pid, p_crs, transform = matched
+        pid, p_crs, transform, needs_transpose = matched
         assert pid == preset_id
         assert p_crs == crs
+        # 这些 shape 均为 (rows, cols) 正序，不应要求转置
+        assert needs_transpose is False
         # transform 锚定 preset bounds 的西北角（north-up 不旋转）
         west, south, east, north = GRID_PRESETS[preset_id]["bounds"]
         assert transform * (0, 0) == pytest.approx((west, north))
@@ -117,6 +119,18 @@ class TestEaseShapeMatching:
     def test_transposed_shape_matches_same_preset(self) -> None:
         # MATLAB v7.3 存 (cols, rows)：匹配到同一 preset（几何不变）
         assert ease_grid_from_shape((3856, 1624))[0] == "ease2-global-9km"
+
+    def test_transposed_shape_flags_transpose(self) -> None:
+        """回归：转置标志必须回传给调用方。
+
+        2026-09-17 修复前本函数丢弃 needs_transpose，调用方按 (rows, cols)
+        语义构建的 src_transform 去解释 (cols, rows) 数组，导致 smap-aux-*
+        系列图层重投影后经纬颠倒（陆地取 NaN、海洋反而有值）。
+        """
+        _pid, _crs, _transform, needs = ease_grid_from_shape((3856, 1624))
+        assert needs is True
+        _pid, _crs, _transform, needs = ease_grid_from_shape((1624, 3856))
+        assert needs is False
 
     def test_non_ease_shape_returns_none(self) -> None:
         assert ease_grid_from_shape((4320, 2160)) is None  # Koppen 0.083° 网格
