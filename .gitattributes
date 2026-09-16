@@ -13,3 +13,18 @@ Test/frontend/**/*.scss text eol=lf
 Test/frontend/**/*.ts text eol=lf
 Test/frontend/**/*.tsx text eol=lf
 Test/frontend/**/*.vue text eol=lf
+
+# Containerization assets & shell entry points: force LF.
+# core.autocrlf=true rewrites every checked-out text file to CRLF. For these classes that is a
+# real defect on the handover/Linux target, not just cosmetic:
+#   1. Dockerfile — a trailing CR left after a "\" line-continuation corrupts the next instruction.
+#   2. Shell scripts — `bash foo.sh` / `./start.sh` die with `\r: command not found` on Linux.
+#   3. nginx / compose — parsed mostly fine, but LF removes a whole class of platform drift.
+**/Dockerfile text eol=lf
+**/Dockerfile.* text eol=lf
+.dockerignore text eol=lf
+**/.dockerignore text eol=lf
+**/compose*.yml text eol=lf
+**/docker-compose*.yml text eol=lf
+Code/**/*.conf text eol=lf
+**/*.sh text eol=lf

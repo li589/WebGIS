@@ -152,6 +152,10 @@ Tools/reports/
 Code/backend/deployment.config.json.bak.*
 # Machine-specific deployment config (copy from deployment.config.json.example)
 Code/backend/deployment.config.json
+# Machine-specific download source URI map (lab drive letters / NAS URIs).
+# Copy from source_uri_map.example.json; the real file must never be committed
+# nor baked into images (also listed in .dockerignore).
+Code/backend/source_uri_map.json
 
 # Doc task notes (temp)
 Doc/一份任务说明-*.txt

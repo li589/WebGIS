@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+# ══════════════════════════════════════════════════════════════════════════
+# CGDA Web 镜像 —— 静态前端（dist）+ Nginx 同域反代（交付态）
+#
+# 构建上下文 = 仓库根（与后端镜像共用 .dockerignore）
+#   docker build -f Code/infra/gateway/Dockerfile.web -t cgda-web:$(git rev-parse --short HEAD) .
+#
+# 与「裸机/开发态网关」的区别（Code/infra/gateway/docker-compose.yml）：
+#   裸机态：nginx 挂宿主 dist，upstream = host.docker.internal:8000（后端在宿主进程）
+#   交付态：nginx 与 dist 一起打进本镜像，upstream = backend:8000（后端在同 compose 网络）
+#   ⇒ 交付态用 nginx.prod.conf，不用 nginx.conf，两者不可互换。
+#
+# 为什么绕开 `npm run build`：
+#   package.json 的 `prebuild` → `gen:catalog` → scripts/run-repo-python.mjs，
+#   该脚本要解析仓库内 Env/Python312 解释器，容器里**不存在**（Env/ 在 .dockerignore 中）。
+#   而 catalog 产物 Code/frontend/src/stores/layers/catalog-seeds.generated.json
+#   已随仓库提交，因此直接 `npx vite build` 即可跳过 prebuild（无 postbuild）。
+#   ⚠️ 若哪天 catalog 产物不再入库，必须改为在构建阶段提供 Python 或预生成该文件。
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Stage 1：构建 dist ──────────────────────────────────────────────────
+# 用 glibc（bookworm-slim）而非 alpine：Vite/Rollup/esbuild 的原生二进制以
+# linux-x64-gnu 为主流预编译目标，避 musl 变体缺失的偶发构建失败。
+FROM node:22-bookworm-slim AS build
+
+# BuildKit 会为每个 ARG 输出 userland-proxy 提示；显式声明便于审计
+ARG VITE_API_BASE_URL=""
+ARG VITE_OVERPASS_ENDPOINT=""
+
+WORKDIR /src
+
+# 依赖层独立：package-lock.json 不变则命中缓存
+COPY Code/frontend/package.json Code/frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# 源码（node_modules / dist 已被 .dockerignore 排除，不会覆盖上面的依赖层）
+COPY Code/frontend/ ./
+
+# 同域部署（经 Nginx 反代）时 VITE_API_BASE_URL 应为空 → 前端走相对路径。
+# 如交付环境前端与后端**不同域**，用 --build-arg VITE_API_BASE_URL=https://api.example.com 覆盖。
+RUN : > .env.production.local \
+ && { [ -z "$VITE_API_BASE_URL" ] || echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" >> .env.production.local; } \
+ && { [ -z "$VITE_OVERPASS_ENDPOINT" ] || echo "VITE_OVERPASS_ENDPOINT=$VITE_OVERPASS_ENDPOINT" >> .env.production.local; } \
+ && npx vite build
+
+# ── Stage 2：Nginx 运行态 ──────────────────────────────────────────────
+FROM nginx:1.27-alpine
+
+# 静态产物（含 vite-plugin-cesium 拷入的 /cesium 子树）
+COPY --from=build /src/dist /usr/share/nginx/html
+
+# 交付态 nginx 配置：upstream = backend:8000（compose 服务名）
+COPY Code/infra/gateway/nginx.prod.conf /etc/nginx/nginx.conf
+COPY Code/infra/gateway/snippets        /etc/nginx/snippets/cgda
+# 维护页 / 50x / 413 / 反馈中心（纯静态，不依赖 Vue）
+COPY Code/infra/gateway/maintenance     /etc/nginx/maintenance
+
+# 与裸机网关保持同一端口契约（对外仍 :5175），后端 :8000 不对外暴露
+EXPOSE 5175
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
+  CMD wget -qO- http://127.0.0.1:5175/ >/dev/null || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

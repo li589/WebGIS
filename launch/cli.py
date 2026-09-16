@@ -18,6 +18,7 @@ import sys
 
 from launch.commands import (
     cmd_clean_cache,
+    cmd_deploy,
     cmd_flush,
     cmd_logs,
     cmd_reload,
@@ -28,7 +29,12 @@ from launch.commands import (
     cmd_stop,
     cmd_sync,
 )
-from launch.constants import DEFAULT_FRONTEND_PORT, DEFAULT_MAX_SNAPSHOTS
+from launch.constants import (
+    DEFAULT_FRONTEND_PORT,
+    DEFAULT_MAX_SNAPSHOTS,
+    DEFAULT_MODE,
+    VALID_MODES,
+)
 from launch.logging_setup import log
 
 # ─── 子命令帮助文本（集中声明，便于审阅 CLI 表面） ──────────────────────────
@@ -40,11 +46,37 @@ _LOGS_COMPONENT_HELP = (
     "组件: fastapi/beat/frontend/worker/worker:<name>（默认合并全部）"
 )
 _STOP_COMPONENT_HELP = "可选: gateway（仅停 Nginx 网关；默认停止全部）"
+_MODE_HELP = (
+    f"启动形态: bare（裸机，默认）/ dev（= --vite，网关 HMR + 本机 Vite）/ "
+    f"prod（交付态，全量容器化）。可选: {'/'.join(VALID_MODES)}"
+)
+_DEPLOY_ACTIONS = ("up", "down", "restart", "build", "ps", "logs", "config")
 
 
 def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
     """为 start / restart 子命令添加共享参数。"""
     p.add_argument("component", nargs="?", default="all", help=_COMPONENT_HELP)
+    p.add_argument(
+        "--mode",
+        choices=list(VALID_MODES),
+        default=DEFAULT_MODE,
+        help=_MODE_HELP,
+    )
+    p.add_argument(
+        "--tag",
+        default=None,
+        help="交付态镜像 tag（--mode prod / deploy；默认取 .env 的 CGDA_TAG）",
+    )
+    p.add_argument(
+        "--data-root",
+        default=None,
+        help="交付态宿主数据根（--mode prod / deploy；默认取 .env 的 CGDA_DATA_ROOT）",
+    )
+    p.add_argument(
+        "--no-build",
+        action="store_true",
+        help="交付态跳过镜像构建，直接用已有 tag 镜像（离线/预构建场景）",
+    )
     p.add_argument(
         "--no-frontend",
         action="store_true",
@@ -133,6 +165,14 @@ def build_parser() -> argparse.ArgumentParser:
             "  python launch.py reset-db --clear-user      # 同时清空用户自定义工作流\n"
             "  python launch.py stop                       # 停止全部服务\n"
             "  python launch.py status                     # 查看服务状态\n"
+            "  python launch.py start --mode dev           # 开发态（= start --vite）\n"
+            "  python launch.py start --mode prod          # 交付态（构建镜像 + 起容器栈）\n"
+            "  python launch.py deploy config              # 交付态 compose 配置干跑校验\n"
+            "  python launch.py deploy build               # 仅构建 cgda-backend / cgda-web 镜像\n"
+            "  python launch.py deploy up --no-build       # 用已有 tag 镜像起栈（离线交付）\n"
+            "  python launch.py deploy ps                  # 交付态容器状态\n"
+            "  python launch.py deploy logs backend        # 交付态日志跟随\n"
+            "  python launch.py deploy down                # 停交付态容器（保留卷）\n"
             "\n"
             "Windows: start.bat / stop.bat    Linux/macOS: ./start.sh / ./stop.sh"
         ),
@@ -252,6 +292,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="compose service 名（默认 open-meteo-sync）",
     )
 
+    # deploy —— 交付态（形态 B）运维入口
+    p_deploy = sub.add_parser(
+        "deploy",
+        help="交付态（全量容器化）容器栈运维: up/down/restart/build/ps/logs/config",
+    )
+    p_deploy.add_argument(
+        "deploy_action",
+        nargs="?",
+        default="up",
+        choices=list(_DEPLOY_ACTIONS),
+        help="动作（默认 up）",
+    )
+    p_deploy.add_argument(
+        "services",
+        nargs="*",
+        help="可选：up 仅启动指定服务；logs 取第一个作为目标服务",
+    )
+    p_deploy.add_argument(
+        "--tag",
+        default=None,
+        help="镜像 tag（默认 .env 的 CGDA_TAG）",
+    )
+    p_deploy.add_argument(
+        "--data-root",
+        default=None,
+        help="宿主地理数据根（默认 .env 的 CGDA_DATA_ROOT）",
+    )
+    p_deploy.add_argument(
+        "--no-build",
+        action="store_true",
+        help="跳过镜像构建，直接使用已有 tag 镜像",
+    )
+    p_deploy.add_argument(
+        "--volumes",
+        action="store_true",
+        help="down 时连命名卷一起删除（危险：MinIO 产物/Redis 队列/beat 调度库全丢）",
+    )
+    p_deploy.add_argument(
+        "-n",
+        "--lines",
+        type=int,
+        default=80,
+        help="logs 显示行数（默认 80）",
+    )
+
     return parser
 
 
@@ -280,6 +365,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return cmd_reset_db(args)
     if command == "sync":
         return cmd_sync(args.job)
+    if command == "deploy":
+        return cmd_deploy(args)
     # argparse 的 required=True 已保证不会走到这里
     log.error("Launcher", f"未知命令: {command}")
     return 2
