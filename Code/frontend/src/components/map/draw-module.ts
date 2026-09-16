@@ -15,7 +15,7 @@
  * 状态经依赖注入获取（与 measure-module 一致），不在工厂内直接 useStore，
  * 以兼容无 Pinia 上下文的模块组合测试。
  */
-import type { GeoJSONSource, Map as MaplibreMap, MapMouseEvent } from 'maplibre-gl'
+import type { GeoJSONSource, Map as MaplibreMap, MapEventType, MapMouseEvent } from 'maplibre-gl'
 
 import { DrawCanvas } from './draw-canvas'
 import type { DrawMode, DrawVertex, DrawFeature } from '../../stores/draw-store'
@@ -558,7 +558,9 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
 
   function dispose(): void {
     for (const { event, handler } of registeredHandlers.splice(0)) {
-      map.off(event, handler as (ev: MapMouseEvent & object) => void)
+      // maplibre-gl v6 收紧事件签名：事件名需为 keyof MapEventType，监听器需能接受
+      // 事件联合类型。注销时统一放宽为可接受任意对象的签名。
+      map.off(event as keyof MapEventType, handler as unknown as (ev: object) => void)
     }
     eventsBound = false
 

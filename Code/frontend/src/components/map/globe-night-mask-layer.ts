@@ -136,18 +136,30 @@ export class GlobeNightMaskLayer {
     }
   }
 
-  render(_gl: WebGLRenderingContext, _options: CustomRenderMethodInput): void {
-    const transform = (
-      this.map as unknown as {
-        transform?: {
-          getProjectionDataForCustomLayer?: (globe: boolean) => {
-            mainMatrix?: number[]
+  render(_gl: WebGLRenderingContext, options: CustomRenderMethodInput): void {
+    // maplibre-gl v6：投影数据改由 render 参数携带（私有 map.transform 已移除）。
+    // options.defaultProjectionData 与旧 transform.getProjectionDataForCustomLayer(true)
+    // 等价：mainMatrix = 当前投影(globe)的 单位球→clip 矩阵；projectionTransition 同名。
+    // 保留 transform 兜底以兼容 v5。
+    const data =
+      (
+        options as {
+          defaultProjectionData?: {
+            mainMatrix?: ArrayLike<number>
             projectionTransition?: number
           }
         }
-      }
-    )?.transform
-    const data = transform?.getProjectionDataForCustomLayer?.(true)
+      )?.defaultProjectionData ??
+      (
+        this.map as unknown as {
+          transform?: {
+            getProjectionDataForCustomLayer?: (globe: boolean) => {
+              mainMatrix?: number[]
+              projectionTransition?: number
+            }
+          }
+        }
+      )?.transform?.getProjectionDataForCustomLayer?.(true)
     // ⚠️ 3D 投影切换（globe↔mercator）期间的过渡矩阵是中间插值——
     // 用它绘制遮罩会错乱（首帧进 3D 时"无效果"，切档位重触发才恢复）。
     // 过渡未完成时标记矩阵未就绪，rAF 循环继续重试直到过渡完成。

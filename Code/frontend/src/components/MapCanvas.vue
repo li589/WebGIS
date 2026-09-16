@@ -757,7 +757,7 @@ onMounted(async () => {
     await presentationModule.prepareMount()
     if (_isUnmounted) return
 
-    const { default: maplibregl } = await import('maplibre-gl')
+    const maplibregl = await import('maplibre-gl')
     if (_isUnmounted) return
 
     const mapInstance = new maplibregl.Map(
@@ -1110,7 +1110,7 @@ async function _syncInspectMarker(point: { lng: number; lat: number } | null | u
     return
   }
   _clearInspectMarker()
-  const { default: maplibregl } = await import('maplibre-gl')
+  const maplibregl = await import('maplibre-gl')
   if (_isUnmounted || !state.resources.map) return
   const el = document.createElement('div')
   el.className = 'inspect-point-marker'
@@ -1167,7 +1167,7 @@ async function handleLocateMe() {
 
       // 添加定位标记 (持续保留在地图上，直至再次点击消除)
       _clearLocationMarker()
-      const { default: maplibregl } = await import('maplibre-gl')
+      const maplibregl = await import('maplibre-gl')
       if (_isUnmounted || !state.resources.map) {
         isLocating.value = false
         return

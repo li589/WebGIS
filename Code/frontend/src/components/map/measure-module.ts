@@ -15,7 +15,15 @@
  *   - 标注层（文字 + 预览虚线）由 MeasureCanvas 2D 渲染（文字描边效果 MapLibre 难以实现）
  *   - GeoJSON 在每次 store action 后整体重建（路径点数少，性能不是瓶颈）
  */
-import type { Map as MaplibreMap, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
+import type {
+  Map as MaplibreMap,
+  MapEventType,
+  MapLayerMouseEvent,
+  MapMouseEvent,
+} from 'maplibre-gl'
+// maplibre-gl v6 移除了 UMD 全局命名空间（旧代码靠它引用 maplibregl.GeoJSONSource）；
+// 显式以类型命名空间导入。
+import type * as maplibregl from 'maplibre-gl'
 
 import { MeasureCanvas } from './measure-canvas'
 import type { InteractionMode, MeasurePoint, MeasureState } from '../../stores/ui'
@@ -352,7 +360,9 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
   function dispose(): void {
     // 移除事件监听
     for (const { event, handler } of registeredHandlers.splice(0)) {
-      map.off(event, handler as (ev: MapMouseEvent & object) => void)
+      // maplibre-gl v6 收紧事件签名：事件名需为 keyof MapEventType，监听器需能接受
+      // 事件联合类型。注销时统一放宽为可接受任意对象的签名。
+      map.off(event as keyof MapEventType, handler as unknown as (ev: object) => void)
     }
     eventsBound = false
 
