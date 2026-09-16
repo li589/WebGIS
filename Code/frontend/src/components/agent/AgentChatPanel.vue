@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onUnmounted, ref, watch } from 'vue'
 import {
-  Bot,
   Check,
   ChevronDown,
   Copy,
@@ -48,6 +47,7 @@ import {
   type AgentLayerCard,
 } from './agent-chat-helpers'
 import { agentMapPoint } from '../../stores/agent-map-point'
+import companionIcon from '../../assets/agent-companion.png'
 import 'katex/dist/katex.min.css'
 
 const PANEL_MIN_W = 320
@@ -1295,7 +1295,13 @@ function onKeydown(ev: KeyboardEvent) {
             :class="`agent-chat-avatar--${msg.role}`"
             aria-hidden="true"
           >
-            <Bot v-if="msg.role === 'assistant'" :size="14" />
+            <img
+              v-if="msg.role === 'assistant'"
+              class="agent-chat-avatar-img"
+              :src="companionIcon"
+              alt=""
+              draggable="false"
+            />
             <User v-else :size="14" />
           </div>
 
@@ -1882,15 +1888,19 @@ function onKeydown(ev: KeyboardEvent) {
   margin-top: 2px;
 }
 
+/* 助手头像：直接复用悬浮水滴的位图，去掉底色与描边；比用户头像略大以呈现细节 */
 .agent-chat-avatar--assistant {
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 20%, var(--surface-2)),
-    var(--surface-3)
-  );
-  border: 1px solid var(--accent-border);
-  color: var(--accent-strong);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  width: 32px;
+  height: 32px;
+}
+
+.agent-chat-avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
 .agent-chat-avatar--user {

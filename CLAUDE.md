@@ -28,7 +28,7 @@
 
 ## 高风险区（改动前确认鉴权 / 加密 / 隔离）
 
-1. `/config/*` 写操作与敏感读需会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）；RBAC：`viewer` 只读。dev 旁路仅 loopback，或 `BACKEND_DEV_AUTH_BYPASS`。
+1. `/config/*` 写操作与敏感读需会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）；RBAC 三角色：`admin`（全权限）/ `standard`（可读写工作流，不可改高危配置）/ `demo`（只读 + 受控数据传输），配置管理端点仅 `admin` 可写。dev 旁路仅 loopback，或 `BACKEND_DEV_AUTH_BYPASS`。
 2. `/auth/*` 用户登录、RBAC 账户与个人 API Token；角色/密码变更吊销会话。
 3. 共享加密主密钥 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（64 hex / 32-byte，启动校验）加密 GEE/API keys/天气/远程/门户；非 development 必配。
 4. `launch.py flush` 清空 Redis + 天气缓存，仅排障用。

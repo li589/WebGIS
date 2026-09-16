@@ -167,7 +167,7 @@ Env\Python312\python.exe Tools/feedback_triage.py --show CGDA-BUG-YYYYMMDD-XXXX 
 
 所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**（随仓库提交，供各 AI 工具与团队成员共享；`.ai/mcp.json` 含本地密钥、`.ai/tmp/` 为临时区，两者 gitignore 除外），根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档，公开文档在 `Docs/`。
 
-- `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`feedback-triage.md`（问题反馈→AI 修复闭环）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作本地指针指向此处（**不入库**：`.cursor/`、`.kiro/`、`.trae/`、`.opencode/`、`.github/copilot-instructions.md` 已 gitignore）。
+- `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`feedback-triage.md`（问题反馈→AI 修复闭环）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot/Kiro/WorkBuddy）**直接读取本目录**——对应的工具指针文件与目录（`.cursor/`、`.kiro/`、`.trae/`、`.opencode/`、`.cursorignore`、`.github/copilot-instructions.md`）已于 2026-09-10 从版本库移除，且仍在 `.gitignore`，工具自行生成也不会误入库。
 - `.ai/prompts/` —— 任务提示词模板：`feedback-fix.md`（处理用户反馈的规范化工作流）。
 - `.ai/skills/` —— 可复用技能：`workflow-design`（种子命名/分类/标记与定时器）、`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
 - `.ai/plans/` —— 计划。
