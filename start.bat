@@ -5,8 +5,9 @@ REM  强制使用仓库内 Env\Python312\python.exe（本地联调唯一解释器）
 REM
 REM  【重要】Docker Desktop 与本终端建议以管理员身份运行；
 REM  否则可能出现镜像无法访问、volume/配置读取失败等问题。
-REM  默认启动不含 Nginx（日常入口 Vite:5175 + FastAPI:8000）。
-REM  可选同域网关: start.bat start gateway（见 Code\infra\gateway\README.md）
+REM  默认启动【含】Nginx Gateway（同域入口 http://localhost:5175）。
+REM  本地前端 HMR: start.bat start --vite（入口仍 :5175，背后 Vite :5174）
+REM  可选单启网关: start.bat start gateway（见 Code\infra\gateway\README.md）
 REM
 REM  用法:
 REM    start.bat                         → start all

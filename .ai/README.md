@@ -13,7 +13,7 @@
 | `skills/` | 可复用 AI 技能文档：`omega-sf-inversion`、`multi-source-data-ingestion`、`runtime-and-verify`、`contract-openapi-drift` |
 | `plans/` | 计划（历史计划已从 `.trae/documents/` 迁入，归档在 `memory/archive/`） |
 | `progress/` | 进度 / 验证追踪：FY-SMAP 系列、`ui-verification-steps.md`、`2026-08-04-pending-tasks-audit.md`（待完善排期 SSOT）、`2026-08-04-test-reorganization.md`、`2026-08-04-backend-32-fixes.md`（后端 pytest 全绿） |
-| `memory/` | AI 记忆 / 历史上下文：`MEMORY.md`（长期记忆：仓库约定、环境硬约定、已知坑、事故记录）、`YYYY-MM-DD[-主题].md`（日志，如 `2026-09-10-git-restore-and-sync.md`）、`archive/`（原 `.trae/documents/*` ~72 份历史计划与对话） |
+| `memory/` | AI 记忆 / 历史上下文：`MEMORY.md`（长期记忆：仓库约定、环境硬约定、已知坑、事故记录）、`YYYY-MM-DD[-主题].md`（日志，如 `2026-09-10-git-restore-and-sync.md`）、`archive/`（原 `.trae/documents/*` ~72 份历史计划与对话；`archive/workbuddy-plans-20260916/` WorkBuddy 计划 13 份，见其 `INDEX.md`） |
 | `docs/` | 项目文档（原 `Doc/` 整体迁入）：`design/`（架构/设计）、`specs/`（规范/spec）、`reference/`（任务记录/验证报告） |
 
 ## 怎么用
