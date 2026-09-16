@@ -29,7 +29,7 @@
 ```
 
 要点：**网关不控制后端端口**。5175 与 8000 是两个独立监听面，隧道分别指向它们；
-小程序链路绕开网关，因此后端自身就是该链路的唯一防线（见 §4）。
+小程序链路绕开网关，因此后端自身就是该链路的唯一防线（见 §5）。
 
 ## 2. 端口暴露面（依 compose 实测）
 
@@ -53,16 +53,48 @@
    - `services/config.js`（入库）：默认值，不含任何凭据；
    - `services/config.local.js`（**gitignore**）：真实 `baseUrl` / 账号 / 口令；
    - 缺失时回退默认配置并打印告警；`login()` 增加空凭据守卫，不会发空登录请求。
-2. **轮换 `Code/backend/.env` 凭据**：`BACKEND_ADMIN_PASSWORD`、`BACKEND_API_KEY`
-   换为强随机值（旧值已随 api.js 入库，作废）。`BACKEND_ENV` **保持 development**，
-   原因见 §5。
+2. **轮换后端凭据**：`Code/backend/.env` 的 `BACKEND_ADMIN_PASSWORD`、`BACKEND_API_KEY`
+   换为强随机值（旧值已随 api.js 入库，作废）；**并用运行期脚本轮换库中账号口令**
+   （见 §4，仅改 `.env` 不会生效）。`BACKEND_ENV` **保持 development**，原因见 §6。
 3. **新增 `Test/debug/_auth.py`**，`Test/debug/` 下 16 个诊断脚本不再硬编码口令，
    统一改读 `_auth.admin_password()`（优先级：环境变量 → `Code/backend/.env`）。
 4. **`.gitignore`** 新增 `Code/weixin/miniprogram/services/config.local.js`。
+5. **新增 `Code/backend/scripts/rotate_user_passwords.py`** —— 运行期口令轮换与泄漏审计，
+   见 §4。
 
-> 凭据轮换需重启后端才生效：`python launch.py restart backend`。
+## 4. 口令真源与轮换（重要，曾踩坑）
 
-## 4. 三条已核实为「非问题」的历史怀疑项
+**`BACKEND_ADMIN_PASSWORD` 只在用户表为空时用于初始播种**（`app/services/auth_bootstrap.py`
+的 `bootstrap_auth()`）；对**已存在**的用户它**完全无效**。因此在已初始化的库上改 `.env`
+口令是「表面功夫」——库里的 `password_hash` 不变，泄漏的旧口令依然可登录。
+
+> 实测记录（2026-09-16）：改 `.env` 并重启后端后，库中 4 个账号
+> （`admin` / `admin01` / `admin02` / `onlyread`）**仍全部接受 `cgda-dev-admin`**，
+> 新 `.env` 口令一个都不接受 —— 其中 `admin01`/`admin02` 还是 admin 角色，
+> 即泄漏当时并未被关闭。这直接说明「改 .env + 重启」不足以完成轮换。
+
+**正确语义**：库是运行期口令的真源；`.env` 只负责首次播种与开发预填。
+轮换必须走运行期接口，与 `PATCH /auth/users/{id}` 同一代码路径：
+
+```bash
+cd Code/backend
+# 1) 审计：哪些账号仍接受泄漏口令（exit 3 = 存在风险账号，可用于巡检）
+python scripts/rotate_user_passwords.py list --probe cgda-dev-admin
+
+# 2) 轮换所有仍接受该口令的账号（自动生成强随机口令并打印）
+python scripts/rotate_user_passwords.py rotate --all --probe cgda-dev-admin
+
+# 3) 复核
+python scripts/rotate_user_passwords.py list --probe cgda-dev-admin   # 期望 exit 0
+```
+
+轮换结果写入本地凭据文件 `Code/backend/.env.dev-accounts`（由 `.gitignore` 的 `.env.*`
+规则覆盖，不入库）。注意 `update_user(password=...)` **不吊销已签发会话**，不会踢出已登录浏览器。
+
+**不采用「每次启动用 env 覆盖库中口令」的原因**：管理员若在界面上改过密码，重启会被
+`.env` 悄悄回滚，属于更危险的隐性行为。env 与运行期修改不应互相打架。
+
+## 5. 三条已核实为「非问题」的历史怀疑项
 
 以下三项曾在评审中被列为高风险，**经代码核实均不成立**。记录依据以免重复排查。
 
@@ -72,7 +104,7 @@
 | `BACKEND_TRUST_PROXY=false` 使限流塌缩为单桶 | **不成立** | `app/api/rate_limit.py::client_ip()` 在 `trust_proxy=False` 时返回 `request.client.host`，而该值已被 uvicorn 按上一条还原为真实 IP，限流按真实来源计数。**保持 `false` 是正确选择**：它是纵深防御 —— 一旦 uvicorn 的 proxy 信任被关闭，XFF 不会被无条件信任 |
 | 局域网用户经 5175 拿到登录页预填口令 | **不成立** | `Code/infra/gateway/nginx.conf` 已设置 `X-Real-IP $remote_addr` 与 `X-Forwarded-For $proxy_add_x_forwarded_for`，uvicorn 据此还原为 LAN IP（非 loopback），prefill 返回 `None` |
 
-## 5. 何时切 `production`（切换清单）
+## 6. 何时切 `production`（切换清单）
 
 当前**刻意不切**：`BACKEND_ENV=development` 在本阶段是必要的。切到 `production`
 会一次性关闭下列开发便利，其中第一条与「需要局域网访问」直接冲突：
@@ -90,7 +122,7 @@
 ③ 多设备高频联调结束；④ HSTS/CSP 影响已评估。
 **切换动作**：`.env` 设 `BACKEND_ENV=production` → `python launch.py restart backend`。
 
-## 6. 待办（需人工操作/决策）
+## 7. 待办（需人工操作/决策）
 
 1. **轮换 cloudflared 隧道 token** —— token 已在会话记录中明文出现（含 account tag
    与 tunnel id）。建议到 Cloudflare Zero Trust → Networks → Tunnels 重建隧道或重置
@@ -102,9 +134,12 @@
    若维持直连，则后端是唯一防线，务必保证凭据强度（本次已轮换）。
 4. **备份提醒** —— 凭据轮换后，旧备份里的口令已失效；`I:` 数据根与 `.env` 需另行留存。
 
-## 7. 验证命令
+## 8. 验证命令
 
 ```bash
+# 口令泄漏审计（exit 3 = 仍有账号接受该口令）
+cd Code/backend && python scripts/rotate_user_passwords.py list --probe cgda-dev-admin
+
 # 网关基础设施冒烟（17 项断言）
 python Test/standalone/gateway_smoke.py --base http://127.0.0.1:5175
 
