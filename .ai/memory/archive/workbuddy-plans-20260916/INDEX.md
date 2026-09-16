@@ -8,7 +8,8 @@ WorkBuddy 的计划文件原先只落在**工具用户级目录** `~/.workbuddy/
 本目录按 `.ai/memory/archive/trae-documents-20260819/` 的既有先例，把**属于本仓库（CGDA）**
 的计划整体迁入 `.ai/`，作为可版本化、可检索的历史计划真源。
 
-- **迁移方式**：`cp -p` 复制（保留原始 mtime），**原文件未删除**——`~/.workbuddy/plans/` 原样保留。
+- **迁移方式**：`cp -p` 复制（保留原始 mtime）。13 份原件已于同日经 **md5 逐一比对一致**后
+  **移入回收站**（`~/.workbuddy/plans/` 现仅余非本项目的 `quantum-cascade-turing.md`）。
 - **文件命名**：保留 WorkBuddy 原始代号（如 `radiant-pulse-einstein.md`），不改名以免丢失追溯线索；
   主题与日期见下表。
 - **索引维护**：新增归档条目时同步更新本表。
@@ -46,6 +47,7 @@ WorkBuddy 的计划文件原先只落在**工具用户级目录** `~/.workbuddy/
 
 ## 后续
 
-- 若确认无需保留，可删除 `~/.workbuddy/plans/` 中的这 13 份原件（本目录已完整留存）。
-  **删除前请确认**：该目录由 WorkBuddy 工具写入，删除属工具外部操作。
+- 13 份原件已于 2026-09-16 移入回收站（先 md5 校验、后删除）。如需还原，从回收站取回即可。
 - 后续 WorkBuddy 会话产出的计划，建议直接在仓库内落到 `.ai/plans/`（当期）或本目录（历史）。
+- **未纳入清理**：`~/.workbuddy/` 其余内容（`binaries/` 运行时、`skills/` 技能库、`plugins/`、
+  `workbuddy.db`、`credentials/`、`sessions/` 等）为 WorkBuddy 本体数据，**清空会破坏工具**，故仅登记不处置。
