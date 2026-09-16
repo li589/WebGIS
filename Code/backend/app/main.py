@@ -144,6 +144,7 @@ async def lifespan(app: FastAPI):
             assert_data_root_policy,
             assert_deployment_config_policy,
             assert_dev_bypass_policy,
+            assert_service_key_role_policy,
             hydrate_effective_config,
         )
 
@@ -151,6 +152,7 @@ async def lifespan(app: FastAPI):
         assert_data_root_policy()
         assert_deployment_config_policy()
         assert_dev_bypass_policy()
+        assert_service_key_role_policy()
     except Exception:  # noqa: BLE001 — 配置初始化失败须记录后终止启动
         logger.exception("Failed to hydrate effective config on startup")
         raise
@@ -162,6 +164,16 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — 鉴权初始化失败须记录后终止启动
         logger.exception("Failed to bootstrap user auth on startup")
         raise
+
+    # P2-3：清理 SQLite 中堆积的过期会话行（Redis 侧有 TTL，SQLite 兜底副本需主动扫）
+    try:
+        from app.services.session_service import purge_expired_sessions
+
+        removed = purge_expired_sessions(force=True)
+        if removed:
+            logger.info("Startup cleanup: purged %d expired session row(s)", removed)
+    except Exception:  # noqa: BLE001 — 清理失败不应阻断启动
+        logger.exception("Failed to purge expired sessions")
 
     # 清理过期导入 staging（TTL 见 STAGING_TTL_SECONDS）
     try:
@@ -393,7 +405,15 @@ def create_app() -> FastAPI:
         error_code = getattr(exc, "error_code", None)
         if error_code:
             content["error_code"] = error_code
-        return JSONResponse(status_code=exc.status_code, content=content)
+        # 透传异常自带响应头（限流/锁定的 Retry-After、401 的 WWW-Authenticate 等）。
+        # 此前被整体丢弃：429 响应体写着"请 N 分钟后重试"，客户端却拿不到 Retry-After，
+        # 只能靠猜（前端退避策略失效）。
+        headers = getattr(exc, "headers", None)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=content,
+            headers=dict(headers) if headers else None,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(

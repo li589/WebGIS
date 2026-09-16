@@ -6,6 +6,7 @@ import logging
 import os
 
 from app.core import config
+from app.services.passwords import PasswordPolicyError
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,14 @@ def bootstrap_auth() -> None:
                 role="admin",
             )
             logger.info("Bootstrapped initial admin user: %s", admin_user)
+        except PasswordPolicyError as exc:
+            # 口令策略不过关（如沿用了默认的 cgda-dev-admin）。必须 fail-fast：
+            # 允许弱口令落库等于把已知明文口令再种一遍。
+            raise RuntimeError(
+                f"BACKEND_ADMIN_PASSWORD does not satisfy the password policy: {exc}. "
+                "Generate a strong one, e.g. "
+                'python -c "import secrets;print(secrets.token_urlsafe(24))"'
+            ) from exc
         except ValueError:
             # 多进程同时启动（uvicorn workers > 1）时，多个 worker 可能同时判定
             # count==0 并并发创建 admin；唯一约束冲突属正常竞争，重查即可。

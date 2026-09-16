@@ -2239,8 +2239,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--password",
-        default=os.environ.get("BACKEND_SMOKE_PASSWORD") or "cgda-dev-admin",
-        help="password for --login (default cgda-dev-admin)",
+        # 不再内置默认口令（历史上硬编码的 cgda-dev-admin 已随源码泄露并已轮换）。
+        # 走环境变量或显式传参；--login 时对空值显式报错。
+        default=os.environ.get("BACKEND_SMOKE_PASSWORD") or "",
+        help="password for --login (env BACKEND_SMOKE_PASSWORD, no built-in default)",
     )
     parser.add_argument(
         "--timeout",
@@ -2265,6 +2267,11 @@ def main() -> int:
 
     # Prefer session when --login; also auto-login if write probe fails with API key alone.
     if args.login:
+        if not args.password:
+            _log(
+                "--login 需要口令：传 --password 或设置环境变量 BACKEND_SMOKE_PASSWORD"
+            )
+            return 2
         ok, msg = login_session(base, username=args.username, password=args.password)
         _log(f"session login ({args.username}): {'ok' if ok else msg}")
         if not ok:

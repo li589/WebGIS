@@ -21,7 +21,28 @@ _CONFIG_MANAGEMENT_ROLES = frozenset({"admin"})
 _WORKFLOW_CREATE_ROLES = frozenset({"admin", "standard"})
 # demo 可提交/运行工作流（受并发上限约束），不可改配置/创建定义
 _WORKFLOW_RUN_ROLES = frozenset({"admin", "standard", "demo"})
-LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
+#: 环回 IP 集合。注意：``request.client.host`` 恒为 IP 字面量（由 ASGI 服务器填入），
+#: 早期版本里的 ``"localhost"`` 条目 **永远不会命中**，属于误导性的「看起来保护了」。
+#: 主机名形式的判定统一走 :func:`is_loopback_host`。
+LOOPBACK_IPS = frozenset({"127.0.0.1", "::1"})
+
+#: uvicorn 双栈监听时 IPv4 客户端会呈现为 IPv4-mapped IPv6（``::ffff:127.0.0.1``）。
+_IPV4_MAPPED_PREFIX = "::ffff:"
+
+
+def is_loopback_host(host: str | None) -> bool:
+    """判定客户端地址是否为环回（兼容主机名与 IPv4-mapped IPv6 形式）。"""
+    if not host:
+        return False
+    value = host.strip().lower()
+    if value == "localhost":
+        return True
+    if value.startswith(_IPV4_MAPPED_PREFIX):
+        value = value[len(_IPV4_MAPPED_PREFIX) :]
+    if value in LOOPBACK_IPS:
+        return True
+    # 127.0.0.0/8 整段均为环回
+    return value.startswith("127.")
 
 
 @dataclass(frozen=True)
@@ -127,6 +148,15 @@ def _resolve_api_key(x_api_key: str) -> CredentialContext | None:
     )
 
 
+#: 服务密钥（``X-API-Key: backend_auth``）可绑定的角色白名单（P2-5）。
+#: 此前实现只对 ``admin`` 放行、其余值一律静默降为 ``standard``——
+#: 于是 ``BACKEND_API_KEY_ROLE=operator``（历史遗留值）和 ``=demo``（本意是降权）
+#: 都会静默变成 ``standard``：前者是「配置写错却无人知晓」，后者是**静默提权**。
+_SERVICE_KEY_ROLES = frozenset({"admin", "standard", "demo"})
+
+_service_key_role_warned = False
+
+
 def _resolve_service_key_only(x_api_key: str | None) -> CredentialContext | None:
     if not x_api_key:
         return None
@@ -138,8 +168,25 @@ def _resolve_service_key_only(x_api_key: str | None) -> CredentialContext | None
     if not secrets.compare_digest(x_api_key, configured):
         return None
     role = (config.settings.api_key_role or "standard").strip().lower()
-    if role not in _WRITE_ROLES:
+    if role not in _SERVICE_KEY_ROLES:
+        logger.error(
+            "BACKEND_API_KEY_ROLE=%r is not a recognized role "
+            "(admin|standard|demo); falling back to 'standard'. "
+            "Fix the config — the previous value was being silently rewritten.",
+            role,
+        )
         role = "standard"
+    elif role == "admin":
+        # 只告警一次，避免每个请求刷屏。
+        global _service_key_role_warned
+        if not _service_key_role_warned:
+            _service_key_role_warned = True
+            logger.warning(
+                "Service key (X-API-Key) is bound to role 'admin': this single "
+                "shared static secret can manage users, themes and configuration, "
+                "and its use is not attributable to a person. Prefer 'standard' "
+                "unless machine-to-machine admin is genuinely required."
+            )
     return CredentialContext(
         source="service_key",
         role=role,
@@ -154,7 +201,7 @@ def dev_bypass_allowed(request: Request) -> bool:
         and config.settings.environment == "development"
     ):
         direct_host = _direct_client_host(request)
-        if _dev_auth_bypass_explicit() or direct_host in LOOPBACK_IPS:
+        if _dev_auth_bypass_explicit() or is_loopback_host(direct_host):
             logger.warning(
                 "API-key authentication bypassed (dev_bypass, direct_host=%s)",
                 direct_host,

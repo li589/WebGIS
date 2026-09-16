@@ -208,9 +208,13 @@ production 未配置 `BACKEND_DATA_ROOT` 将拒绝启动；代码不会静默回
 |------|------|
 | 会话 Cookie | 浏览器默认登录方式（`cgda_session`） |
 | 个人 API Token | 设置 → 账户，继承账户角色 |
-| 服务密钥 | `X-API-Key: backend_auth`，角色由 `BACKEND_API_KEY_ROLE` 决定（默认 `standard`） |
+| 服务密钥 | `X-API-Key: backend_auth`，角色由 `BACKEND_API_KEY_ROLE` 决定（`admin`/`standard`/`demo`，默认 `standard`）。设为 `admin` 时该共享静态密钥拥有完整管理员权限且无法归因到人，仅在机器对机器确需时使用 |
 
 **RBAC 三角色**：`admin`（全权限）、`standard`（读写工作流，不可改高危配置）、`demo`（只读 + 受控数据传输）。
+
+**登录爆破防护（两层）**：IP 维度限流（默认 10 次/分钟，仅 production 生效）+ **账号维度失败锁定**（默认连续 5 次失败锁定 15 分钟，全环境生效，见 `BACKEND_LOGIN_LOCKOUT_*`）。管理员可用 `POST /auth/users/{id}/unlock` 即时解锁，改口令会自动清零失败计数。
+
+**口令策略**：新建/修改账号时强制校验（≥8 位、≥2 类字符、不在弱口令黑名单、不含用户名），校验位于存储层而非仅 API 层。
 
 production 写接口默认 fail-closed；development 且未启用 API Key 时，仅 **loopback** 可旁路鉴权。
 

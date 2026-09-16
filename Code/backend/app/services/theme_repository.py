@@ -35,6 +35,37 @@ _SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 _LOGO_MAX_BYTES = 2 * 1024 * 1024
 _LOGO_ALLOWED_EXT = frozenset({".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"})
 
+# SVG 是「带脚本能力的可执行文档」：主题 logo 在登录页公开渲染，一旦落地恶意
+# SVG 即为存储型 XSS（可窃取他人登录口令）。此处做两层防御：
+#   1) 上传时拒绝含脚本载体的 SVG（内容层，best-effort）；
+#   2) 下发时强制 CSP sandbox（见 auth_router.get_theme_logo）。
+# 说明：正则过滤无法覆盖所有绕过形态，故第 2 层才是主防线，本层仅拦住低门槛攻击。
+_SVG_DANGEROUS_PATTERNS = (
+    re.compile(r"<\s*script", re.IGNORECASE),
+    re.compile(r"<\s*/\s*script", re.IGNORECASE),
+    re.compile(r"<\s*foreignObject", re.IGNORECASE),
+    re.compile(r"<\s*(iframe|embed|object|audio|video|set|animate)", re.IGNORECASE),
+    re.compile(r"\son[a-z]+\s*=", re.IGNORECASE),  # onload= / onerror= / onclick= ...
+    re.compile(r"javascript\s*:", re.IGNORECASE),
+    re.compile(r"data\s*:\s*text/html", re.IGNORECASE),
+    re.compile(r"<\s*use\b[^>]*href\s*=\s*[\"']?\s*(https?:)?//", re.IGNORECASE),
+)
+
+
+def assert_svg_safe(content: bytes) -> None:
+    """Best-effort SVG 脚本载体扫描；命中即抛 ``ValueError``。"""
+    try:
+        text = content.decode("utf-8", errors="ignore")
+    except Exception:  # noqa: BLE001 — 解码失败交给上层按非法内容处理
+        raise ValueError("svg content is not valid utf-8 text") from None
+    for pattern in _SVG_DANGEROUS_PATTERNS:
+        hit = pattern.search(text)
+        if hit:
+            raise ValueError(
+                "svg logo rejected: contains scriptable content "
+                f"({hit.group(0)!r}); use a static SVG or raster image"
+            )
+
 # 登录页氛围色方案（仅影响 LoginView，不改应用内主题）
 VALID_LOGIN_PALETTES = frozenset({"cyan", "green", "warm", "violet", "slate"})
 DEFAULT_LOGIN_PALETTE = "cyan"
@@ -584,6 +615,8 @@ class ThemeRepository:
         ext = Path(filename).suffix.lower()
         if ext not in _LOGO_ALLOWED_EXT:
             raise ValueError(f"unsupported logo type: {ext or '(none)'}")
+        if ext == ".svg":
+            assert_svg_safe(content)
         dest_dir = _theme_assets_root() / str(theme_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"logo{ext}"
