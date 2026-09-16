@@ -233,6 +233,7 @@ production 写接口默认 fail-closed；development 且未启用 API Key 时，
 | 读者 | 推荐阅读 |
 |------|----------|
 | 新人 | 本文 → [`AGENTS.md`](AGENTS.md) → [`Code/README.md`](Code/README.md) |
+| **部署 / 接手 / 二次开发** | [`Docs/04-执行部署/部署与再开发指南.md`](Docs/04-执行部署/部署与再开发指南.md)（首次部署 SOP、三态启停、验收、故障速查、改 X 跑 Y、避坑清单） |
 | 本地联调 | [`Docs/04-执行部署/本地联调环境说明.md`](Docs/04-执行部署/本地联调环境说明.md) |
 | 架构与设计 | [`Docs/02-架构设计/`](Docs/02-架构设计/) |
 | 接口与命名 | [`Docs/03-规范协议/`](Docs/03-规范协议/) · [`Code/shared/contracts/README.md`](Code/shared/contracts/README.md) |
