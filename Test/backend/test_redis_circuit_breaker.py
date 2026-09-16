@@ -8,6 +8,17 @@ from unittest.mock import MagicMock, patch
 from app.core import redis_client
 
 
+# 冷却窗口由实现写成 ``_circuit_open_until = time.monotonic() + cooldown``，测试在
+# 其后读取钟表反推剩余量，故测得值必然比理论值小一个非负的调度间隙 ε。
+# 用 round(..., 7) 判等（容差 50ns）在 CI 负载下必失败（实测 ε≈0.18ms）；这里改为
+# 有界断言：只需落在 [expected - tol, expected]，仍能严格区分 30/60/120 三档。
+_COOLDOWN_TOL = 1.0
+
+
+def _assert_cooldown(measured: float, expected: float) -> None:
+    assert expected - _COOLDOWN_TOL <= measured <= expected, (measured, expected)
+
+
 @pytest.fixture
 def _redis_circuit_breaker_tests_env():
     ns = types.SimpleNamespace()
@@ -71,7 +82,7 @@ def test_exponential_backoff_doubles_cooldown_on_repeated_openings(_redis_circui
         redis_client._mark_redis_failure("err")
     first_until = redis_client._circuit_open_until
     first_cooldown = first_until - time.monotonic()
-    assert round(first_cooldown, 7) == round(base, 7), 'round(first_cooldown, 7) == round(base, 7)'
+    _assert_cooldown(first_cooldown, base)
 
     # Simulate cooldown elapsing, then fail again → second opening: 60s
     redis_client._circuit_open_until = 0.0  # allow reconnect attempt
@@ -79,7 +90,7 @@ def test_exponential_backoff_doubles_cooldown_on_repeated_openings(_redis_circui
     for _ in range(3):
         redis_client._mark_redis_failure("err2")
     second_cooldown = redis_client._circuit_open_until - time.monotonic()
-    assert round(second_cooldown, 7) == round(base * 2, 7), 'round(second_cooldown, 7) == round(base * 2, 7)'
+    _assert_cooldown(second_cooldown, base * 2)
 
     # Third opening: 120s (hits max)
     redis_client._circuit_open_until = 0.0
@@ -87,7 +98,7 @@ def test_exponential_backoff_doubles_cooldown_on_repeated_openings(_redis_circui
     for _ in range(3):
         redis_client._mark_redis_failure("err3")
     third_cooldown = redis_client._circuit_open_until - time.monotonic()
-    assert round(third_cooldown, 7) == round(min(base * 4, max_cd), 7), 'round(third_cooldown, 7) == round(min(base * 4, max_cd), 7)'
+    _assert_cooldown(third_cooldown, min(base * 4, max_cd))
 
     # Fourth opening: capped at max
     redis_client._circuit_open_until = 0.0
@@ -95,7 +106,7 @@ def test_exponential_backoff_doubles_cooldown_on_repeated_openings(_redis_circui
     for _ in range(3):
         redis_client._mark_redis_failure("err4")
     fourth_cooldown = redis_client._circuit_open_until - time.monotonic()
-    assert round(fourth_cooldown, 7) == round(max_cd, 7), 'round(fourth_cooldown, 7) == round(max_cd, 7)'
+    _assert_cooldown(fourth_cooldown, max_cd)
 
     # Success resets backoff count
     redis_client._mark_redis_success()
