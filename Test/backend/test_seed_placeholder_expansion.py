@@ -56,11 +56,15 @@ def test_expanded_seed_is_valid_json(
     expanded = svc._expand_seed_placeholders(_SEED_TEMPLATE)
     parsed = json.loads(expanded)  # 关键断言：不得抛 JSONDecodeError
     props = parsed["nodes"][0]["properties"]
-    if svc._IS_WINDOWS:
-        assert props["local_dir"].endswith("\\Meteorological\\GLDAS")
-    else:
-        # 硬编码清理 A3：非 Windows 下 {DATA_ROOT_WIN} 退化为 posix 分隔符
-        assert props["local_dir"].endswith("/Meteorological/GLDAS")
+    # 占位符只负责 root 部分：Windows 下 {DATA_ROOT_WIN} → 反斜杠 root，非 Windows
+    # 下退化为 posix root（硬编码清理 A3）。模板中**字面**反斜杠（旧式
+    # `{DATA_ROOT_WIN}\\Meteorological\\GLDAS`）不属占位符职责，恒保留——与
+    # test_posix_platform_win_placeholder_uses_posix_root 的契约一致。
+    # （此前非 Windows 分支误断言字面段被 posix 化，故只在 Linux CI 上红。）
+    expected_root = (
+        data_root.replace("/", "\\") if svc._IS_WINDOWS else data_root.replace("\\", "/")
+    )
+    assert props["local_dir"] == f"{expected_root}\\Meteorological\\GLDAS"
     assert props["path"].endswith("/SMAP")
 
 
