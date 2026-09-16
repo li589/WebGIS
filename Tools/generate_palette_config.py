@@ -106,6 +106,36 @@ def build_from_code() -> dict:
     }
 
 
+# ── 生成物格式 ────────────────────────────────────────────────────────────────
+# 生成物是 checked-in 的 prettier 产物，仓库 pre-commit 会对它跑 prettier。若生成器
+# 的输出与 prettier 重排结果不一致，「重跑生成器应零 diff」的同步测试在任何缺少
+# prettier 的环境（如 CI 后端 pytest job，无 Node）必失败。因此生成器**自身**复刻
+# 所需格式化，不再 shell out 到 `npx prettier`（npx 版本不受 package-lock 约束，
+# 且后端 CI job 无 Node——这是长跑红的根因）。
+# 规则来源：Code/frontend/.prettierrc.json（printWidth=100 / singleQuote / trailingComma=all）。
+# 若前端 prettier 配置变更导致格式漂移，pre-commit 的 prettier 钩子会立即报错，
+# 到时同步更新此处即可（不静默）。
+_PRINT_WIDTH = 100
+_INDENT = "  "
+
+
+def _js_string(value: str) -> str:
+    """按 prettier singleQuote 语义输出字符串字面量。
+
+    优先单引号；当内容含单引号且不含双引号时改用双引号（与 prettier 一致）。
+    """
+    if "'" in value and '"' not in value:
+        return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
+    return "'%s'" % value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _js_key(key: str) -> str:
+    """对象键：合法标识符不加引号，否则用字符串字面量（prettier 行为）。"""
+    if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", key):
+        return key
+    return _js_string(key)
+
+
 def generate_ts(data: dict) -> str:
     lines = [
         "/** 色带单源生成物（Tools/generate_palette_config.py）——禁止手改。",
@@ -130,14 +160,22 @@ def generate_ts(data: dict) -> str:
     # 保持 JSON 原序（前端条目在前）——色带选择器顺序不变
     for key in data["palettes"]:
         p = data["palettes"][key]
-        colors = ", ".join(f"'{c}'" for c in p["colors"])
-        lines.append(f"  '{key}': {{")
-        lines.append(f"    colors: [{colors}],")
-        lines.append(f"    lineColor: '{p['lineColor']}',")
-        lines.append(f"    label: {json.dumps(p['label'], ensure_ascii=False)},")
-        lines.append(f"    type: '{p['type']}',")
-        lines.append(f"    exposed: {'true' if p.get('exposed') else 'false'},")
-        lines.append("  },")
+        colors = ", ".join(_js_string(c) for c in p["colors"])
+        lines.append(f"{_INDENT}{_js_key(key)}: {{")
+        inline = f"{_INDENT * 2}colors: [{colors}],"
+        if len(inline) <= _PRINT_WIDTH:
+            lines.append(inline)
+        else:
+            # 单行超 printWidth：每个元素独占一行（prettier 对超宽数组的处理）
+            lines.append(f"{_INDENT * 2}colors: [")
+            for c in p["colors"]:
+                lines.append(f"{_INDENT * 3}{_js_string(c)},")
+            lines.append(f"{_INDENT * 2}],")
+        lines.append(f"{_INDENT * 2}lineColor: {_js_string(p['lineColor'])},")
+        lines.append(f"{_INDENT * 2}label: {_js_string(p['label'])},")
+        lines.append(f"{_INDENT * 2}type: {_js_string(p['type'])},")
+        lines.append(f"{_INDENT * 2}exposed: {'true' if p.get('exposed') else 'false'},")
+        lines.append(f"{_INDENT}}},")
     lines.append("}")
     lines.append("")
     # 双端别名合并：后端别名（语义 ramp/matplotlib 经典名 → 实现键）为基底，
@@ -149,10 +187,7 @@ def generate_ts(data: dict) -> str:
     merged_aliases.update(data.get("frontend_aliases", {}))
     lines.append("export const GENERATED_PALETTE_ALIASES: Record<string, string> = {")
     for key in merged_aliases:
-        lines.append(
-            f"  {json.dumps(key, ensure_ascii=False)}: "
-            f"{json.dumps(merged_aliases[key], ensure_ascii=False)},"
-        )
+        lines.append(f"{_INDENT}{_js_key(key)}: {_js_string(merged_aliases[key])},")
     lines.append("}")
     lines.append("")
     return "\n".join(lines)
@@ -165,20 +200,20 @@ def main() -> None:
 
     if args.from_code:
         data = build_from_code()
-        JSON_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # 同上：显式 LF，避免 Windows 下 write_text 产生 CRLF 污染真源 JSON。
+        JSON_PATH.write_bytes(
+            (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        )
         print(f"palettes.json 重建完成: {len(data['palettes'])} 条色带")
     else:
         data = json.loads(JSON_PATH.read_text(encoding="utf-8"))
 
     GENERATED_TS.parent.mkdir(parents=True, exist_ok=True)
-    GENERATED_TS.write_text(generate_ts(data), encoding="utf-8")
-    import subprocess
-    subprocess.run(
-        ["npx", "prettier", "--write", str(GENERATED_TS)],
-        cwd=str(ROOT / "Code" / "frontend"),
-        shell=True,
-        capture_output=True
-    )
+    # 输出已按 prettier 配置预先格式化（见 _js_string/_js_key/_PRINT_WIDTH），
+    # 因此无需再调用 npx prettier —— 生成结果与运行环境无关，跨平台/CI 一致。
+    # 必须写 LF 字节：Windows 上 write_text 会把 \n 转成 CRLF，与 .prettierrc
+    # 的 endOfLine=lf、.gitattributes 的 eol=lf 冲突（此前由 prettier --write 兜底）。
+    GENERATED_TS.write_bytes(generate_ts(data).encode("utf-8"))
     exposed = sum(1 for p in data["palettes"].values() if p.get("exposed"))
     print(f"weather-palettes-generated.ts 生成完成（exposed {exposed}/{len(data['palettes'])}）")
 
