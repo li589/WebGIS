@@ -176,6 +176,24 @@
   **判断远端状态一律用 `git ls-remote --heads origin`**（实时），或先确认 refspec 覆盖目标分支；
   别信 `origin/<branch>` 这个本地缓存，否则会误判"远端被改/本地落后"。
 
+## 网关基础设施（2026-09-16 巡检）
+
+- **三套 nginx 配置**（`Code/infra/gateway/`）：`nginx.conf` 裸机/开发态（upstream
+  `host.docker.internal:8000`）、`nginx.hmr.conf` 供 `--vite`、`nginx.prod.conf` 交付态
+  （upstream `backend:8000`，dist 打进镜像）。**三份都含 `/feedback/` 与 `/feedback/api/`**；
+  与裸机版的实质差异只有 upstream 一行 + 注释。
+- **静态维护/错误树** `maintenance/html/`：`413.html` / `50x.html` / `maintenance.html` +
+  `feedback/`（`index.html` 用户反馈页、`console.html` 工程师处理台、`assets/`、`data/announcements.json`）
+  ——全部入库。其独立于 SPA，后端宕机/维护期仍可访问（离线轨走 IndexedDB）。
+- **反馈页鉴权**：`POST /feedback/api/reports` **匿名**（后端限流）；
+  `GET /reports/{id}/response?token=` **token**；其余全部 `_require_feedback_admin`。
+  ⇒ 未带鉴权时 `GET /reports`、`/session` 返回 **401 是设计**，别当 bug。
+- 维护开关：`maintenance/on` 存在时 `location /` 的 SPA 返回 503→维护页；**API 与 /feedback/ 不受影响**。
+  prod 网关把宿主 `maintenance/` 读写挂载覆盖镜像内副本，故热切换无需重建镜像。
+- 🔧 **比 nginx 配置一律 `diff --strip-trailing-cr`**：裸机配置工作树是 CRLF、新写的 prod 是 LF，
+  直接 diff 会把整文件判为差异并掩盖真实差异。
+- 巡检脚本：`temp/gw_check.py`（gitignore 内）——打 `:5175` 验证反馈页/路由/安全头/匿名提交链路。
+
 ## 事故记录
 - 2026-09-10：本地 `.git` 被误删，经"浅克隆 → 移植 .git → add+reset 重建索引 → 恢复 10 个
   误删受控文件"恢复，工作区与远端 dev 内容零差异。详见 `memory/2026-09-10-git-restore-and-sync.md`。
