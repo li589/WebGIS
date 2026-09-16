@@ -1,0 +1,231 @@
+# ══════════════════════════════════════════════════════════════════════════
+# CGDA 交付态（形态 B / 全量容器化）编排 —— 只加应用层，基础设施复用
+#
+# 起栈（必须两个文件一起给，第一个决定 compose 项目目录 = Code/backend）：
+#   docker compose -p cgda \
+#     -f Code/backend/docker-compose.yml \
+#     -f Code/backend/compose.prod.yml up -d
+#
+# 镜像构建（上下文 = 仓库根，由 build.context: ../.. 解析）：
+#   docker compose -p cgda -f Code/backend/docker-compose.yml \
+#     -f Code/backend/compose.prod.yml build
+#
+# 或直接用 launcher：Env\Python312\python.exe launch.py deploy up
+#
+# ── 本文件所需变量（写在 Code/backend/.env，compose 会自动读取该文件）──────
+#   CGDA_TAG             必填，镜像标签，建议 `git rev-parse --short HEAD`
+#   CGDA_DATA_ROOT       必填，宿主地理数据根绝对路径（Windows 用 D:/geo 形式，禁止 /d/geo）
+#   CGDA_IMAGE_PREFIX    选填，默认 cgda —— 私有 registry 前缀，如 harbor.lab/cgda
+#   CGDA_BACKEND_HOST_PORT 选填，默认 8000 —— 仅绑回环，供排障直连
+#   CGDA_DEPLOYMENT_CONFIG 选填，默认 ./deployment.config.json
+#   CGDA_REDIS_VOLUME / CGDA_MINIO_VOLUME / CGDA_STATE_VOLUME  选填，卷名
+#   MINIO_ROOT_USER / MINIO_ROOT_PASSWORD  必改（与基础设施栈共用）
+#
+# ── 与裸机态的关系 ─────────────────────────────────────────────────────
+#   · **互斥**：裸机 FastAPI 占 8000、网关占 5175，与容器栈端口冲突；
+#     切换前先 `stop.bat`。
+#   · redis-data / minio-data **沿用与裸机态相同的卷名**（backend_redis-data /
+#     backend_minio-data），使裸机 → 容器迁移不丢 MinIO 产物与队列状态。
+#     若改成别的项目名而不固定卷名，会新建空卷、看起来像「数据丢了」。
+#
+# ── 维护须知（改文件前必读）────────────────────────────────────────────
+#   `environment` 无法用 YAML 合并键深合并：服务级一旦出现 `environment:`，
+#   就会**整体替换**锚点里的那份。因此每个服务都必须重复写
+#   `<<: *backend-env`。新增服务时若漏写这一行，该服务将只剩
+#   CGDA_LOG_FILE_ROLE 一个环境变量，表现为连不上 Redis/MinIO —— 极易误判。
+# ══════════════════════════════════════════════════════════════════════════
+
+name: cgda
+
+# ── 应用层公共环境变量（被 9 个服务逐个显式引用）─────────────────────────
+x-backend-env: &backend-env
+  # ── 监听地址 ──────────────────────────────────────────────────────────
+  # 代码默认 127.0.0.1（app/core/config.py:249）——容器内绑回环则同网络的
+  # 网关/其他容器访问不到，必须显式改 0.0.0.0。
+  BACKEND_HOST: 0.0.0.0
+  BACKEND_PORT: "8000"
+
+  # ── 环境与热载 ────────────────────────────────────────────────────────
+  # production 下 start_fastapi.py:32-40 会强制 BACKEND_RELOAD=false（硬约束 B6）。
+  BACKEND_ENV: production
+  BACKEND_RELOAD: "false"
+
+  # ── 基础设施寻址：一律用 compose 服务名 + 容器端口 ─────────────────────
+  # 不是宿主的 16379 / 9100 / 8080（那些端口是留给裸机进程用的映射）。
+  BACKEND_REDIS_URL: redis://redis:6379/0
+  BACKEND_CELERY_BROKER_URL: redis://redis:6379/0
+  BACKEND_CELERY_RESULT_BACKEND: redis://redis:6379/0
+  BACKEND_MINIO_ENDPOINT: minio:9000
+  BACKEND_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  BACKEND_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  # provider_ids.OPEN_METEO_LOCAL_URL 的硬编码值是 127.0.0.1:8080；
+  # provider_registry.py:279 读此变量覆盖 base_url，ssrf.py / redis_client.py
+  # 的受信白名单同样纳入该变量 —— 容器化必设，否则天气瓦片取不到数。
+  BACKEND_OPEN_METEO_LOCAL_URL: http://open-meteo:8080/v1/forecast
+  # ⚠️ 必须关：open_meteo_sync_executor 以 subprocess 调 `docker compose`，
+  # 容器内既无 docker CLI 也无 socket，beat 会周期性报错刷日志。数据面同步
+  # 改在宿主机执行（Code/infra/data-sync，见手册 §12.7-S5）。
+  BACKEND_OPEN_METEO_SYNC_ENABLED: "false"
+
+  # ── 数据根（容器内路径，与 volumes 的挂载目标一致）────────────────────
+  BACKEND_DATA_ROOT: /data/geo
+  BACKEND_OUTPUT_ROOT: /data/geo/ProjectOutput
+
+  # ── Celery ───────────────────────────────────────────────────────────
+  # Linux 默认即 prefork；显式声明避免被 .env 里的 solo（Windows 兜底值）带偏。
+  BACKEND_CELERY_WORKER_POOL: prefork
+
+# ── 应用层公共定义（image / 环境 / 卷 / 策略）─────────────────────────────
+x-backend-common: &backend-common
+  image: ${CGDA_IMAGE_PREFIX:-cgda}-backend:${CGDA_TAG:?CGDA_TAG 未设置：请在 Code/backend/.env 写入 git sha}
+
+  # 应用自身还会用 python-dotenv 读 /srv/Code/backend/.env（只读挂载见 volumes）
+  env_file:
+    - ./.env
+
+  environment: *backend-env
+
+  volumes:
+    # 地理数据根（读写）。Windows 宿主必须写 `D:/geo` 形式，`/d/geo` 会挂载失败。
+    # 算法数据 + ProjectOutput + _runtime（workflow_state / logs / artifacts /
+    # cache / feedback）全部派生自这一个根，因此只挂一条。
+    - ${CGDA_DATA_ROOT:?CGDA_DATA_ROOT 未设置：请在 Code/backend/.env 写入宿主数据根绝对路径}:/data/geo
+
+    # 引导配置（含密钥）只读注入；compose 的 env_file 已注入同名变量，
+    # 这条挂载是给 python-dotenv 与配置中心读文件用的。
+    - ./.env:/srv/Code/backend/.env:ro
+
+    # 部署配置真源。⚠️ 宿主上**该文件必须已存在**：若不存在，Docker 会在
+    # 宿主侧建出一个同名**目录**再挂进去。此时 deployment_config.py:341 的
+    # `path.is_file()` 为假 → 视为「未配置」回退 .env（不会拒启），但配置
+    # 中心的 PUT 会写不进。首次部署请先放好该文件（或由 .example 改名）。
+    - ${CGDA_DEPLOYMENT_CONFIG:-./deployment.config.json}:/srv/Code/backend/deployment.config.json
+
+    # 进程本地态：Celery Beat 调度库（celerybeat-schedule）等。容器化后由
+    # backend / worker-* / beat 共享同一命名卷 —— 所以必须靠
+    # CGDA_LOG_FILE_ROLE 分日志文件（见各服务 environment）。
+    - backend-state:/srv/Code/backend/.data
+
+  restart: unless-stopped
+  stop_grace_period: 30s
+
+  depends_on:
+    redis:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+
+services:
+  # ── FastAPI ───────────────────────────────────────────────────────────
+  backend:
+    <<: *backend-common
+    # 只有本服务带 build：其余 8 个服务共用同一 image tag，由这次构建产出。
+    build:
+      # 相对本 compose 文件所在目录（Code/backend）→ 仓库根
+      context: ../..
+      dockerfile: Code/backend/Dockerfile
+    command: ["python", "start_fastapi.py"]
+    environment:
+      <<: *backend-env
+      # app/core/logging.py:57-58 用 CGDA_LOG_FILE_ROLE 决定
+      # backend-<role>.log。9 个容器若都不设，会往同一个
+      # <DATA_ROOT>/_runtime/logs/backend.log 里互相抢 RotatingFileHandler，
+      # 轮转瞬间互相持句柄 → 日志丢失甚至进程报错。
+      CGDA_LOG_FILE_ROLE: fastapi
+    ports:
+      # 仅回环发布，供交付现场排障直连（正常访问走网关 :5175）。
+      # 若与裸机 FastAPI 冲突，说明两套栈同时在跑 —— 先 stop.bat。
+      - "127.0.0.1:${CGDA_BACKEND_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Celery Worker ×7（队列定义对齐 launch/constants.py:66-78）─────────
+  # 裸机态在 Windows 上是「每队列起 N 个独立进程」以规避 prefork 兼容问题；
+  # Linux 容器内改用 --concurrency，语义等价且更省内存。
+  worker-realtime:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "realtime", "-n", "realtime@%h"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-realtime
+
+  worker-standard:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "standard", "-n", "standard@%h", "--concurrency=2"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-standard
+
+  worker-heavy:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "heavy", "-n", "heavy@%h", "--concurrency=2"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-heavy
+
+  worker-batch:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "batch", "-n", "batch@%h"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-batch
+
+  worker-download:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "download-realtime,download-standard", "-n", "download@%h"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-download
+
+  worker-gee:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "gee-realtime,gee-standard,gee-heavy,gee-batch", "-n", "gee@%h"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-gee
+
+  worker-weather:
+    <<: *backend-common
+    command: ["python", "start_celery_worker.py", "-Q", "weather-realtime,weather-standard,weather-heavy,weather-batch", "-n", "weather@%h"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: worker-weather
+
+  # ── Celery Beat（**单副本**：多副本会重复触发定时任务）────────────────
+  beat:
+    <<: *backend-common
+    command: ["python", "start_celery_beat.py"]
+    environment:
+      <<: *backend-env
+      CGDA_LOG_FILE_ROLE: beat
+
+  # ── 网关：静态前端 + API 同域反代（对外唯一入口 :5175）───────────────
+  gateway:
+    image: ${CGDA_IMAGE_PREFIX:-cgda}-web:${CGDA_TAG:?CGDA_TAG 未设置}
+    build:
+      context: ../..
+      dockerfile: Code/infra/gateway/Dockerfile.web
+    # 与裸机网关 cgda-gateway-nginx 区分开，避免切换期间同名冲突
+    container_name: cgda-web-gateway
+    ports:
+      - "${CGDA_GATEWAY_PORT:-5175}:5175"
+    volumes:
+      # 维护开关需运行时可写：`touch maintenance/on` + reload 即切维护页。
+      # 宿主目录随仓库提交（html/ 与 README 在内），`on` 为运行时产物。
+      - ../infra/gateway/maintenance:/etc/nginx/maintenance
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  # 与裸机栈共用同名卷 → 迁移不丢数据（详见文件头说明）。
+  redis-data:
+    name: ${CGDA_REDIS_VOLUME:-backend_redis-data}
+  minio-data:
+    name: ${CGDA_MINIO_VOLUME:-backend_minio-data}
+  backend-state:
+    name: ${CGDA_STATE_VOLUME:-cgda-backend-state}

@@ -1,0 +1,58 @@
+# 镜像构建上下文排除（上下文 = 仓库根，两个自建镜像共用本文件）
+#
+# ⚠️ 安全底线：绝不能把 `.env` / 密钥 / 运行时数据打进镜像（硬约束 B10）。
+# ⚠️ 注意：backend 与 web 两个镜像共用同一个构建上下文，因此这里**只能排除两者都不需要的东西**。
+#    例如 `Code/frontend/public/` 是 web 镜像必需的（vite publicDir），不可排除。
+
+# ── 版本控制与 AI 工作区 ────────────────────────────────────────────
+.git
+.gitignore
+.ai
+.workbuddy
+
+# ── 凭据与本地配置（绝不入镜像）──────────────────────────────────────
+**/.env
+**/.env.*
+!**/.env.example
+Code/backend/deployment.config.json
+Code/backend/deployment.config.json.bak.*
+Code/backend/source_uri_map.json
+Code/backend/.data
+Tools/_nas_credentials.json
+*.pem
+*.key
+
+# ── Python 运行时与缓存 ────────────────────────────────────────────
+Env
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.coverage*
+
+# ── 前端构建产物与依赖 ─────────────────────────────────────────────
+Code/frontend/node_modules
+Code/frontend/dist
+Code/frontend/coverage
+Code/frontend/.vite
+
+# ── 运行产物与测试 ────────────────────────────────────────────────
+Code/backend/imports_output
+Test
+temp
+tmp.txt
+.pytest_tmp*
+**/*.log
+
+# ── Tools/ 辅助脚本：仅排除体积庞大的产物目录 ──────────────────────
+# 其余 Tools/ 脚本（含 export_overlay_assets.py，被 asset_bake_tasks 以
+# subprocess 调用）保留，总体积仅 ~3MB。
+Tools/reports
+
+# ── 人读文档（镜像内不需要）────────────────────────────────────────
+Docs
+README.md
+CLAUDE.md
+AGENTS.md

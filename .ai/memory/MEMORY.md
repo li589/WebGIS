@@ -50,25 +50,32 @@
   ⇒ 开发态与交付态必须两套 compose，不能一套通吃**。另两点：Celery worker 不热载（改 worker 代码须重启 worker）；
   Open-Meteo named volume 禁 bind mount（A5），勿与数据盘 bind mount 混淆。
 
-## 启动器与「三态」现状（2026-09-16 逐文件核实）
+## 启动器与三态（2026-09-16 逐文件核实 + 当日落地）
 
 - **`launch/` 分层**：`start.bat` → `launch.py`(87行) → `launch/cli.py`(argparse+分发表) →
   `launch/commands.py`(57KB) → `process_manager.py` / `docker_manager.py` / `gateway_manager.py` /
   `subprocess_utils.py` / `constants.py`。
-- **CLI 10 子命令**：start / stop / status / reload / restart / logs / flush / clean-cache / reset-db / sync。
-  **组件 9 种**：all、docker、fastapi、beat、worker、worker:\<name\>、frontend、gateway、backend。
-- **三个 compose project**：`backend`（Redis/MinIO/Open-Meteo，硬编码于 `docker_manager.py:61,98`）、
-  `gateway`（Nginx，硬编码于 `gateway_manager.py:31-33`）、`data-sync`（可经 env 覆盖）。
-- ⬛ **三态支持真相：只支持两态**。
-  - 裸机态 ✅ `start`（宿主 FastAPI/9 Worker/Beat + 容器基础设施 + 容器 Gateway 静态 dist）
-  - 开发态 ✅ `start --vite`（Gateway :5175 + 宿主 Vite HMR :5174）；`start frontend` 为 Vite 直连
-  - **交付态 ❌ 完全不存在**：全仓**无 Dockerfile**；`docker_manager.py` 只起基础设施三容器；
-    `cmd_start` 无 prod 分支；`nginx.conf:20-23` upstream 写死 `host.docker.internal:8000`；
-    `cli.py` 无 `--mode`。⇒ 补交付态 = 4 个新文件（backend/web Dockerfile、compose.prod.yml、
-    nginx.prod.conf）+ launcher `--mode` 分派（设计见 `Win10-交接部署与三态启动方案.md §3/§4`）。
+- **CLI 11 子命令**：start / stop / status / reload / restart / logs / flush / clean-cache / reset-db /
+  sync / **deploy**。**组件 9 种**：all、docker、fastapi、beat、worker、worker:\<name\>、frontend、
+  gateway、backend。
+- **四个 compose project**：`backend`（Redis/MinIO/Open-Meteo，硬编码于 `docker_manager.py`）、
+  `gateway`（Nginx 裸机态，硬编码于 `gateway_manager.py`）、`data-sync`（可经 env 覆盖）、
+  **`cgda`（交付态应用层，`compose.prod.yml` + `docker-compose.yml` 合并）**。
+- ✅ **三态已全部可用**（2026-09-16 落地）：
+  - 裸机态（默认 `--mode bare`）`start`：宿主 FastAPI/9 Worker/Beat + 容器基础设施 + 容器 Gateway 静态 dist
+  - 开发态 `start --mode dev`（= `--vite`）：Gateway :5175 + 宿主 Vite HMR :5174
+  - **交付态 `start --mode prod` / `deploy up`**：全量容器化，`cgda-backend`(一镜像三角色 fastapi/worker/beat)
+    + `cgda-web`(静态 dist + 反代)。`--mode` **只在全量分支生效**；单组件命令语义不变。
+- **`deploy` 子命令 7 动作**：`config`（干跑校验）/ `build` / `up`（`--no-build`）/ `restart` /
+  `ps` / `logs [svc] -n N` / `down`（`--volumes` 危险）。只读动作（ps/logs/down/config）用
+  `readonly_prod_env()` 补占位值绕过 compose 的 fail-closed 插值。
+- **交付态必配**（写 `Code/backend/.env`）：`CGDA_TAG`（git sha）、`CGDA_DATA_ROOT`（Windows 用 `D:/geo`）；
+  另 `CGDA_IMAGE_PREFIX` / `CGDA_BACKEND_HOST_PORT` / `CGDA_GATEWAY_PORT` / `CGDA_DEPLOYMENT_CONFIG` /
+  `CGDA_{REDIS,MINIO,STATE}_VOLUME`。**卷名默认值刻意对齐裸机态**（`backend_redis-data` /
+  `backend_minio-data`），防换 project 名后数据"看起来丢了"。
 - **Docker 自定义现状**：卷名/Open-Meteo 镜像与端口/MinIO 凭据/数据面 project 已 env 化；
-  **Redis/MinIO 端口(16379/9100/9101)、两个 compose project 名、容器名、网关 5175 均硬编码在代码里**。
-  **镜像存储位置不归 launcher 管**——那是 Docker 引擎 data-root（Windows 用 Docker Desktop 设置，
+  **Redis/MinIO 端口(16379/9100/9101)、裸机两个 compose project 名、容器名、网关 5175 仍硬编码在代码里**。
+  **镜像存储位置不归 launcher 管**——Docker 引擎 data-root（Windows 用 Docker Desktop 设置，
   本机为 `I:\Docker\DockerDesktop`；Linux 用 `daemon.json` 的 `data-root`）。
 - **`Env/Python312` = 官方安装包全量布局**（非 venv，无 `pyvenv.cfg`；`sys.prefix` 指向该目录；
   `Lib/site-packages` 595 项；`Scripts/pip.exe` 可用）→ 重建须装 **Python 3.12.9**；
@@ -76,16 +83,64 @@
   ⚠️ `.gitignore:2 Env/` 生效，但 `Env/backend/` 下 **8 个 .ps1 是入库的**（历史联调辅助脚本）——
   不代表 `Env/` 可从 git 复现。
 
-## 交接前必修的两个缺口（2026-09-16 发现）
+## 交付态容器的三个必踩坑（2026-09-16 实读代码确认，非理论风险）
 
-- **G-F ⬛ `source_uri_map.json` 未被 `.gitignore` 覆盖**：`.example` 入库是有意的，但**真实文件**
-  （含实验室盘符路径，见硬约束 C4）一旦创建就会**被提交**。⇒ 建文件前先往 `.gitignore` 加
-  `Code/backend/source_uri_map.json`。
-- **G-G `deployment.config.json` 真源当前不存在**：`Code/backend/` 下只有 `.bak.1`
-  （内容 `{"schema_version":1,"data":{"data_root":"I:\\test"},...}`）与 `.example`。
-  即本机实际在跑 `.env` 单轨。目标机交接须明确走单轨还是补建（补建须格式合法，否则 fail-closed 拒启）。
+1. **Beat 的 Open-Meteo 自动同步在容器内必失败**：`open_meteo_sync_executor.py` 用 subprocess 调
+   `docker compose`，容器内无 CLI/socket，而 `BACKEND_OPEN_METEO_SYNC_ENABLED` **代码默认 true**
+   ⇒ 每 6h 报错。已在 `compose.prod.yml` 设 `false`；同步改在**宿主** `launch.py sync`。
+2. **9 个容器抢同一个日志文件**：`app/core/logging.py` 用 `CGDA_LOG_FILE_ROLE` 分文件名，且
+   `BACKEND_LOG_DIR` 派生自数据根 ⇒ 交付态 9 容器共用同一 bind mount。已逐服务显式赋值
+   （`fastapi` / `worker-<name>` / `beat`）。**新增 compose 服务时勿漏**。
+3. **只读 compose 命令被 fail-closed 插值挡住**：`${CGDA_TAG:?}` 在**解析期**生效，
+   连 `ps`/`logs`/`down` 都会报错。launcher 侧用 `readonly_prod_env()` 只给只读动作补占位值；
+   `compose.prod.yml` 本身**不放宽**。
+
+另两条结构性陷阱：
+- **YAML `<<` 不深合并**：`compose.prod.yml` 服务级一旦出现 `environment:` 就**整体替换**锚点 ⇒
+  9 个服务都重复写 `<<: *backend-env`。新增服务漏写 ⇒ 只剩一个环境变量，表现为连不上 Redis/MinIO。
+- **`deployment.config.json` 挂载陷阱**：宿主文件不存在时 Docker 会建**同名目录**挂进去；
+  `deployment_config.py` 的 `is_file()` 为假 → 回退 `.env`（**不拒启**），但配置中心 PUT 写不进。
+
+## 交接缺口状态（2026-09-16）
+
+- **G-F ✅ 已修**：`.gitignore` 已加 `Code/backend/source_uri_map.json`（`.example.json` 仍入库）。
+- **G-A…G-E ✅ 已修**：4 个容器化文件 + launcher 三态分派（详见上节）。
+- **G-G ⚠️ 未变**：`deployment.config.json` 真源仍不存在（仅 `.bak.1` 内容 `data_root: I:\test` +
+  `.example`），本机跑 `.env` 单轨。目标机须明确单轨或补建（补建须格式合法，否则 fail-closed 拒启）。
+- **G-H ✅ 非阻塞**：`Code/frontend/public/data/boundaries` 源 SHP/解包目录未入库，但**构建只需
+  GeoJSON**（26MB，已入库）；`.dockerignore` 已把 `ne_*.zip` / `admin_0` / `admin_1` 排除出上下文。
+- **G-I / G-J ✅ 已修**：见上节坑 1 / 坑 2。
+- **G-K ⚠️ 未修，已文档化**：两处 Open-Meteo 探活仍写死 `provider_ids.OPEN_METEO_LOCAL_URL`
+  （`weather_engine_settings.py`、`weather_router.py`）；**取数路径可经 `BACKEND_OPEN_METEO_LOCAL_URL` 覆盖**，
+  但探活在容器内会**误报"本地源不可用"**。处置：接受误报并注明，或把常量改 env 驱动（小改动）。
 - 其余交接必确认项：`Code/frontend/dist` 在 `Code/frontend/.gitignore:11` 内（目标机须 `npm run build`）；
   `Code/backend/.env` 在 `.gitignore:3`（含 API Key/管理员密码/CDS Key，只能走安全通道交接）。
+
+## 交接机平台卫生（LF / 可执行位，2026-09-16）
+
+`core.autocrlf=true` 是本机默认，会对**交付资产**造成两类真实故障，已修：
+
+1. **LF/CRLF**：`.gitattributes` 原先只覆盖 `Code/frontend/**`、`Test/frontend/**`。现补充
+   `**/Dockerfile`、`**/Dockerfile.*`、`**/.dockerignore`、`**/compose*.yml`、
+   `**/docker-compose*.yml`、`Code/**/*.conf`、`**/*.sh` → `text eol=lf`。
+   - 危害：Dockerfile 的 `\` 续行尾随 `\r` 污染下一条指令；shell 脚本在 Linux 下
+     `./start.sh` 报 `\r: command not found`。
+   - **判定要点**：`git ls-files --eol` 显示这些文件 `i/lf w/crlf` ⇒ 索引本就是 LF，CRLF 只在工作树。
+     故加 `eol=lf` **无内容 diff**，只改未来 checkout 的落地形态（零 churn）。若 `i/crlf` 才需
+     `git add --renormalize`。
+2. **可执行位**：`start.sh` / `stop.sh` / `Code/infra/data-sync/*.sh` 原为 `100644`，Linux 下
+   `./start.sh` = Permission denied。已 `git update-index --chmod=+x` → `100755`。
+   - **注意**：mode 只活在索引，`git reset` 会静默回退，须在同一提交流程内完成。
+
+新增/移动任何 `Dockerfile`、compose、`*.conf`、`*.sh` 时无需再动 `.gitattributes`（通配已覆盖）。
+
+## 容器化残留（诚实登记，勿当已完成）
+
+- `unrar` **未进镜像**：`Code/backend/vendor/unrar/linux-x64/` 在 `.gitignore` 内，克隆后不存在
+  ⇒ 容器内 RAR5 导入不可用（zip / 7z 不受影响，已装 `p7zip-full`）。
+- `libeccodes0`(Debian 2.28) 与 PyPI `eccodes` 2.47 的 API 兼容性**未实测**（GRIB2 导入链）。
+- 两个 Dockerfile 均通过 `docker build --check`，但**完整构建与容器内运行未实测**
+  （科学库层体积大，未在本轮拉取）。首次真机构建是待验项。
 
 ## 坑
 
@@ -108,6 +163,36 @@
 - 不再保留工具私有目录 `.workbuddy/`；`.cursor/`、`.trae/`、`.kiro/`、`.cursorignore`、
   `.github/copilot-instructions.md` 也已从版本库移除（原本就已在 .gitignore 中）。
 - 例外保留：`.github/workflows/ci.yml`（CI 配置，非 AI 文档）、根级 `AGENTS.md` / `CLAUDE.md` / `README.md`。
+
+## 仓库协作与 git 配置（2026-09-16）
+
+- **协作者**：`li589`（548 commits，主）+ `wxyxw007`（2 commits，曾于 2026-09-15 提交
+  `9b4d6d7f 修改了agent图标。`，改 `src/components/agent/*` + `agent-companion.png`）。无 fork。
+- **流程惯例**：改动先进 `dev`，再以 `PR #N from li589/dev` 合并进 `main`（main 只接收合并）。
+- ⚠️ **`origin/main` 本地引用可能是假相**：本机 `remote.origin.fetch` 原为
+  `+refs/heads/dev:refs/remotes/origin/dev`（**只跟踪 dev**），`git fetch origin main` 只更新
+  `FETCH_HEAD`，不会更新 `refs/remotes/origin/main` ⇒ 该 ref 长期停在 2026-09-08。
+  已改成标准 `+refs/heads/*:refs/remotes/origin/*`。
+  **判断远端状态一律用 `git ls-remote --heads origin`**（实时），或先确认 refspec 覆盖目标分支；
+  别信 `origin/<branch>` 这个本地缓存，否则会误判"远端被改/本地落后"。
+
+## 网关基础设施（2026-09-16 巡检）
+
+- **三套 nginx 配置**（`Code/infra/gateway/`）：`nginx.conf` 裸机/开发态（upstream
+  `host.docker.internal:8000`）、`nginx.hmr.conf` 供 `--vite`、`nginx.prod.conf` 交付态
+  （upstream `backend:8000`，dist 打进镜像）。**三份都含 `/feedback/` 与 `/feedback/api/`**；
+  与裸机版的实质差异只有 upstream 一行 + 注释。
+- **静态维护/错误树** `maintenance/html/`：`413.html` / `50x.html` / `maintenance.html` +
+  `feedback/`（`index.html` 用户反馈页、`console.html` 工程师处理台、`assets/`、`data/announcements.json`）
+  ——全部入库。其独立于 SPA，后端宕机/维护期仍可访问（离线轨走 IndexedDB）。
+- **反馈页鉴权**：`POST /feedback/api/reports` **匿名**（后端限流）；
+  `GET /reports/{id}/response?token=` **token**；其余全部 `_require_feedback_admin`。
+  ⇒ 未带鉴权时 `GET /reports`、`/session` 返回 **401 是设计**，别当 bug。
+- 维护开关：`maintenance/on` 存在时 `location /` 的 SPA 返回 503→维护页；**API 与 /feedback/ 不受影响**。
+  prod 网关把宿主 `maintenance/` 读写挂载覆盖镜像内副本，故热切换无需重建镜像。
+- 🔧 **比 nginx 配置一律 `diff --strip-trailing-cr`**：裸机配置工作树是 CRLF、新写的 prod 是 LF，
+  直接 diff 会把整文件判为差异并掩盖真实差异。
+- 巡检脚本：`temp/gw_check.py`（gitignore 内）——打 `:5175` 验证反馈页/路由/安全头/匿名提交链路。
 
 ## 事故记录
 - 2026-09-10：本地 `.git` 被误删，经"浅克隆 → 移植 .git → add+reset 重建索引 → 恢复 10 个

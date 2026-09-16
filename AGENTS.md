@@ -10,12 +10,12 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 | 路径 | 职责 | 关键子目录 |
 |------|------|-----------|
-| `Code/backend/` | FastAPI + Celery：workflow 编排、weatherengine、统一瓦片、GEE | `app/api/routers/`（按域路由）、`app/services/workflow/`、`app/weatherengine/`、`app/tasks/`、`app/gee/`（测试已迁出至仓库根 `Test/backend/`） |
+| `Code/backend/` | FastAPI + Celery：workflow 编排、weatherengine、统一瓦片、GEE；`Dockerfile` + `compose.prod.yml` 为**交付态**镜像与编排（`launch.py deploy`） | `app/api/routers/`（按域路由）、`app/services/workflow/`、`app/weatherengine/`、`app/tasks/`、`app/gee/`（测试已迁出至仓库根 `Test/backend/`） |
 | `Code/frontend/` | Vue 3 + TypeScript + Vite + Pinia：MapLibre 2D、天气叠加、工作流交互 | `src/views/`、`src/components/`、`src/stores/`、`src/services/`、`src/composables/` |
 | `Code/algorithms/` | Python 算法包：contracts / data_access / runner / publish | `providers/Python/`（lint/mypy 覆盖范围） |
 | `Code/shared/` | 前后端共享协议与公共契约 | `contracts/` |
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
-| `Code/infra/gateway/` | **默认** Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`maintenance/`、`README.md` |
+| `Code/infra/gateway/` | **默认** Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`）；`Dockerfile.web` / `nginx.prod.conf` 为**交付态**专用（upstream 指 `backend:8000`），勿与裸机版 `nginx.conf` 混用 | `docker-compose.yml`、`nginx.conf`、`maintenance/`、`README.md` |
 | `Docs/` | **公开文档仓库**：架构设计 / 规范协议 / 专题研究 / 代码审查 / 结题材料 / HTML 报告 | 见 `Docs/README.md` 索引 |
 | `.ai/` | **AI 工作区（随仓库提交；`mcp.json`/`tmp/` 本地除外）**：技能 / 规则 / 计划 / 进度 / 记忆 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/` |
 | `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
@@ -51,6 +51,9 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `Env\Python312\python.exe launch.py start --vite` | 同上，Gateway 同域 + 背后 Vite HMR（入口仍 `:5175`，Vite `:5174`） |
 | `Env\Python312\python.exe launch.py reload gateway` | Nginx 配置热重载（`nginx -t` + `nginx -s reload`，不重建容器） |
 | `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` / `backend` |
+| `Env\Python312\python.exe launch.py start --mode prod` | **交付态（形态 B / 全量容器化）**：校验 → 构建两镜像 → 起容器栈（不进入监控循环） |
+| `Env\Python312\python.exe launch.py start --mode dev` | 开发态（= `--vite`）；`--mode bare` 为裸机态（默认，与历史行为一致） |
+| `Env\Python312\python.exe launch.py deploy config\|build\|up\|restart\|ps\|logs\|down` | 交付态运维入口：`config` 干跑校验 / `build` 只构建 / `up` 起栈（`--no-build`）/ `restart` 重建后 force-recreate / `ps` 状态 / `logs [svc] -n N` / `down` 停栈（`--volumes` 连卷删，危险） |
 | `Env\Python312\python.exe launch.py start gateway` | 仅 Nginx 同域入口 `:5175`（`--rebuild-frontend` 可强制 rebuild dist） |
 | `Env\Python312\python.exe launch.py restart` | 全量重启（**默认含 Gateway**）；改前端后建议加 `--rebuild-frontend` |
 | `Env\Python312\python.exe launch.py restart backend` | **仅**重启 FastAPI + 全部 Worker + Beat（不动 Docker / Gateway / Vite）；改 `BACKEND_DATA_ROOT` 后必用 |
@@ -64,6 +67,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
 服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:16379`（容器内仍 6379；避开 Windows Hyper-V 保留段）、MinIO `:9100`（Console `:9101`）。
+
+三态与交付态：`--mode bare`（默认）/ `dev` / `prod` 只在 `start` / `restart` 的**全量**分支生效（单组件命令语义不变）。交付态需在 `Code/backend/.env` 配 `CGDA_TAG` / `CGDA_DATA_ROOT`；裸机态与交付态**端口互斥**，切换前先 `launch.py stop`。细节见 `Docs/04-执行部署/Win10-交接部署与三态启动方案.md`（§3.2.1 三个必踩坑、§4.4 变量表）与 `Docs/04-执行部署/部署手册与硬约束清单.md` §12。
 
 联调缓存分层与排障：`Docs/07-工程保障/联调缓存与生效边界.md`。运维手册（启动故障排障、端口/WinNAT、事故记录）：`Docs/07-工程保障/运维手册.md`。
 
@@ -102,6 +107,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 数据根 / 图层就绪 | `BACKEND_DATA_ROOT`、`env_file_upsert.py`、`service_restart.py`、`catalog_seeds/layer_descriptors.json`；FE `DeploymentConfigView.vue`（`/deployment` 修改入口，`PathConfigSection` 只读） | `Env/Python312/python.exe -m pytest Test/backend/test_data_source_paths.py Test/backend/test_data_root_policy.py -q`；改路径后 `launch.py restart backend`，再 `GET /layers` 看 `run_readiness` |
 | GEE | `app/gee/`、`app/services/gee_bridge_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_gee_bridge_service.py -q` |
 | 统一瓦片（底图） | `app/api/tile_routes.py`、`tile_provider_registry.py`、`tile_proxy_service.py`（天地图须用服务端 UA `CGDA-Backend/1.0`；街道=`tianditu-vec`+`tianditu-cva` overlay） | `Env/Python312/python.exe -m pytest Test/backend/test_unified_tile_service.py Test/backend/test_api_keys_basemap.py -q`；联调抽样 `GET /unified-tiles/tianditu-vec/{z}/{x}/{y}` 与 `…/tianditu-cva/…` 应 200 |
+| Nginx 网关 / 反馈页 | `Code/infra/gateway/`（`nginx.conf` 裸机 / `nginx.hmr.conf` / `nginx.prod.conf` 交付态；静态树 `maintenance/html/` 含 `feedback/` 用户反馈页与 `console.html` 工程师台）、`app/api/routers/feedback_router.py` | 先 `launch.py start gateway`（交付态 `start --mode prod`），再 `Env/Python312/python.exe Test/standalone/gateway_smoke.py`（17 项：反馈页与 SPA 隔离、缺失 hashed 资源真 404、安全头、匿名提交链路；`--base` 可指远程、`--json` 机器可读）。改 nginx 配置后**用 `diff --strip-trailing-cr` 比对**裸机版与 prod 版 |
 | 栅格导入 / CRS | `app/api/routers/import_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_import_raster_crs.py Test/backend/test_crs_detector.py -q` |
 | Open-Meteo 双源 | `app/weatherengine/providers/`、`Code/infra/data-sync/.env.example` | `Env/Python312/python.exe -m pytest Test/backend/test_open_meteo_dual_providers.py Test/backend/test_open_meteo_performance.py -q`；本地：`python launch.py sync`（`visibility` 需 `gfs_global`） |
 | overlay 本地图 | `overlay_registry.py`、`Tools/audit_overlay_assets.py` | `python Tools/audit_overlay_assets.py` |

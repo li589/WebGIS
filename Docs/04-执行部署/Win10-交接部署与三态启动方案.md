@@ -36,20 +36,21 @@ start.bat / start.sh          ← 入口包装（切到 Env/Python312 后调 lau
                                 └─ launch/constants.py         路径、端口、7 队列定义
 ```
 
-### 1.2 CLI 表面（10 个子命令）
+### 1.2 CLI 表面（11 个子命令）
 
 | 子命令 | 作用 | 备注 |
 |---|---|---|
-| `start` | 启动服务（默认 `component=all`、`mode=bare`） | 无子命令时等价于 `start` |
-| `stop` | 停止全部；`stop gateway` 仅停网关 | 不删缓存、不 flush |
-| `status` | 服务状态（Docker / FastAPI / 前端 / Gateway / Worker PID / volume） | |
+| `start` | 启动服务（默认 `component=all`、`--mode bare`） | 无子命令时等价于 `start` |
+| `stop` | 停止全部；`stop gateway` 仅停网关 | 不删缓存、不 flush；**会同时清理交付态 project `cgda`** |
+| `status` | 服务状态（Docker / FastAPI / 前端 / Gateway / Worker PID / volume / **交付态容器**） | |
 | `reload` | 配置热重载，当前仅 `gateway`（`nginx -t` + `-s reload`，不重建容器） | |
-| `restart` | 重启；`--rebuild-frontend` 可强制 rebuild dist | 默认按组件矩阵 clean |
-| `logs` | 日志，`-n N` 指定行数 | |
+| `restart` | 重启；`--rebuild-frontend` 可强制 rebuild dist；`--mode prod` 走镜像重建 | 默认按组件矩阵 clean |
+| `logs` | 日志，`-n N` 指定行数（宿主进程日志） | 容器日志用 `deploy logs` |
 | `flush` | 清 Redis DB + 天气文件缓存 | **高风险**，start/restart 永不自动执行 |
 | `clean-cache` | 清 `__pycache__` / `*.pyc` / Vite `.vite` | 不碰 Redis |
 | `reset-db` | 清空 `workflow_state`，自动快照 + 重 seed | 有 `--yes` / `--dry-run` 语义 |
-| `sync` | 数据面一次性同步（`data-sync` 栈，默认 `open-meteo-sync`） | |
+| `sync` | 数据面一次性同步（`data-sync` 栈，默认 `open-meteo-sync`） | **交付态必须在宿主执行**（见 §3.2.1-坑 1） |
+| `deploy` | **交付态（形态 B）容器栈**：`up` / `down` / `restart` / `build` / `ps` / `logs` / `config` | 新增，见 §4.1 |
 
 ### 1.3 组件矩阵（`start <component>`）
 
@@ -72,13 +73,16 @@ start.bat / start.sh          ← 入口包装（切到 Env/Python312 后调 lau
 
 ### 1.5 三态支持矩阵 ← **这就是你的问题的答案**
 
+> 状态更新（2026-09-16 第二轮）：表中原先标 ❌ 的**交付态已落地**（4 个新文件 + launcher 分派），
+> 相关文件与实测见 §3.2 / §4.4；下面的"缺口描述"保留作历史复盘。
+
 | 态 | 现状 | 实际入口 | 后端跑在哪 | 前端跑在哪 |
 |---|---|---|---|---|
-| **裸机态** | ✅ **已可用** | `start.bat` / `launch.py start` | 宿主进程（`Env/Python312`） | Gateway 容器服务静态 `dist`，`:5175` |
-| **开发态** | ✅ **已可用** | `launch.py start --vite` | 宿主进程（同上） | Gateway `:5175` + 宿主 Vite HMR `:5174` |
-| **交付态（全容器化）** | ❌ **完全缺失** | 无 | 无 | 无 |
+| **裸机态** | ✅ **已可用** | `start.bat` / `launch.py start` / `launch.py start --mode bare` | 宿主进程（`Env/Python312`） | Gateway 容器服务静态 `dist`，`:5175` |
+| **开发态** | ✅ **已可用** | `launch.py start --vite` / `launch.py start --mode dev` | 宿主进程（同上） | Gateway `:5175` + 宿主 Vite HMR `:5174` |
+| **交付态（全容器化）** | ✅ **已落地** | `launch.py deploy up` / `launch.py start --mode prod` | 容器 `cgda-backend`（一镜像三角色） | 容器 `cgda-web`（静态 `dist` + 反代） |
 
-**结论：当前只支持两态。** 交付态不是"配置没开"，而是**代码不存在**：
+**原始结论（仅两态时的盘点，保留备查）**：交付态曾不是"配置没开"，而是**代码不存在**：
 
 - 全仓**没有任何 Dockerfile**（`find Code -iname "Dockerfile*"` 为空）；
 - `launch/docker_manager.py` 只负责拉起 Redis/MinIO/Open-Meteo 三个基础设施容器，**没有**构建镜像、拉起后端容器的能力；
@@ -86,17 +90,21 @@ start.bat / start.sh          ← 入口包装（切到 Env/Python312 后调 lau
 - 网关 `nginx.conf:20-23` 的 upstream 写死 `host.docker.internal:8000`（**假设后端正跑在宿主机上**），容器化后端时该地址失效；
 - `launch/cli.py` 没有 `--mode` 之类的模式开关。
 
-### 1.6 缺口清单（供指派）
+### 1.6 缺口清单（第一轮盘点 → 第二轮处置）
 
-| # | 缺口 | 影响 | 归属 |
+| # | 缺口 | 影响 | 处置 |
 |---|---|---|---|
-| **G-A** | 无 backend Dockerfile | 交付态无法构建 | §3.1 |
-| **G-B** | 无 web（前端）Dockerfile | 交付态前端仍是宿主机 `dist` 目录 | §3.1 |
-| **G-C** | 无 `compose.prod.yml` 生产编排 | 后端/Worker/Beat 无法容器化编排 | §3.2 |
-| **G-D** | 网关 upstream 写死 `host.docker.internal:8000` | 容器化后 API 反代断开 | §3.3 |
-| **G-E** | launcher 无 `--mode prod` 入口与分派 | 三态无法用一个入口切换 | §4 |
-| **G-F** | **`source_uri_map.json` 未被 `.gitignore` 覆盖** | 目标机创建真实机构 URI 后**会被误提交**（内含实验室盘符路径） | §6-D，**交接前必修** |
-| **G-G** | `deployment.config.json` 真源**当前不存在**（仅有 `.bak.1`，内容为 `data_root: I:\test`） | 目标机沿用现状只能靠 `.env`；若配了该文件则须保证格式合法，否则 fail-closed 拒启 | §6-D |
+| **G-A** | 无 backend Dockerfile | 交付态无法构建 | ✅ 已建 `Code/backend/Dockerfile`（`docker build --check` 无告警） |
+| **G-B** | 无 web（前端）Dockerfile | 交付态前端仍是宿主机 `dist` 目录 | ✅ 已建 `Code/infra/gateway/Dockerfile.web`（node build → nginx 运行，两阶段） |
+| **G-C** | 无 `compose.prod.yml` 生产编排 | 后端/Worker/Beat 无法容器化编排 | ✅ 已建 `Code/backend/compose.prod.yml`（13 服务，`docker compose config` 通过） |
+| **G-D** | 网关 upstream 写死 `host.docker.internal:8000` | 容器化后 API 反代断开 | ✅ 已建 `Code/infra/gateway/nginx.prod.conf`（`server backend:8000`；`nginx -t` 通过） |
+| **G-E** | launcher 无 `--mode prod` 入口与分派 | 三态无法用一个入口切换 | ✅ 已加 `--mode bare\|dev\|prod` + `deploy` 子命令（§4.4） |
+| **G-F** | **`source_uri_map.json` 未被 `.gitignore` 覆盖** | 目标机创建真实机构 URI 后**会被误提交**（内含实验室盘符路径） | ✅ 已修：`.gitignore:158` 增加 `Code/backend/source_uri_map.json`（`.example.json` 仍入库） |
+| **G-G** | `deployment.config.json` 真源**当前不存在**（仅有 `.bak.1`，内容为 `data_root: I:\test`） | 目标机沿用现状只能靠 `.env`；若配了该文件则须保证格式合法，否则 fail-closed 拒启 | ⚠️ 未变，但容器化后有**新陷阱**（见 §3.2.1-坑 3） |
+| **G-H** | `Code/frontend/public/data/boundaries/*` 的 89 MB 中，**源 SHP 与解包目录未入库**（`.gitignore:91-95`），仅两个生成好的 GeoJSON（26 MB）入库 | 新机 `npm run build` 时 `public/` 缺源文件——但**构建只需要 GeoJSON**，故不影响 Web 镜像与本地构建 | ✅ 非阻塞：已在 `.dockerignore` 排除 `ne_*.zip` / `admin_0` / `admin_1`，只把 GeoJSON 送进构建上下文 |
+| **G-I** | 容器化后 Beat 的 Open-Meteo 自动同步**必然失败**（`subprocess` 调 `docker compose`，容器内无 CLI/socket） | Beat 每 6 小时刷错误日志；天气库不再自动更新 | ✅ 已在 `compose.prod.yml` 显式 `BACKEND_OPEN_METEO_SYNC_ENABLED=false`，改由宿主 `launch.py sync` 承担（§3.2.1-坑 1） |
+| **G-J** | 9 个容器共享同一日志目录，`logging.py` 会用**同一个** `backend.log` | 多进程抢 `RotatingFileHandler`，轮转时互相持句柄 → 日志丢失（该 bug 在裸机态已因 `CGDA_LOG_FILE_ROLE` 修过） | ✅ 已在 `compose.prod.yml` 为每个服务设唯一 `CGDA_LOG_FILE_ROLE`（§3.2.1-坑 2） |
+| **G-K** | 两处 Open-Meteo 探活仍写死 `provider_ids.OPEN_METEO_LOCAL_URL`（`weather_engine_settings.py:145`、`weather_router.py:82`）；**取数路径已可经 env 覆盖** | 容器内探活指向容器自身 → 可能**误报"本地源不可用"**，但实际取数正常 | ⚠️ **未修，已文档化**（手册 §12.10-R1）。处置二选一：接受误报并注明，或把常量改为 env 驱动（小改动） |
 
 ---
 
@@ -112,6 +120,12 @@ start.bat / start.sh          ← 入口包装（切到 Env/Python312 后调 lau
 
 **推荐路径**：裸机态先上（完成交接与验收）→ 期间按 §3/§4 补交付态 → 在目标机上按 §6-G 切换。
 两种形态**端口互斥**（都占 `5175`/`8000`/`16379`），不可同时运行（手册 §12.8）。
+
+> **第二轮更新（2026-09-16）**：交付态代码已补齐并通过静态校验（§3.2 / §4.4）。
+> 但**路径不变**：仍然建议裸机态先跑通验收，再切容器 —— 理由是首次镜像构建需要目标机
+> 能拉取 `python:3.12-slim-bookworm` / `node:22-bookworm-slim`（科学库层体积大），
+> 这一步在交付现场失败会把"交接完成"卡住，而在裸机态已经跑通的前提下它只是一个优化动作。
+> 若目标机网络受限，用手册 §12.6 的 `docker save` / `docker load` 离线分发绕过。
 
 ---
 
@@ -132,14 +146,64 @@ start.bat / start.sh          ← 入口包装（切到 Env/Python312 后调 lau
 依据 `Code/backend/start_fastapi.py:18-24`、`start_celery_worker.py:6-13` 把 `Code/` 插入 `sys.path`，
 以及 `app/core/config.py:42-44` 的 provider 根推导。**不要**把 backend 单独 COPY 到 `/app`。
 
-### 3.2 交接需新增的文件（尚未创建）
+### 3.2 交接需新增的文件（**已全部创建**，2026-09-16 第二轮）
 
-| 文件 | 作用 | 草案出处 |
+| 文件 | 作用 | 校验方式与结果 |
 |---|---|---|
-| `Code/backend/Dockerfile` | 后端镜像（含算法包、shared、spatialite/GDAL） | 手册 §12.3 |
-| `Code/infra/gateway/Dockerfile.web` | 前端构建 + nginx 运行 | 手册 §12.1 |
-| `Code/backend/compose.prod.yml` | fastapi / worker-* / beat 生产编排（project `cgda`） | 手册 §12.5 |
-| `Code/infra/gateway/nginx.prod.conf` | upstream 改指容器后端 | §3.3 |
+| `Code/backend/Dockerfile` | 后端镜像（`python:3.12-slim-bookworm` + spatialite/GDAL/eccodes/7z + 算法包 + shared） | `docker build --check` → **Check complete, no warnings found** |
+| `Code/infra/gateway/Dockerfile.web` | 前端构建（`node:22-bookworm-slim`）+ nginx 运行（`nginx:1.27-alpine`）两阶段 | `docker build --check` → **Check complete, no warnings found** |
+| `Code/backend/compose.prod.yml` | fastapi / worker-×7 / beat / gateway 应用编排（project `cgda`，与 `docker-compose.yml` 合并使用） | `docker compose config` → **EXIT=0**，13 服务全部解析成功 |
+| `Code/infra/gateway/nginx.prod.conf` | upstream 改指 `backend:8000`，其余路由与安全头与裸机版逐字一致 | `docker run nginx:1.27-alpine nginx -t` → **test is successful** |
+| `.dockerignore`（仓库根） | 两个自建镜像共用构建上下文；密钥/`.env`/`Env`/`Tools/reports`(1.6 GB)/前端源 SHP 全部排除 | `--check` 显示上下文忽略文件仅 2.3 kB |
+
+#### 3.2.1 实施中发现的**三个真问题**（不补会以"诡异故障"形式暴露）
+
+> 这三条都不是理论风险，而是读代码/跑校验时确认的**必然故障**，已在新文件中处理。
+
+**坑 1 — 交付态下 Beat 的 Open-Meteo 自动同步必然失败（新增缺口 G-I）**
+
+`app/services/open_meteo_sync_executor.py:316` 以 `cwd=settings.open_meteo_sync_compose_dir` 跑
+`docker compose`（`-p data-sync`）子进程。容器内既没有 docker CLI，也没有 `/var/run/docker.sock`，
+而 `BACKEND_OPEN_METEO_SYNC_ENABLED` 的**代码默认值是 `true`**（`config.py:344-346`）
+⇒ 交付态 Beat 会每 6 小时稳定报错一次，且天气库**不再自动更新**。
+
+处理：`compose.prod.yml` 显式设 `BACKEND_OPEN_METEO_SYNC_ENABLED: "false"`，
+数据面同步改在**宿主机**执行：
+
+```bash
+Env\Python312\python.exe launch.py sync          # 交付态运行期间照旧可用（走宿主 Docker）
+```
+
+若要恢复容器内自动同步，唯一正解是给 Beat 单独挂 docker socket（**不推荐**：等于把宿主 root 交出去）。
+
+**坑 2 — 9 个容器会抢同一个日志文件（新增缺口 G-J）**
+
+`app/core/logging.py:57-58` 用环境变量 `CGDA_LOG_FILE_ROLE` 决定文件名
+（`backend-<role>.log`，未设则退回 `backend.log`）；注释里写明这是为修
+"多进程共享 `RotatingFileHandler`，轮转瞬间互持旧句柄"的 Windows 实测 bug。
+
+`BACKEND_LOG_DIR` 默认派生自数据根（`<DATA_ROOT>/_runtime/logs`），交付态下**9 个容器共用同一个 bind mount**
+⇒ 不设 `CGDA_LOG_FILE_ROLE` 就退化成 9 进程抢一个 `backend.log`，正是那个 bug 的容器版。
+
+处理：`compose.prod.yml` 里 9 个服务**逐个**显式赋值（`fastapi` / `worker-<name>` / `beat`）。
+
+**坑 3 — 只读 compose 命令会被 fail-closed 插值挡住**
+
+`compose.prod.yml` 用 `${CGDA_TAG:?}` / `${CGDA_DATA_ROOT:?}` 做 fail-closed（防止挂错盘/拉错镜像），
+但 compose 的插值发生在**解析期**——连 `docker compose ps` / `logs` / `down` 都会因变量缺失而直接报错，
+表现为"`deploy down` 停不掉栈"。
+
+处理：launcher 侧区分动作——只读动作（`ps`/`logs`/`down`/`config`）用占位值放行
+（`docker_manager.readonly_prod_env()`），只有 `build`/`up`/`restart` 强制要求真实 `CGDA_TAG`/`CGDA_DATA_ROOT`。
+`compose.prod.yml` 本身**保持** fail-closed 不放宽。
+
+**另三个易踩点（已在文件内注释，此处列清单）**
+
+| 点 | 说明 |
+|---|---|
+| 卷名必须显式对齐 | `compose.prod.yml` 把 `redis-data` / `minio-data` 显式命名成裸机态的 `backend_redis-data` / `backend_minio-data`。否则换项目名（`-p cgda`）会**新建空卷**，看起来像"MinIO 产物与队列状态丢了" |
+| `deployment.config.json` 挂载陷阱 | 宿主上该文件**必须已存在**；不存在时 Docker 会建出一个**同名目录**再挂进去，`deployment_config.py:341` 的 `path.is_file()` 为假 → 视为未配置回退 `.env`（不拒启），但配置中心的 PUT 会写不进 |
+| `environment` 无法深合并 | YAML 合并键 `<<` 不深合并：服务级一旦出现 `environment:` 就**整体替换**锚点。故 9 个服务都重复写了 `<<: *backend-env`。**新增服务漏写这一行** ⇒ 该服务只剩 `CGDA_LOG_FILE_ROLE` 一个环境变量，表现为连不上 Redis/MinIO |
 
 ### 3.3 网关 upstream 切换（G-D 的具体做法）
 
@@ -168,7 +232,7 @@ upstream cgda_fastapi {
 
 ## 4. 三态统一进 launcher 的设计（补 G-E）
 
-### 4.1 目标 CLI 表面（向后兼容）
+### 4.1 目标 CLI 表面（向后兼容）——**已实现**
 
 ```bash
 # 裸机态（默认，等价于今天的 start）
@@ -176,14 +240,23 @@ Env\Python312\python.exe launch.py start
 Env\Python312\python.exe launch.py start --mode bare
 
 # 开发态（--vite 保留为同义词，不破坏既有习惯）
-Env\Python312\python.exe launch.py start --mode dev
+Env\Python312\python.exe launch.py start --mode dev      # 自动等价于 --vite
 Env\Python312\python.exe launch.py start --vite
 
 # 交付态
-Env\Python312\python.exe launch.py start --mode prod
-Env\Python312\python.exe launch.py deploy build     # 构建两个自建镜像
-Env\Python312\python.exe launch.py deploy up|down   # 起停交付态栈
-Env\Python312\python.exe launch.py deploy logs      # 容器日志
+Env\Python312\python.exe launch.py start --mode prod                 # 校验 → 构建 → 起栈
+Env\Python312\python.exe launch.py deploy config                     # 配置干跑校验
+Env\Python312\python.exe launch.py deploy build                      # 只构建两个自建镜像
+Env\Python312\python.exe launch.py deploy up [--no-build] [svc...]   # 起栈
+Env\Python312\python.exe launch.py deploy restart [--no-build]       # 重建 + force-recreate
+Env\Python312\python.exe launch.py deploy ps                         # 容器状态
+Env\Python312\python.exe launch.py deploy logs backend -n 200        # 跟随日志
+Env\Python312\python.exe launch.py deploy down                       # 停栈（保留卷）
+Env\Python312\python.exe launch.py deploy down --volumes             # 连卷删除（危险）
+
+# 交付态也能被通用命令覆盖
+Env\Python312\python.exe launch.py stop          # 已自动识别并清理 project cgda
+Env\Python312\python.exe launch.py status        # 已追加交付态容器行
 ```
 
 ### 4.2 `--mode` 语义表
@@ -194,7 +267,7 @@ Env\Python312\python.exe launch.py deploy logs      # 容器日志
 | `dev` | `backend` 栈 | **宿主进程** | Gateway 容器 + 宿主 Vite HMR `:5174` | `:5175` | 同上 + Node |
 | `prod` | `backend` 栈 + 应用容器 | **容器**（一镜像三角色） | `cgda-web` 容器 | `:5175` | 两镜像已构建 |
 
-### 4.3 兼容与冲突规则（务必遵守，否则破坏现有习惯）
+### 4.3 兼容与冲突规则（**已实现**）
 
 1. `--mode` **仅在 `component=all`（或不指定组件）时生效**；显式 `start fastapi` / `start worker:x`
    等**保持宿主进程语义不变**——那是排障入口，不应被模式改写。
@@ -202,17 +275,61 @@ Env\Python312\python.exe launch.py deploy logs      # 容器日志
 3. `--mode prod` 与 `--no-docker` 互斥（prod 本身就是容器栈）。
 4. `--mode prod` 时 `--mode` 隐含 `BACKEND_ENV=production`，因此**不得**开启热重载
    （`start_fastapi.py:32-40` 的生产守卫会强制关闭；详见手册 §12.9 坑 1）。
-5. 交付态与裸机态**不可同时运行**（端口冲突）；`start --mode prod` 应先做互斥检测并给出明确提示。
+5. 交付态与裸机态**不可同时运行**（端口冲突）；`start --mode prod` 先做互斥检测（探 `:8000` 与 `:5175`）
+   并给出明确提示。
+6. **参数校验先于副作用**：`--mode` 的合法性/互斥检查排在缓存清理、建目录之前 ——
+   参数写错时不应已经动过用户环境。
+7. **不给 `--mode` 时行为与历史完全一致**：`--vite` 仍表示开发态，其余仍是裸机态（默认 `bare`）。
 
-### 4.4 落地清单（最小改动，文件级）
+### 4.5 交付态必配变量（`CGDA_*` 命名空间）
 
-| 文件 | 改动 | 说明 |
+统一写进 **`Code/backend/.env`**（compose 会自动读取该文件做插值），命令行可用 `--tag` / `--data-root` 覆盖。
+采用 `CGDA_` 前缀是为与后端自身的 `BACKEND_*` 键隔离，避免同文件互相干扰。
+
+| 变量 | 必填 | 默认 | 说明 |
+|---|---|---|---|
+| `CGDA_TAG` | ✅ | — | 镜像 tag，建议 `git rev-parse --short HEAD`（launcher 会自动取当前 sha 填入提示） |
+| `CGDA_DATA_ROOT` | ✅ | — | 宿主地理数据根**绝对路径**；Windows 必须写 `D:/geo` 形式，`/d/geo` 会挂载失败 |
+| `CGDA_IMAGE_PREFIX` | — | `cgda` | 私有 registry 前缀，如 `harbor.lab/cgda` |
+| `CGDA_BACKEND_HOST_PORT` | — | `8000` | 后端仅绑回环的排障端口 |
+| `CGDA_GATEWAY_PORT` | — | `5175` | 网关对外端口 |
+| `CGDA_DEPLOYMENT_CONFIG` | — | `./deployment.config.json` | 宿主侧部署配置真源路径（**文件须已存在**，见 §3.2.1-坑 3） |
+| `CGDA_REDIS_VOLUME` | — | `backend_redis-data` | **勿改**，否则与裸机态不共享卷、数据看起来"丢了" |
+| `CGDA_MINIO_VOLUME` | — | `backend_minio-data` | 同上 |
+| `CGDA_STATE_VOLUME` | — | `cgda-backend-state` | backend/worker/beat 共享的 `.data`（含 beat 调度库） |
+
+### 4.5 落地清单（**已实施**，2026-09-16 第二轮）
+
+| 文件 | 实际改动 | 说明 |
 |---|---|---|
-| `launch/cli.py` | `_add_start_restart_args()` 增加 `--mode`（`choices=["bare","dev","prod"]`，默认 `bare`）；新增 `deploy` 子命令（`build`/`up`/`down`/`logs`） | 只加参数与子命令，不改既有参数 |
-| `launch/commands.py` | `cmd_start` 在 `component=="all"` 分支前置 mode 判定；新增 `_start_all_prod()` 与 `cmd_deploy()` | 既有 `_start_all()` 分支**不动** |
-| `launch/docker_manager.py` | 新增 prod 应用的 `up/down`（project `cgda`，文件 `Code/backend/compose.prod.yml`）；新增 `build_images()` | 复用既有 `hidden_kwargs()` 隐藏窗口 |
-| `launch/gateway_manager.py` | 增加 prod 剖面：用 `nginx.prod.conf` 与 `Dockerfile.web` 镜像 | 现有 static/hmr 两剖面不动 |
-| `launch/constants.py` | 新增 `MODE_*` 常量、prod compose 路径、`CGDA_TAG` 读取 | |
+| `launch/cli.py` | `_add_start_restart_args()` 增加 `--mode {bare,dev,prod}`（默认 `bare`）、`--tag`、`--data-root`、`--no-build`；新增 `deploy` 子命令（7 个动作）+ 分发表 + 帮助示例 | 既有 10 个参数一个没动，纯增量 |
+| `launch/commands.py` | 新增 `_resolve_mode()` / `_resolve_prod_env_or_fail()` / `_prod_host_conflict()` / `_print_prod_summary()` / `_start_all_prod()` / `cmd_deploy()`；`cmd_stop` 追加交付态清理；`cmd_status` 追加交付态容器行；`cmd_restart` 增加 prod 分支 | `_start_all()`（裸机）**一行未改** |
+| `launch/docker_manager.py` | 新增 `read_backend_env_file()` / `resolve_git_short_sha()` / `resolve_prod_env()` / `readonly_prod_env()` / `prod_stack_*()` / `build_prod_images()` / `prod_image_names()` / `prod_stack_service_states()` | 复用既有 `hidden_kwargs()` 隐藏窗口 |
+| `launch/constants.py` | 新增 `MODE_*` / `VALID_MODES` / `PROD_PROJECT` / `PROD_COMPOSE_FILE` / `INFRA_COMPOSE_FILE` / `PROD_APP_SERVICES` / `PROD_GATEWAY_CONTAINER` / `DEFAULT_IMAGE_PREFIX` | |
+| `launch/gateway_manager.py` | **未改**（与初版设计不同，见下） | 交付态网关由 `compose.prod.yml` 的 `gateway` 服务承载（镜像 `cgda-web`），无需在 `gateway_manager` 里加第三条剖面 |
+
+**与初版设计的两处偏差（都是主动收敛）**
+
+1. **`gateway_manager.py` 不动**：原计划在 gateway_manager 加 prod 剖面，但交付态网关与裸机网关的
+   容器名、compose 文件、镜像、网络全不同，硬塞进同一个管理器只会让三条剖面互相污染。
+   改为在 `compose.prod.yml` 里定义 `gateway` 服务（自带 build / ports / maintenance 挂载），
+   由 `prod_stack_*` 统一驱动 —— `gateway_manager.py` 保持"只管裸机态两剖面"的单一职责。
+2. **只读动作放宽插值**（原设计未覆盖）：`deploy ps/logs/down/config` 会在缺 `CGDA_TAG` 时被
+   compose 的 fail-closed 插值挡住，故新增 `readonly_prod_env()` 只对只读动作补占位值；
+   `compose.prod.yml` 本身的 fail-closed **不放宽**。
+
+**实测记录（2026-09-16）**
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| 语法 | `py_compile` + `ruff check launch/` | 通过，`All checks passed!` |
+| 编排 | `docker compose -p cgda -f docker-compose.yml -f compose.prod.yml config` | `EXIT=0`，13 服务、卷名 `backend_redis-data`/`backend_minio-data`/`cgda-backend-state`、路径解析全部正确 |
+| 网关 | `docker run --rm --add-host backend:127.0.0.1 nginx:1.27-alpine nginx -t` | `test is successful` |
+| 镜像 | `docker build --check -f <两个 Dockerfile> .` | 两处均 `no warnings found` |
+| CLI | `deploy --help` / `--help` epilog | 新参数与新子命令均可见 |
+| 互斥 | `start --mode prod --vite` / `--no-docker` / `restart backend --mode prod` | 三处均按预期报错退出（码 2），且**先校验后动手**（不产生缓存清理等副作用） |
+| 缺变量 | `launch.py start --mode prod`（.env 无 `CGDA_*`） | 退出码 2，打印可照抄的两种修复方式（含自动取到的 `git rev-parse --short HEAD`） |
+| 只读放行 | `deploy ps` / `deploy config` / `deploy down`（均无 `CGDA_*`） | 全部正常执行，不再被插值挡住 |
 
 **设计原则**：三态是**入口层的分派**，不是重写。既有 `_start_all()`（裸机）与 HMR 剖面保持原样，
 新增分支只在 `mode` 命中时接管——这样即使新代码有 bug，裸机态也不受影响（可安全回退）。
@@ -290,19 +407,23 @@ Env\Python312\python.exe launch.py deploy logs      # 容器日志
 > 若目标机端口被占（WinNAT 保留段或他软件），需要改代码或直接改 compose——**交接前应先在那台机上
 > 跑一次端口体检**（§6-B）。
 
-### 5.5 建议新增的 env 键（`CGDA_*` 命名空间，与后端 `BACKEND_*` 隔离）
+### 5.5 env 键（`CGDA_*` 命名空间，与后端 `BACKEND_*` 隔离）——**已精选落地**
 
-| 键 | 默认 | 作用 | 落地文件 |
-|---|---|---|---|
-| `CGDA_MODE` | `bare` | 默认模式（等价 `--mode`） | launcher |
-| `CGDA_TAG` | git short sha | 镜像 tag | compose.prod.yml |
-| `CGDA_REGISTRY` | 空 | 镜像仓库前缀 | compose.prod.yml |
-| `CGDA_IMAGE_PREFIX` | `cgda` | 镜像名前缀 | compose.prod.yml |
-| `CGDA_BACKEND_PROJECT` | `backend` | 基础设施 compose project 名 | `docker_manager.py` |
-| `CGDA_GATEWAY_PROJECT` / `CGDA_GATEWAY_CONTAINER` | `gateway` / `cgda-gateway-nginx` | 网关栈标识 | `gateway_manager.py` |
-| `CGDA_GATEWAY_PORT` | `5175` | 网关宿主端口 | `gateway_manager.py` + compose |
-| `CGDA_DATA_MOUNT` | 空 | prod 数据盘 bind mount 源 | compose.prod.yml |
-| `CGDA_UID` | 10001 | 容器内运行 UID（Linux 属主对齐） | Dockerfile build-arg |
+第二轮实施时**只落地了真正需要的那几个**（完整表见 §4.4）；下表其余项是"暂不需要，理由已写明"，
+保留作后续扩展备忘，避免被误当成待办。
+
+| 键 | 状态 | 说明 |
+|---|---|---|
+| `CGDA_TAG` | ✅ **已落地** | 镜像 tag；`compose.prod.yml` 用它，launcher 侧校验并会给出当前 git sha 提示 |
+| `CGDA_DATA_ROOT` | ✅ **已落地** | 原计划的 `CGDA_DATA_MOUNT` 改名为此（与后端 `BACKEND_DATA_ROOT` 语义对齐，减少一次心智转换） |
+| `CGDA_IMAGE_PREFIX` | ✅ **已落地** | 镜像名前缀（兼作私有 registry 前缀，故不需要单独的 `CGDA_REGISTRY`） |
+| `CGDA_BACKEND_HOST_PORT` | ✅ **已落地** | 后端回环发布端口（新增，用于排障直连） |
+| `CGDA_GATEWAY_PORT` | ✅ **已落地** | 仅 `compose.prod.yml` 用；裸机网关端口仍硬编码在 `gateway_manager.py`（未动） |
+| `CGDA_DEPLOYMENT_CONFIG` | ✅ **已落地** | 部署配置真源宿主路径（新增，见 §3.2.1-坑 3） |
+| `CGDA_REDIS_VOLUME` / `CGDA_MINIO_VOLUME` / `CGDA_STATE_VOLUME` | ✅ **已落地** | 卷名兜底（新增）；**默认值刻意对齐裸机态卷名**，防止换 project 名后数据"看起来丢了" |
+| `CGDA_UID` | ⏳ **暂不需要** | 是 Dockerfile `--build-arg`，不是 env 键；Linux 交付时用 `--build-arg CGDA_UID=$(id -u)` |
+| `CGDA_MODE` | ⏳ **暂不需要** | `--mode` 已有 CLI 默认值 `bare`；再加 env 默认会让"到底谁生效"变模糊，等有明确需求再说 |
+| `CGDA_BACKEND_PROJECT` / `CGDA_GATEWAY_PROJECT` | ⏳ **暂不需要** | 项目名目前硬编码（`backend` / `gateway` / `cgda`），改它要同步改 compose 卷名前缀，收益不成比例 |
 
 > 命名理由：launcher 自己的开关统一用 `CGDA_*`，后端进程读的仍走 `BACKEND_*`，
 > 避免"launcher 改了但后端没读到"的排查陷阱。
@@ -413,16 +534,47 @@ Env\Python312\python.exe launch.py status
 
 ### 阶段 G —— 后续切交付态
 
-补齐 G-A…G-E 后，在目标机执行：
+**G-A…G-J 已在源机补齐**（§3.2 / §1.6），目标机上只需按下面顺序切：
 
 ```bash
-docker build -f Code/backend/Dockerfile -t cgda-backend:$(git rev-parse --short HEAD) .
-docker build -f Code/infra/gateway/Dockerfile.web -t cgda-web:$(git rev-parse --short HEAD) .
-Env\Python312\python.exe launch.py stop          # 先停裸机态（端口互斥）
-Env\Python312\python.exe launch.py start --mode prod
+# 0) 前置：把 CGDA_TAG / CGDA_DATA_ROOT 写进 Code/backend/.env（见 §4.4）
+set CGDA_TAG=b3d0a579
+set CGDA_DATA_ROOT=D:/geo
+
+# 1) 配置干跑校验（不拉镜像、不落盘，最便宜的一步）
+Env\Python312\python.exe launch.py deploy config
+
+# 2) 构建两个自建镜像（首次耗时主要在科学库层）
+Env\Python312\python.exe launch.py deploy build
+
+# 3) 先停裸机态（端口互斥：8000 / 5175）
+Env\Python312\python.exe launch.py stop
+
+# 4) 起交付态栈（--no-build 复用刚构建好的镜像）
+Env\Python312\python.exe launch.py deploy up --no-build
+
+# 5) 验收
+Env\Python312\python.exe launch.py deploy ps
+curl -I http://localhost:5175/          # 期望 200 + Cache-Control: no-store
+Env\Python312\python.exe launch.py deploy logs backend -n 100   # 看 /health 与启动日志
 ```
 
-切换前必须处理 §3.3 的 upstream 改动，并确认 `BACKEND_ENV=production` 下不开热重载（手册 §12.9）。
+**两个替换掉旧步骤的变化**
+
+- 不再需要手敲 `docker build ...`：`deploy build` / `deploy up` 会走 `-p cgda -f docker-compose.yml -f compose.prod.yml`
+  的合并编排，构建上下文与 tag 都从 `Code/backend/.env` 取。
+- 不再需要手工处理 §3.3 的 upstream：`nginx.prod.conf` 已经是 `server backend:8000`，
+  由 `Dockerfile.web` 打进镜像。**切回裸机态时也用不着改回**——两份配置各管一态（§3.3）。
+
+**数据面同步**：交付态下 Beat 的自动同步已关（§3.2.1-坑 1），需要更新天气库时在**宿主**执行
+`Env\Python312\python.exe launch.py sync`。
+
+**切回裸机态（回滚）**：
+
+```bash
+Env\Python312\python.exe launch.py deploy down     # 保留卷
+start.bat                                          # 数据根未变，工作流状态连续
+```
 
 ---
 
@@ -453,6 +605,8 @@ Env\Python312\python.exe launch.py start --mode prod
 | U4 | 是否补建 `deployment.config.json`（现为空缺） | 配置真源单轨/双轨 | 建议先沿用 `.env` 单轨，避免引入新变量 |
 | U5 | 交接对象是谁、是否需要长期运维？ | §6-F 材料深度 | |
 | U6 | 是否要求目标机也能改代码（开发态）？ | 是否需要 Node + HMR | 若纯交付，可只装 Python |
+| U7 | 镜像怎么送到目标机：私有 registry 还是 `docker save` 离线包？ | 首次交付耗时与是否需网络 | 目标机能连 Docker Hub 就现场 `deploy build`；否则源机 build → `save` → 目标机 `load`（手册 §12.6） |
+| U8 | 交付态是否真要在这次交接中使用，还是先只跑裸机态？ | 是否需要在本轮就验证容器栈 | 建议本轮先裸机态验收；容器栈作为"已验证可切换"的备份路径（§2 第二轮更新） |
 
 ---
 
@@ -461,6 +615,7 @@ Env\Python312\python.exe launch.py start --mode prod
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-09-16 | v0.1 | 首版：启动脚本现状盘点（含三态支持矩阵与 7 项缺口）、裸机先行选型、交付态要点、三态统一进 launcher 设计、Docker 自定义清单、Win10 交接六阶段作业指引、风险与回滚 |
+| 2026-09-16 | v0.2 | **交付态落地**：新增缺口 G-H…G-J（源 SHP 未入库 / Beat 同步必失败 / 9 容器抢日志）；§3.2 五个新文件全部创建并记录校验方式；新增 §3.2.1「三个真问题」+「另三个易踩点」；§4.1/§4.3/§4.5 由设计改为已实现（含两处主动偏差：不动 `gateway_manager.py`、只读动作放宽插值）；新增 §4.4 `CGDA_*` 变量表；§5.5 由"建议"收敛为"已精选落地/暂不需要"；§6-G 重写为可直接照抄的切换步骤；§7 补 4 条容器化风险；§8 补 U7/U8 |
 
 ---
 

@@ -29,12 +29,19 @@ from launch.constants import (
     BACKEND_DIR,
     DATA_SYNC_DIR,
     DEFAULT_FRONTEND_PORT,
+    DEFAULT_MODE,
     FRONTEND_DIR,
     IS_WINDOWS,
     LOG_DIR,
+    MODE_DEV,
+    MODE_PROD,
     PID_FILE,
+    PROD_APP_SERVICES,
+    PROD_GATEWAY_CONTAINER,
+    PROD_PROJECT,
     SCRIPT_DIR,
     SNAPSHOT_ROOT,
+    VALID_MODES,
     VALID_WORKER_NAMES,
     VITE_BEHIND_GATEWAY_PORT,
     WEATHER_CACHE_DIR,
@@ -46,8 +53,24 @@ from launch.constants import (
 )
 from launch.debug_utils import get_log_files, parse_log_timestamp, print_debug_info
 from launch.docker_manager import (
+    _windows_docker_hint,
+    build_prod_images,
     docker_available,
+    prod_compose_files_present,
+    prod_data_root_host_path,
+    prod_image_names,
+    prod_stack_config_check,
+    prod_stack_down,
+    prod_stack_logs,
+    prod_stack_ps,
+    prod_stack_restart,
+    prod_stack_running,
+    prod_stack_service_states,
+    prod_stack_up,
+    readonly_prod_env,
     redis_running,
+    resolve_git_short_sha,
+    resolve_prod_env,
     start_docker_infra,
     stop_docker_infra,
     wait_for_minio,
@@ -126,11 +149,33 @@ def cmd_start(args: argparse.Namespace) -> int:
     if getattr(args, "frontend_only", False) and component == "all":
         component = "frontend"
 
+    # 三态解析（bare / dev / prod）先于任何副作用（缓存清理/建目录）：
+    # 参数非法时不应已经动过用户环境。只有全量启动才区分形态，
+    # 单组件命令语义保持不变，避免把历史脚本与肌肉记忆带偏。
+    mode = _resolve_mode(args)
+    if mode is None:
+        return 2
+    if mode == MODE_PROD and component != "all":
+        log.error(
+            "Launcher",
+            f"--mode prod 只能用于全量启动（start all）；收到组件: {component}",
+        )
+        log.info(
+            "Launcher",
+            "  交付态请用: launch.py deploy up    或    launch.py start --mode prod",
+        )
+        return 2
+
     if not getattr(args, "_cache_prepare_done", False):
         apply_prepare_from_args(args, component)
         args._cache_prepare_done = True
 
     ensure_project_initialized()
+
+    if mode == MODE_PROD:
+        # 交付态源码在镜像内，catalog codegen 属于宿主构建期步骤，不在这里跑。
+        return _start_all_prod(args)
+
     _regenerate_catalog_seeds()
 
     if args.debug:
@@ -251,6 +296,283 @@ def cmd_start(args: argparse.Namespace) -> int:
         "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend, gateway, backend",
     )
     return 1
+
+
+# ─── 三态与交付态（形态 B）───────────────────────────────────────────────────
+# 只读 deploy 动作：不构建、不起栈、不落盘，允许在缺 CGDA_* 变量时用占位值放行。
+_READONLY_DEPLOY_ACTIONS = frozenset({"ps", "logs", "down", "config"})
+
+
+def _resolve_mode(args: argparse.Namespace) -> str | None:
+    """解析 ``--mode``，并完成兼容与互斥校验。
+
+    兼容规则（保证历史命令行行为不变）：
+      · 不给 ``--mode``：``--vite`` 仍表示开发态，其余 = 裸机态（历史上唯一形态）。
+      · ``--mode dev``：等价于 ``--vite``（自动补齐，便于只用一种心智模型）。
+      · ``--mode prod``：与 ``--vite`` / ``--no-docker`` 互斥。
+
+    返回 None 表示校验失败（错误已打印），调用方应返回退出码 2。
+    """
+    raw = (getattr(args, "mode", None) or "").strip().lower()
+    if not raw:
+        return MODE_DEV if getattr(args, "vite", False) else DEFAULT_MODE
+    if raw not in VALID_MODES:
+        log.error("Launcher", f"未知 --mode: {raw}（可选: {'/'.join(VALID_MODES)}）")
+        return None
+    if raw == MODE_DEV:
+        args.vite = True
+    if raw == MODE_PROD:
+        if getattr(args, "vite", False):
+            log.error(
+                "Launcher",
+                "--mode prod 与 --vite 互斥：交付态用镜像内已构建的静态 dist，无 HMR",
+            )
+            return None
+        if getattr(args, "no_docker", False):
+            log.error(
+                "Launcher",
+                "--mode prod 不能与 --no-docker 同用：交付态本身就是容器栈",
+            )
+            return None
+    return raw
+
+
+def _resolve_prod_env_or_fail(
+    args: argparse.Namespace, *, placeholders: bool = False
+) -> dict[str, str] | None:
+    """取交付态 compose 环境；缺必填项时打印可照抄的修复指引并返回 None。
+
+    ``placeholders=True``（只读动作）用占位值补齐，避免 ``deploy ps`` /
+    ``deploy down`` 这类命令被 compose 的 fail-closed 插值挡住。
+    """
+    env, missing = resolve_prod_env(
+        tag=getattr(args, "tag", None),
+        data_root=getattr(args, "data_root", None),
+    )
+    if not missing:
+        return env
+    if placeholders:
+        return readonly_prod_env()
+    log.error("Launcher", f"交付态缺少必填变量: {', '.join(missing)}")
+    log.info("Launcher", f"  方式一：写入 {BACKEND_DIR / '.env'}")
+    log.info("Launcher", f"    CGDA_TAG={resolve_git_short_sha()}")
+    log.info("Launcher", "    CGDA_DATA_ROOT=D:/geo      # Windows 用盘符形式，勿写 /d/geo")
+    log.info(
+        "Launcher",
+        "  方式二：命令行传入  launch.py deploy up --tag <sha> --data-root D:/geo",
+    )
+    return None
+
+
+def _prod_host_conflict(mode_label: str) -> str | None:
+    """交付态与自己/裸机态的端口冲突探测（返回冲突描述，无冲突返回 None）。"""
+    if prod_stack_running():
+        # 同形态重复启动是幂等的（up -d），不算冲突。
+        return None
+    if port_listening("127.0.0.1", BACKEND_API_PORT):
+        return (
+            f"端口 {BACKEND_API_PORT} 已被占用（疑似{mode_label} FastAPI 在运行）。"
+            "裸机与交付态互斥，请先 stop.bat / launch.py stop"
+        )
+    if port_listening("127.0.0.1", DEFAULT_FRONTEND_PORT):
+        return (
+            f"端口 {DEFAULT_FRONTEND_PORT} 已被占用（疑似{mode_label} Nginx Gateway 在运行）。"
+            "请先 stop.bat / launch.py stop"
+        )
+    return None
+
+
+def _print_prod_summary(env: dict[str, str]) -> None:
+    backend_img, web_img = prod_image_names(env)
+    log.banner("交付态启动完成（全量容器化）")
+    log.ok("Docker", "容器栈已就绪:")
+    log.info(
+        "Launcher",
+        f"  Frontend:  http://localhost:{DEFAULT_FRONTEND_PORT}"
+        f"  [{PROD_GATEWAY_CONTAINER}]",
+    )
+    log.info("Launcher", f"  FastAPI:   http://127.0.0.1:{BACKEND_API_PORT}（仅回环，排障直连）")
+    log.info("Launcher", f"  API Docs:  http://localhost:{DEFAULT_FRONTEND_PORT}/docs")
+    log.info("Launcher", f"  镜像:      {backend_img} / {web_img}")
+    log.info("Launcher", "  查看状态:  launch.py deploy ps    （或 docker compose -p cgda ps）")
+    log.info("Launcher", "  查看日志:  launch.py deploy logs backend")
+    log.info("Launcher", "  停止:      launch.py deploy down   （保留卷）")
+    log.info(
+        "Launcher",
+        "  提示: 容器带 restart: unless-stopped，无需监控循环；改码需重建镜像",
+    )
+
+
+def _start_all_prod(args: argparse.Namespace) -> int:
+    """交付态（形态 B）：校验 → 构建镜像 → 拉起容器栈（不进入监控循环）。"""
+    log.banner("CGDA 交付态启动（全量容器化 / --mode prod）")
+
+    if not prod_compose_files_present():
+        log.error("Launcher", f"交付态编排文件缺失（应在 {BACKEND_DIR}）:")
+        log.error("Launcher", "  docker-compose.yml（基础设施）+ compose.prod.yml（应用层）")
+        return 1
+
+    if not docker_available():
+        hint = _windows_docker_hint() if IS_WINDOWS else "请先启动 Docker Engine"
+        log.error("Docker", f"Docker 未运行或未安装，{hint}")
+        return 1
+
+    env = _resolve_prod_env_or_fail(args)
+    if env is None:
+        return 2
+
+    root = prod_data_root_host_path(env)
+    if root is None or not root.exists():
+        log.error("Launcher", f"宿主数据根不存在: {root}")
+        log.info(
+            "Launcher",
+            "  容器化前请先建好数据目录（Docker 会建目录，但不会替你准备数据）",
+        )
+        return 2
+
+    conflict = _prod_host_conflict("裸机")
+    if conflict:
+        log.error("Launcher", conflict)
+        return 1
+
+    ok, err = prod_stack_config_check(env=env)
+    if not ok:
+        log.error("Docker", f"compose 配置校验失败:\n{err}")
+        log.info("Launcher", "  排查：Code/backend/.env 中 CGDA_* 是否齐全、数据根路径是否合法")
+        return 1
+
+    if not getattr(args, "no_build", False):
+        if not build_prod_images(env=env):
+            return 1
+    else:
+        log.warn("Launcher", "--no-build：跳过镜像构建，直接使用已有 ${CGDA_TAG} 镜像")
+
+    if not prod_stack_up(env=env):
+        return 1
+
+    # 端口可达性复核（容器健康检查之外的最终确认）
+    if not port_listening("127.0.0.1", DEFAULT_FRONTEND_PORT):
+        log.warn(
+            "Launcher",
+            f"网关 :{DEFAULT_FRONTEND_PORT} 暂未监听（容器可能仍在启动）。"
+            "稍后用 launch.py deploy ps 复核",
+        )
+    _print_prod_summary(env)
+    return 0
+
+
+def cmd_deploy(args: argparse.Namespace) -> int:
+    """交付态（形态 B）运维入口：build / up / down / restart / ps / logs / config。
+
+    与 ``start --mode prod`` 的分工：
+      · ``deploy build`` 只构建镜像，不起栈（离线分发/预构建场景）
+      · ``deploy up``    = 校验 + 构建（可 --no-build）+ 起栈
+      · 其余动作是日常运维（看状态、跟随日志、停栈）
+    """
+    action = (getattr(args, "deploy_action", None) or "up").strip().lower()
+
+    if not prod_compose_files_present():
+        log.error("Launcher", f"交付态编排文件缺失（应在 {BACKEND_DIR}）")
+        return 1
+    if not docker_available():
+        hint = _windows_docker_hint() if IS_WINDOWS else "请先启动 Docker Engine"
+        log.error("Docker", f"Docker 未运行或未安装，{hint}")
+        return 1
+
+    # 只读动作（ps/logs/down/config）不参与构建/起栈，用占位值放行 compose 插值；
+    # 会真正落盘或拉镜像的动作（build/up/restart）仍强制要求真实 CGDA_TAG/DATA_ROOT。
+    env = _resolve_prod_env_or_fail(
+        args, placeholders=action in _READONLY_DEPLOY_ACTIONS
+    )
+    if env is None:
+        return 2
+
+    if action == "ps":
+        text = prod_stack_ps(env=env)
+        log.banner("交付态容器状态")
+        if text:
+            for line in text.splitlines():
+                log.info("Status", f"  {line}")
+        else:
+            log.warn("Status", "交付态栈未在运行（或项目 cgda 不存在）")
+        return 0
+
+    if action == "logs":
+        # 注意：不要用 `log` 作局部变量名——会遮蔽模块级 logger 对象。
+        extra_services = list(getattr(args, "services", None) or [])
+        target = extra_services[0] if extra_services else None
+        prod_stack_logs(
+            target, tail=int(getattr(args, "lines", 80) or 80), env=env
+        )
+        return 0
+
+    if action == "config":
+        ok, err = prod_stack_config_check(env=env)
+        if ok:
+            log.ok("Docker", "compose 配置校验通过（docker compose config）")
+            return 0
+        log.error("Docker", f"compose 配置校验失败:\n{err}")
+        return 1
+
+    if action == "build":
+        return 0 if build_prod_images(env=env) else 1
+
+    if action == "down":
+        remove_volumes = bool(getattr(args, "volumes", False))
+        prod_stack_down(remove_volumes=remove_volumes, env=env)
+        if remove_volumes:
+            log.warn(
+                "Docker",
+                "已同时移除命名卷（-v）：MinIO 产物 / Redis 队列 / beat 调度库均已删除",
+            )
+        return 0
+
+    if action == "restart":
+        conflict = _prod_host_conflict("裸机")
+        if conflict:
+            log.error("Launcher", conflict)
+            return 1
+        if not prod_stack_restart(env=env, build=not getattr(args, "no_build", False)):
+            return 1
+        _print_prod_summary(env)
+        return 0
+
+    if action == "up":
+        root = prod_data_root_host_path(env)
+        if root is None or not root.exists():
+            log.error("Launcher", f"宿主数据根不存在: {root}")
+            return 2
+        conflict = _prod_host_conflict("裸机")
+        if conflict:
+            log.error("Launcher", conflict)
+            return 1
+        ok, err = prod_stack_config_check(env=env)
+        if not ok:
+            log.error("Docker", f"compose 配置校验失败:\n{err}")
+            return 1
+        # 兼容裸机态写法 worker:weather → compose 服务名 worker-weather
+        services = tuple(
+            s.replace("worker:", "worker-", 1)
+            for s in (getattr(args, "services", None) or ())
+        )
+        unknown = [s for s in services if s not in PROD_APP_SERVICES]
+        if unknown:
+            log.error("Launcher", f"未知交付态服务: {', '.join(unknown)}")
+            log.info("Launcher", f"  可选: {', '.join(PROD_APP_SERVICES)}")
+            return 2
+        if not prod_stack_up(
+            env=env, services=services, build=not getattr(args, "no_build", False)
+        ):
+            return 1
+        _print_prod_summary(env)
+        return 0
+
+    log.error("Launcher", f"未知 deploy 动作: {action}")
+    log.info(
+        "Launcher",
+        "  可用: up / down / restart / build / ps / logs / config",
+    )
+    return 2
 
 
 def _start_all(args: argparse.Namespace) -> int:
@@ -433,6 +755,12 @@ def cmd_stop(args: argparse.Namespace | None = None) -> int:
     )
 
     time.sleep(1)
+    # 交付态（-p cgda）与裸机态（-p backend / -p gateway）是两套 compose 项目，
+    # 各自的 down 不会互相清理；这里两条路径都走一遍，按存在性跳过。
+    # 顺序：先交付态（它占 5175 + 8000），再裸机网关与基础设施。
+    if prod_stack_running():
+        log.info("Stop", "检测到交付态容器栈（项目 cgda），一并停止...")
+        prod_stack_down()
     stop_gateway_infra()
     stop_docker_infra()
     log.ok("Stop", "所有服务已停止（未执行 flush/clean-cache；下次 start/restart 会按矩阵自动 clean）")
@@ -463,6 +791,16 @@ def cmd_status() -> int:
         state = r.stdout.strip() if r.returncode == 0 else "未运行"
         icon = "✓" if state == "running" else "✗"
         log.info("Status", f"  {icon} {label:14s} ({cid}): {state}")
+
+    # 交付态（形态 B）应用层：只在项目 cgda 存在时展示，避免裸机态刷一堆噪音。
+    prod_rows = prod_stack_service_states()
+    if prod_rows:
+        log.info("Status", f"交付态容器栈（项目 {PROD_PROJECT}）:")
+        for name, state in prod_rows:
+            icon = "✓" if state == "running" else "✗"
+            log.info("Status", f"  {icon} {name:18s}: {state}")
+    else:
+        log.info("Status", "  交付态容器栈（项目 cgda）: 未部署 / 未运行")
 
     import urllib.request
 
@@ -800,14 +1138,42 @@ def cmd_restart(args: argparse.Namespace) -> int:
     """重启 CGDA 服务（全部或指定组件）。
 
     ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Gateway / Vite。
+    ``--mode prod``：交付态重建镜像并 ``up -d --force-recreate``（不进入监控循环）。
     """
     component = getattr(args, "component", None) or "all"
+
+    # 形态校验先于任何副作用（与 cmd_start 同规则）：参数非法时不动用户环境。
+    mode = _resolve_mode(args)
+    if mode is None:
+        return 2
+    if mode == MODE_PROD and component != "all":
+        log.error("Launcher", f"--mode prod 只能用于全量重启；收到组件: {component}")
+        return 2
+
     was_hmr = False
     if component in ("gateway", "all"):
         was_hmr = gateway_hmr_active()
     if not getattr(args, "_cache_prepare_done", False):
         apply_prepare_from_args(args, component, was_gateway_hmr=was_hmr)
         args._cache_prepare_done = True
+
+    # 交付态重启：镜像不可变 ⇒ 必须「重建镜像 + force-recreate」才能让代码变更生效。
+    if mode == MODE_PROD:
+        log.banner("重启交付态（全量容器化）")
+        if not prod_compose_files_present() or not docker_available():
+            log.error("Launcher", "交付态编排文件缺失或 Docker 未就绪")
+            return 1
+        env = _resolve_prod_env_or_fail(args)
+        if env is None:
+            return 2
+        conflict = _prod_host_conflict("裸机")
+        if conflict:
+            log.error("Launcher", conflict)
+            return 1
+        if not prod_stack_restart(env=env, build=not getattr(args, "no_build", False)):
+            return 1
+        _print_prod_summary(env)
+        return 0
 
     if component == "backend":
         log.banner("重启 backend（FastAPI + Worker + Beat）")
