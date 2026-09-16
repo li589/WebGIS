@@ -52,7 +52,10 @@ def theme_client(tmp_path, monkeypatch):
     from app.services import theme_repository as tr_mod
     from app.services import user_repository as ur_mod
     from app.services import permission_repository as pr_mod
-    from app.services.theme_repository import ThemeRepository, reset_theme_repository_for_tests
+    from app.services.theme_repository import (
+        ThemeRepository,
+        reset_theme_repository_for_tests,
+    )
     from app.services.user_repository import UserRepository
     from app.services.permission_repository import (
         PermissionRepository,
@@ -172,7 +175,7 @@ def test_theme_acl_user_override_wins(theme_client: TestClient) -> None:
 
     users = get_user_repository()
     created = users.create_user(
-        username="std1", password="password123", role="standard", theme_id=primary.id
+        username="std1", password="Theme-Pw-9a7!", role="standard", theme_id=primary.id
     )
     uid = int(created["id"])
     perms = get_permission_repository()
@@ -194,7 +197,10 @@ def test_theme_acl_user_override_wins(theme_client: TestClient) -> None:
 
 
 def test_theme_whitelist_default(theme_client: TestClient) -> None:
-    from app.services.permission_repository import PermissionInput, get_permission_repository
+    from app.services.permission_repository import (
+        PermissionInput,
+        get_permission_repository,
+    )
     from app.services.theme_repository import get_theme_repository
     from app.services.user_repository import get_user_repository
 
@@ -218,7 +224,7 @@ def test_theme_whitelist_default(theme_client: TestClient) -> None:
     )
     users = get_user_repository()
     created = users.create_user(
-        username="std2", password="password123", role="standard", theme_id=demo.id
+        username="std2", password="Theme-Pw-3b1!", role="standard", theme_id=demo.id
     )
     uid = int(created["id"])
     perms = get_permission_repository()
@@ -284,12 +290,17 @@ def test_login_palette_infer_and_update(theme_client: TestClient) -> None:
     )
     assert bad.status_code == 422
 
+
 def test_user_theme_id_cannot_be_cleared(theme_client: TestClient) -> None:
     """Mandatory bind: PATCH theme_id=null is rejected; new users default to primary."""
     _admin_login(theme_client)
     created = theme_client.post(
         "/auth/users",
-        json={"username": "bound-user", "password": "password123", "role": "standard"},
+        json={
+            "username": "bound-user",
+            "password": "Bound-Pw-7c2!",
+            "role": "standard",
+        },
     )
     assert created.status_code == 201, created.text
     user = created.json()

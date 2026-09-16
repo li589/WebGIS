@@ -19,10 +19,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import require_admin, require_session, session_cookie_secure
-from app.api.error_codes import AUTH_ERROR, ApiError
-from app.services.credential_resolver import LOOPBACK_IPS
+from app.api.error_codes import AUTH_ERROR, RATE_LIMITED, ApiError
+from app.services.credential_resolver import is_loopback_host
 from app.core.config import settings
-from app.services import session_service
+from app.services import login_lockout, session_service
 from app.services.auth_bootstrap import (
     DEV_DEFAULT_ADMIN_PASSWORD,
     DEV_DEFAULT_ADMIN_USER,
@@ -263,7 +263,7 @@ def get_auth_config(request: Request) -> AuthConfigResponse:
     dev_prefill = None
     dev_write_key = None
     env = (settings.environment or "").lower()
-    loopback = _direct_client_host(request) in LOOPBACK_IPS
+    loopback = is_loopback_host(_direct_client_host(request))
     if env in {"development", "dev"} and settings.dev_auth_prefill and loopback:
         username = (settings.admin_username or "").strip() or DEV_DEFAULT_ADMIN_USER
         password = settings.admin_password or DEV_DEFAULT_ADMIN_PASSWORD
@@ -284,13 +284,32 @@ def login(body: LoginRequest, response: Response) -> UserPublic:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User login is disabled on this server.",
         )
+    # P2-2：账号维度失败锁定（先于口令校验，避免锁定态下仍执行 PBKDF2 慢哈希）。
+    # 对「不存在的账号」同样计数——否则「锁定=账号存在」会成为用户名枚举预言机。
+    locked, retry_after = login_lockout.lockout_status(body.username)
+    if locked:
+        minutes = max(1, -(-retry_after // 60))  # 向上取整到分钟
+        logger.warning(
+            "登录被账号锁定拦截 username=%s retry_after=%ss", body.username, retry_after
+        )
+        raise ApiError(
+            RATE_LIMITED,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"该账号因连续登录失败已被临时锁定，请 {minutes} 分钟后重试"
+                "（或联系管理员解锁）。"
+            ),
+            headers={"Retry-After": str(max(1, int(retry_after)))},
+        )
     user = get_user_repository().verify_credentials(body.username, body.password)
     if user is None:
+        login_lockout.record_failure(body.username)
         raise ApiError(
             AUTH_ERROR,
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
         )
+    login_lockout.clear_failures(body.username)
     token = session_service.create_session(
         user_id=int(user["id"]),
         username=str(user["username"]),
@@ -401,7 +420,37 @@ def update_user(
         or body.theme_id is not None
     ):
         session_service.revoke_sessions_for_user(user_id)
+    if body.password is not None:
+        # 口令已变更：账号失败锁定随之失效（否则会出现「口令改了但仍登不上」的困惑）
+        login_lockout.clear_failures(str(user.get("username") or ""))
     return _public_user(user)
+
+
+class UnlockResponse(BaseModel):
+    status: str
+    username: str
+
+
+@router.post("/users/{user_id}/unlock", response_model=UnlockResponse)
+def unlock_user(
+    user_id: int, admin: CredentialContext = Depends(require_admin)
+) -> UnlockResponse:
+    """清除该账号的登录失败锁定（P2-2 运维出口）。
+
+    账号锁定是「防爆破」而非「拒绝服务」手段：真实研究员输错口令被锁、
+    或遭遇「恶意连错把管理员锁死」的 DoS 时，管理员需要一条即时解锁路径。
+    """
+    user = get_user_repository().get_by_id(user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
+        )
+    username = str(user.get("username") or "")
+    login_lockout.clear_failures(username)
+    logger.info(
+        "管理员 %s 解锁账号 id=%s username=%s", admin.username, user_id, username
+    )
+    return UnlockResponse(status="unlocked", username=username)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -847,9 +896,27 @@ async def upload_theme_logo(
     _admin: CredentialContext = Depends(require_admin),
     file: UploadFile = File(...),
 ) -> ThemePublic:
-    from app.services.theme_repository import get_theme_repository
+    from app.services.theme_repository import (
+        _LOGO_MAX_BYTES,
+        get_theme_repository,
+    )
 
-    content = await file.read()
+    # 分块读取并设上限：``await file.read()`` 会把整个请求体读进内存（2 MiB 的校验
+    # 发生在读完之后），一个几百 MB 的上传就能把进程打爆。此处边读边判，超限即断。
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _LOGO_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Logo file too large (max {_LOGO_MAX_BYTES // 1024 // 1024} MiB).",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
     try:
         theme = get_theme_repository().save_logo(
             theme_id,
@@ -881,4 +948,15 @@ def get_theme_logo(theme_id: int) -> FileResponse:
         ".webp": "image/webp",
         ".gif": "image/gif",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media)
+    response = FileResponse(path, media_type=media)
+    if path.suffix.lower() == ".svg":
+        # SVG 是可在浏览器里执行脚本的文档。登录页以 <img> 引用时脚本本不执行，
+        # 但攻击者可直接导航到本 URL，在本源上下文中执行 SVG 内脚本（存储型 XSS）。
+        # 强制 CSP sandbox（囊括 opaque origin + 禁脚本），并禁止被嵌套。
+        # 不影响 <img> 的正常渲染。
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+    return response

@@ -89,7 +89,24 @@ python scripts/rotate_user_passwords.py list --probe cgda-dev-admin   # 期望 e
 ```
 
 轮换结果写入本地凭据文件 `Code/backend/.env.dev-accounts`（由 `.gitignore` 的 `.env.*`
-规则覆盖，不入库）。注意 `update_user(password=...)` **不吊销已签发会话**，不会踢出已登录浏览器。
+规则覆盖，不入库）。
+
+**必须同时吊销会话**：`update_user(password=...)` 只改 `password_hash`，**不会**让已签发
+会话失效 —— 鉴权只看用户是否存在与 `enabled`（`credential_resolver._resolve_session`
+→ `_live_user`），会话本身存于 Redis/SQLite。所以「只改口令不吊销会话」= 攻击者此前用
+泄漏口令建立的会话**依然有效**，属假修复。（API 层 `PATCH /auth/users/{id}` 会吊销，
+但直接改库不会。）脚本已默认处理：
+
+```bash
+# 轮换时自动吊销会话与 API token（--keep-sessions 可跳过）
+python scripts/rotate_user_passwords.py rotate --all --probe cgda-dev-admin
+
+# 若口令已改而漏了吊销，用此补救；复核会话已清空
+python scripts/rotate_user_passwords.py revoke-sessions --all
+```
+
+本机执行记录（2026-09-16）：轮换后复核发现 admin 名下仍有 **5 个未过期会话**（Redis，
+TTL≈24h），已用 `revoke-sessions --all` 清空。」
 
 **不采用「每次启动用 env 覆盖库中口令」的原因**：管理员若在界面上改过密码，重启会被
 `.env` 悄悄回滚，属于更危险的隐性行为。env 与运行期修改不应互相打架。
@@ -134,7 +151,48 @@ python scripts/rotate_user_passwords.py list --probe cgda-dev-admin   # 期望 e
    若维持直连，则后端是唯一防线，务必保证凭据强度（本次已轮换）。
 4. **备份提醒** —— 凭据轮换后，旧备份里的口令已失效；`I:` 数据根与 `.env` 需另行留存。
 
-## 8. 验证命令
+## 8. P2 加固落地清单（2026-09-16 鉴权评审后续）
+
+| 编号 | 问题 | 修复 | 位置 |
+| --- | --- | --- | --- |
+| P2-1 | 口令强度只在 API 层（Pydantic）校验，直接调仓储（脚本/迁移/其它入口）可绕过 | 策略下沉到 `passwords.validate_password()`，在 `create_user` / `update_user` 强制校验：≥8 位 + ≥2 类字符 + 不在弱口令黑名单 + 不含用户名 | `app/services/passwords.py`、`user_repository.py` |
+| P2-2 | 登录只按 **IP** 限流：换 IP 轮试不触发；且 `development/test` 整体旁路 → 本部署等于无登录限流 | 新增**账号维度**失败锁定：连续 N 次失败锁 M 分钟，默认全环境生效；管理员可解锁，改口令自动解锁 | `app/services/login_lockout.py`、`auth_router.login`、`POST /auth/users/{id}/unlock` |
+| P2-3 | SQLite 会话副本仅惰性删除 → 过期死行堆积（实测残留 8 月行） | 新增 `purge_expired_sessions()`：启动强制跑一次 + `create_session` 节流（1 小时）触发；补 `idx_sessions_expires` 索引 | `user_repository.py`、`session_service.py`、`main.py` |
+| P2-4 | `LOOPBACK_IPS` 里的 `"localhost"` **永不命中**（`request.client.host` 恒为 IP 字面量），是"看起来保护了"；且未覆盖 `::ffff:127.0.0.1` | 改为 `is_loopback_host()`：支持主机名、`::ffff:` 映射、`127.0.0.0/8` | `credential_resolver.py`、`auth_router.get_auth_config` |
+| P2-5 | `BACKEND_API_KEY_ROLE` 非 `admin` 的值被**静默降级为 standard**（写错的 `operator`、本意降权的 `demo` 都会变成 standard） | 白名单 `admin|standard|demo`；未知值 ERROR 日志 + 回落 standard；`admin` 启动时 WARNING 点明影响面 | `credential_resolver.py`、`effective_config.assert_service_key_role_policy()` |
+| 主题-1 | 主题 logo 的 SVG 以 `image/svg+xml` 直出，登录页公开渲染 → 存储型 XSS | 双层：上传时拒绝含脚本载体的 SVG（best-effort）+ 下发时强制 `CSP: sandbox`（主防线） | `theme_repository.assert_svg_safe()`、`auth_router.get_theme_logo` |
+| 主题-2 | `await file.read()` 无界读入内存，2 MiB 校验在读完之后 → 大文件可打爆进程 | 分块读取（64 KiB）+ 边读边判，超限即 413 | `auth_router.upload_theme_logo` |
+
+### 相关环境变量
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `BACKEND_PASSWORD_MIN_LENGTH` | `8` | 口令最短长度（P2-1） |
+| `BACKEND_LOGIN_LOCKOUT_ENABLED` | `1` | 账号失败锁定总开关；DoS 应急可置 `0` |
+| `BACKEND_LOGIN_LOCKOUT_THRESHOLD` | `5` | 连续失败多少次触发锁定 |
+| `BACKEND_LOGIN_LOCKOUT_MINUTES` | `15` | 锁定时长（分钟）；锁定期间继续失败会续满窗口 |
+| `BACKEND_API_KEY_ROLE` | `standard` | 服务密钥角色：`admin` / `standard` / `demo` |
+
+### 账号锁定的已知取舍（DoS vs 爆破）
+
+账号维度锁定**对所有用户名生效**（含不存在的账号），否则「锁定 = 账号存在」会变成
+**用户名枚举预言机**。代价：攻击者可连续输错把某个账号锁住，形成拒绝服务。
+缓解手段：
+
+1. 阈值 5 次 / 15 分钟足够宽容，正常误操作不会触发；
+2. 管理员可 `POST /auth/users/{id}/unlock` 即时解锁；
+3. 改口令会自动清零失败计数；
+4. 紧急情况可设 `BACKEND_LOGIN_LOCKOUT_ENABLED=0` 重启关闭。
+
+### 服务密钥绑成 admin 的影响面（P2-5）
+
+`BACKEND_API_KEY_ROLE=admin` 时，那把 **共享静态** 的 `X-API-Key` 拥有完整管理员权限：
+增删用户、改主题、改配置。它的使用**无法归因到具体的人**，且会散落在 `.env`、
+小程序本地配置、运维脚本里。仅在机器对机器确需管理员权限时才使用，并定期轮换
+`BACKEND_API_KEY`。本项目当前为 `standard`。
+
+## 9. 验证命令
+
 
 ```bash
 # 口令泄漏审计（exit 3 = 仍有账号接受该口令）

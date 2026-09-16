@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from app.core.config import settings
 from app.services._sqlite_pool import SQLiteConnectionPool
-from app.services.passwords import hash_password, verify_password
+from app.services.passwords import hash_password, validate_password, verify_password
 
 UserRole = Literal["admin", "standard", "demo"]
 VALID_ROLES: frozenset[str] = frozenset({"admin", "standard", "demo"})
@@ -75,6 +75,11 @@ class UserRepository:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)"
+            )
+            # P2-3：过期会话主动清理按 expires_at 扫描，需索引避免全表扫。
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_expires "
+                "ON sessions(expires_at)"
             )
             # Phase C：按角色并发控制——为 users 表增量加列（additive-only 迁移）。
             # 用 try/except 处理列已存在的情况（首次创建表时列已在 CREATE TABLE 中，
@@ -181,6 +186,8 @@ class UserRepository:
             raise ValueError("username is required")
         if role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role}")
+        # 强度校验放在仓储层：脚本/迁移等直接调用者同样受约束（不止 API 层 Pydantic）。
+        validate_password(password, username=name)
         from app.services.theme_repository import get_theme_repository
 
         theme_repo = get_theme_repository()
@@ -241,6 +248,9 @@ class UserRepository:
             return None
         if role is not None and role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role}")
+        if password is not None:
+            # 同 create_user：仓储层兜底，避免绕过 API 直接改库时设回弱口令。
+            validate_password(password, username=str(user.get("username") or ""))
         now = datetime.now(UTC).isoformat()
         fields: list[str] = ["updated_at=?"]
         params: list[Any] = [now]
@@ -365,6 +375,24 @@ class UserRepository:
         with self._pool.connection() as conn:
             conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
             conn.commit()
+
+    def purge_expired_sessions(self) -> int:
+        """主动删除已过期的 SQLite 会话行（P2-3）。
+
+        Redis 侧会话靠 TTL 自动淘汰，但 **会话的 SQLite 兜底副本此前仅惰性删除**
+        （只在恰好有人拿该 token 查库时才删掉）。后果：Redis 不可用期间创建的会话
+        行会永久堆积（实测库中残留 8 月的过期行），既占空间又让「按 user_id 吊销」
+        每次都扫到一堆死行。
+
+        ``expires_at`` 由 ``datetime.now(UTC).isoformat()`` 写入，格式固定
+        （``YYYY-MM-DDTHH:MM:SS.ffffff+00:00``），字符串比较即等价于时间比较。
+        返回删除行数。
+        """
+        cutoff = datetime.now(UTC).isoformat()
+        with self._pool.connection() as conn:
+            cur = conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (cutoff,))
+            conn.commit()
+        return int(cur.rowcount or 0)
 
 
 _repo: UserRepository | None = None

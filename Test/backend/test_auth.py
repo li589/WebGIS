@@ -231,7 +231,9 @@ def test_auth_config_dev_prefill(monkeypatch, tmp_path):
         environment="development",
         dev_auth_prefill=True,
         admin_username="admin",
-        admin_password="cgda-dev-admin",
+        # 必须满足口令策略（≥8 位 + ≥2 类字符 + 不在弱口令黑名单），否则
+        # bootstrap_auth() 会在建初始管理员时 fail-fast，create_app() 直接抛错。
+        admin_password="Dev-Prefill-Pw-9f2!",
         dev_default_api_key="cgda-dev-write-key",
     )
     monkeypatch.setattr("app.core.config.settings", patched)

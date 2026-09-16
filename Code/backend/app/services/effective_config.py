@@ -193,6 +193,29 @@ def assert_encryption_policy() -> None:
     )
 
 
+def assert_service_key_role_policy() -> None:
+    """服务密钥（``X-API-Key: backend_auth``）角色绑定告警（P2-5）。
+
+    服务密钥是一把「共享静态口令」：出现在 .env、小程序本地配置、运维脚本里，
+    且使用者的操作**无法归因到具体人**。绑成 ``admin`` 意味着任何拿到它的人都能
+    增删用户、改主题、改配置。这里不拒绝启动（机器对机器的 admin 是合法需求），
+    但在启动日志里显式点出影响面，避免「配了却不知道配了什么」。
+    """
+    role = (config.settings.api_key_role or "standard").strip().lower()
+    if role == "admin":
+        logger.warning(
+            "BACKEND_API_KEY_ROLE=admin: the shared service key grants FULL admin "
+            "(user/theme/config management) and is not attributable to a person. "
+            "Rotate BACKEND_API_KEY regularly and prefer 'standard' if possible."
+        )
+    elif role not in {"standard", "demo"}:
+        logger.error(
+            "BACKEND_API_KEY_ROLE=%r is unrecognized (expected admin|standard|demo); "
+            "requests will fall back to 'standard'. Fix the config.",
+            role,
+        )
+
+
 def assert_data_root_policy() -> None:
     """非 development/test 环境缺少 BACKEND_DATA_ROOT 时 fail-fast（去硬编码批 1）。"""
     env = (config.settings.environment or "").lower()

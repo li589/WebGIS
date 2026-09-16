@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta, UTC
 from typing import Any
 
@@ -46,7 +48,42 @@ def _untrack_user_session(user_id: int, token: str) -> None:
         client.srem(f"{_USER_SESSIONS_PREFIX}{user_id}", token)
 
 
+# P2-3：SQLite 会话副本的过期清理节流（默认 1 小时最多扫一次）。
+_PURGE_INTERVAL_SECONDS = 3600
+_last_purge_at = 0.0
+_purge_lock = threading.Lock()
+
+
+def purge_expired_sessions(*, force: bool = False) -> int:
+    """清理 SQLite 中已过期的会话行（P2-3）。
+
+    Redis 会话靠 TTL 自动淘汰，SQLite 兜底副本此前只在「有人恰好查到该 token」时
+    惰性删除，过期行会长期堆积。此处做主动清理：启动即跑一次，之后由
+    :func:`create_session` 节流触发（默认最长 1 小时间隔）。
+    """
+    global _last_purge_at
+    now = time.monotonic()
+    if not force:
+        with _purge_lock:
+            if now - _last_purge_at < _PURGE_INTERVAL_SECONDS:
+                return 0
+            _last_purge_at = now
+    else:
+        with _purge_lock:
+            _last_purge_at = now
+    try:
+        removed = get_user_repository().purge_expired_sessions()
+    except Exception:  # noqa: BLE001 — 清理失败不得影响登录主流程
+        logger.warning("Failed to purge expired sessions", exc_info=True)
+        return 0
+    if removed:
+        logger.info("Purged %d expired session row(s) from SQLite", removed)
+    return removed
+
+
 def create_session(*, user_id: int, username: str, role: str) -> str:
+    # 顺带做一次节流清理（内部有 1 小时窗口，绝大多数调用直接返回 0）
+    purge_expired_sessions()
     token = secrets.token_urlsafe(32)
     payload = {
         "user_id": user_id,

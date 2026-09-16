@@ -25,8 +25,19 @@
   # 显式指定口令
   python scripts/rotate_user_passwords.py set --user onlyread --password 'xxx'
 
+  # 枚出所有账号并同步吊销其会话（不改口令，仅清会话）
+  python scripts/rotate_user_passwords.py revoke-sessions --all
+
   # 预览不写入
   python scripts/rotate_user_passwords.py rotate --all --dry-run
+
+**会话吊销（默认开启）**：``update_user(password=...)`` 只改 ``password_hash``，
+**不会**让已签发的会话失效 —— 鉴权只看用户是否存在与 ``enabled``（见
+``credential_resolver._resolve_session`` → ``_live_user``），会话本身存于 Redis/SQLite。
+因此「轮换口令却不吊销会话」= 攻击者此前用泄漏口令建立的会话依然有效，属**假修复**。
+本脚本的 ``rotate`` / ``set`` 默认调用 ``session_service.revoke_sessions_for_user``，
+与 ``PATCH /auth/users/{id}`` 的行为保持一致；用 ``--keep-sessions`` 可跳过。
+注意该调用**同时吊销这些用户的 API token**（与 API 行为一致）。
 
 退出码::
 
@@ -34,9 +45,6 @@
   1 — 用户库未找到或不可写
   2 — 参数错误
   3 — list --probe 发现仍有账号接受该口令（供巡检/CI 作失败判定）
-
-注意：``update_user(password=...)`` 只更新 ``password_hash`` 与 ``updated_at``，
-**不会吊销已签发会话**；已登录的浏览器不会被踢出。
 """
 
 from __future__ import annotations
@@ -125,7 +133,25 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def _rotate(repo, users: list[dict], dry_run: bool) -> list[tuple[str, str]]:
+def _revoke_sessions(user_ids: list[int]) -> None:
+    """吊销这些用户的全部会话与 API token。
+
+    必要性：仅改 ``password_hash`` 不会让已签发会话失效（见模块 docstring）。
+    ``revoke_sessions_for_user`` 同时清理 Redis 会话、SQLite 会话与用户 token，
+    与 ``PATCH /auth/users/{id}`` 的行为一致。
+    """
+    try:
+        from app.services.session_service import revoke_sessions_for_user
+    except Exception as exc:  # noqa: BLE001 - 吊销失败不应让轮换静默"看起来成功"
+        print(f"[警告] 无法导入 session_service，会话未被吊销：{exc}")
+        return
+    for uid in user_ids:
+        revoke_sessions_for_user(uid)
+
+
+def _rotate(
+    repo, users: list[dict], dry_run: bool, keep_sessions: bool
+) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
     results: list[tuple[str, str]] = []
     for u in users:
         name = str(u["username"])
@@ -133,6 +159,8 @@ def _rotate(repo, users: list[dict], dry_run: bool) -> list[tuple[str, str]]:
         if not dry_run:
             repo.update_user(int(u["id"]), password=new_pw)
         results.append((name, new_pw))
+    if not dry_run and not keep_sessions:
+        _revoke_sessions([int(u["id"]) for u in users])
     return results
 
 
@@ -167,7 +195,7 @@ def cmd_rotate(args: argparse.Namespace) -> int:
         print("[错误] 需指定 --user <名字>（可多次）或 --all")
         return 2
 
-    results = _rotate(repo, targets, args.dry_run)
+    results = _rotate(repo, targets, args.dry_run, args.keep_sessions)
     verb = "将轮换" if args.dry_run else "已轮换"
     print(f"{verb} {len(results)} 个账号（库：{db_path}）：")
     for name, new_pw in results:
@@ -175,7 +203,37 @@ def cmd_rotate(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("\n[dry-run] 未写入；去掉 --dry-run 生效。")
     else:
-        print("\n请将这些口令存入本地凭据文件（勿入库）。")
+        print(
+            "\n会话已吊销（含 API token）。"
+            if not args.keep_sessions
+            else "\n[注意] --keep-sessions：旧会话仍然有效，攻击者此前建立的会话不会被清除。"
+        )
+        print("请将这些口令存入本地凭据文件（勿入库）。")
+    return 0
+
+
+def cmd_revoke_sessions(args: argparse.Namespace) -> int:
+    """只吊销会话，不改口令（用于漏掉吊销步骤后的补救）。"""
+    repo, _verify_password, db_path = _load()
+    by_name = {str(u["username"]): u for u in _all_users(repo)}
+    if args.all:
+        targets = list(by_name)
+    elif args.user:
+        missing = [n for n in args.user if n not in by_name]
+        if missing:
+            print(f"[错误] 账号不存在：{', '.join(missing)}")
+            print(f"       现有账号：{', '.join(by_name)}")
+            return 2
+        targets = list(args.user)
+    else:
+        print("[错误] 需指定 --user <名字>（可多次）或 --all")
+        return 2
+
+    _revoke_sessions([int(by_name[n]["id"]) for n in targets])
+    print(f"已吊销 {len(targets)} 个账号的会话与 API token（库：{db_path}）：")
+    for n in targets:
+        print(f"  {n}")
+    print("\n这些账号需用当前口令重新登录。")
     return 0
 
 
@@ -189,7 +247,11 @@ def cmd_set(args: argparse.Namespace) -> int:
         print("[错误] --password 不能为空")
         return 2
     repo.update_user(int(by_name[args.user]["id"]), password=args.password)
+    if not args.keep_sessions:
+        _revoke_sessions([int(by_name[args.user]["id"])])
     print(f"已设置 {args.user} 的口令（库：{db_path}）。")
+    if not args.keep_sessions:
+        print("该账号的会话与 API token 已吊销，需用新口令重新登录。")
     return 0
 
 
@@ -222,12 +284,23 @@ def main() -> int:
         help="配合 --all：只轮换仍接受该口令的账号",
     )
     p_rot.add_argument("--dry-run", action="store_true", help="预览不写入")
+    p_rot.add_argument(
+        "--keep-sessions",
+        action="store_true",
+        help="不吊销会话（默认吊销；保留旧会话会留下假修复风险）",
+    )
     p_rot.set_defaults(func=cmd_rotate)
 
     p_set = sub.add_parser("set", help="显式设置某账号口令")
     p_set.add_argument("--user", required=True)
     p_set.add_argument("--password", required=True)
+    p_set.add_argument("--keep-sessions", action="store_true", help="不吊销会话")
     p_set.set_defaults(func=cmd_set)
+
+    p_rev = sub.add_parser("revoke-sessions", help="只吊销会话（不改口令）")
+    p_rev.add_argument("--user", action="append", help="账号名，可重复")
+    p_rev.add_argument("--all", action="store_true", help="全部账号")
+    p_rev.set_defaults(func=cmd_revoke_sessions)
 
     args = p.parse_args()
     return int(args.func(args))
