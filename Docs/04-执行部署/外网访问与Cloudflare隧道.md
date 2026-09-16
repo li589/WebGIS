@@ -89,7 +89,24 @@ python scripts/rotate_user_passwords.py list --probe cgda-dev-admin   # 期望 e
 ```
 
 轮换结果写入本地凭据文件 `Code/backend/.env.dev-accounts`（由 `.gitignore` 的 `.env.*`
-规则覆盖，不入库）。注意 `update_user(password=...)` **不吊销已签发会话**，不会踢出已登录浏览器。
+规则覆盖，不入库）。
+
+**必须同时吊销会话**：`update_user(password=...)` 只改 `password_hash`，**不会**让已签发
+会话失效 —— 鉴权只看用户是否存在与 `enabled`（`credential_resolver._resolve_session`
+→ `_live_user`），会话本身存于 Redis/SQLite。所以「只改口令不吊销会话」= 攻击者此前用
+泄漏口令建立的会话**依然有效**，属假修复。（API 层 `PATCH /auth/users/{id}` 会吊销，
+但直接改库不会。）脚本已默认处理：
+
+```bash
+# 轮换时自动吊销会话与 API token（--keep-sessions 可跳过）
+python scripts/rotate_user_passwords.py rotate --all --probe cgda-dev-admin
+
+# 若口令已改而漏了吊销，用此补救；复核会话已清空
+python scripts/rotate_user_passwords.py revoke-sessions --all
+```
+
+本机执行记录（2026-09-16）：轮换后复核发现 admin 名下仍有 **5 个未过期会话**（Redis，
+TTL≈24h），已用 `revoke-sessions --all` 清空。」
 
 **不采用「每次启动用 env 覆盖库中口令」的原因**：管理员若在界面上改过密码，重启会被
 `.env` 悄悄回滚，属于更危险的隐性行为。env 与运行期修改不应互相打架。
