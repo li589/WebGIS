@@ -67,7 +67,12 @@ def _reproject_ease_to_mercator_linear(
     matched = ease_grid_from_shape(tuple(data.shape))
     if matched is None:
         return data
-    _preset_id, crs, src_transform = matched
+    _preset_id, crs, src_transform, needs_transpose = matched
+    if needs_transpose:
+        # MATLAB v7.3 把 [rows, cols] 存成 (cols, rows)；src_transform 按
+        # (rows, cols) 构建，不转置会让重投影结果经纬颠倒（见 grid_presets
+        # .ease_grid_from_shape 文档字符串的实测说明）。
+        data = np.asarray(data).T
     try:
         out, _bounds = reproject_to_mercator_linear(
             data,
