@@ -164,6 +164,18 @@
   `.github/copilot-instructions.md` 也已从版本库移除（原本就已在 .gitignore 中）。
 - 例外保留：`.github/workflows/ci.yml`（CI 配置，非 AI 文档）、根级 `AGENTS.md` / `CLAUDE.md` / `README.md`。
 
+## 仓库协作与 git 配置（2026-09-16）
+
+- **协作者**：`li589`（548 commits，主）+ `wxyxw007`（2 commits，曾于 2026-09-15 提交
+  `9b4d6d7f 修改了agent图标。`，改 `src/components/agent/*` + `agent-companion.png`）。无 fork。
+- **流程惯例**：改动先进 `dev`，再以 `PR #N from li589/dev` 合并进 `main`（main 只接收合并）。
+- ⚠️ **`origin/main` 本地引用可能是假相**：本机 `remote.origin.fetch` 原为
+  `+refs/heads/dev:refs/remotes/origin/dev`（**只跟踪 dev**），`git fetch origin main` 只更新
+  `FETCH_HEAD`，不会更新 `refs/remotes/origin/main` ⇒ 该 ref 长期停在 2026-09-08。
+  已改成标准 `+refs/heads/*:refs/remotes/origin/*`。
+  **判断远端状态一律用 `git ls-remote --heads origin`**（实时），或先确认 refspec 覆盖目标分支；
+  别信 `origin/<branch>` 这个本地缓存，否则会误判"远端被改/本地落后"。
+
 ## 事故记录
 - 2026-09-10：本地 `.git` 被误删，经"浅克隆 → 移植 .git → add+reset 重建索引 → 恢复 10 个
   误删受控文件"恢复，工作区与远端 dev 内容零差异。详见 `memory/2026-09-10-git-restore-and-sync.md`。
