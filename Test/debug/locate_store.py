@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import urllib.request
+from _auth import admin_password
 
 BASE = "http://127.0.0.1:8000"
 
@@ -15,7 +16,7 @@ def http(method: str, path: str, body=None, cookie=None):
         return resp.status, resp.read().decode(), resp.headers
 
 
-_, _, headers = http("POST", "/auth/login", {"username": "admin", "password": "cgda-dev-admin"})
+_, _, headers = http("POST", "/auth/login", {"username": "admin", "password": admin_password()})
 cookie = headers.get("Set-Cookie", "").split(";")[0]
 
 _, body, _ = http("GET", "/workflow-definitions?limit=200", cookie=cookie)

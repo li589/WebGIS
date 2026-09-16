@@ -5,6 +5,7 @@
   python verify_variant_routing.py poll <run_id> [--cancel]
 """
 import json
+from _auth import admin_password
 import sys
 import time
 import urllib.request
@@ -35,7 +36,7 @@ def login() -> bool:
     code, body, headers = _req(
         "POST",
         "/auth/login",
-        {"username": "admin", "password": "cgda-dev-admin"},
+        {"username": "admin", "password": admin_password()},
     )
     if code != 200:
         print("login failed:", code, str(body)[:200])

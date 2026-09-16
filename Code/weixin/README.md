@@ -49,7 +49,7 @@
 ### M2 图层链路
 
 完整接入后端 CGDA FastAPI（127.0.0.1:8000）：
-- `services/api.js`：POST /auth/login（开发预填账号）→ 会话 cookie；GET /layers + /categories + /overlays + /overlay-bounds + /overlay-tiles 自动 401 重登
+- `services/api.js`：POST /auth/login（凭据取自 gitignore 的 `services/config.local.js`，见「运行」）→ 会话 cookie；GET /layers + /categories + /overlays + /overlay-bounds + /overlay-tiles 自动 401 重登
 - `services/catalog.js`：目录归一为「分组 rail + 抽屉」，**加载时并行拉所有 overlay-bounds 标注 xyz 能力并按 `supports_xyz_tiles` 二次过滤**（后端 GDAL XYZ 切片能力薄，非 COG 缺金字塔的图层会被隐藏）
 - `services/palettes.js`：24 套色带逐色对齐后端 `raster_preview_service._PALETTES`（色块从后端 dump，色带与瓦片渲染严格一致）
 - `services/tiles.js`：视口 WGS-84 瓦片集合 → 并发≤6 队列 → 文件缓存（userData/tiles/，LRU 400 上限）→ Image onload
@@ -77,8 +77,20 @@
 
 ## 运行
 
-1. 微信开发者工具导入本目录（AppID：接口测试号 wxda07edd368e0f67c，或自己的）。
-2. 编译即可；模拟器内点「影像/街道」切底图，点击地图打蓝色十字（GCJ→WGS 换算见 console）。
+1. **配置后端接入点**（凭据不入库）：复制模板后填值
+
+   ```bash
+   cp miniprogram/services/config.local.example.js miniprogram/services/config.local.js
+   ```
+
+   `username` / `password` 对应 `Code/backend/.env` 的 `BACKEND_ADMIN_USERNAME` /
+   `BACKEND_ADMIN_PASSWORD`（该 .env 同样不入库）。模拟器用
+   `baseUrl: 'http://127.0.0.1:8000'` 直连本机后端；真机预览/体验版必须 HTTPS，
+   改填后端已绑定的 Cloudflare 隧道域名（见
+   `Docs/04-执行部署/外网访问与Cloudflare隧道.md`）。`config.local.js` 已 gitignore；
+   缺失时 api.js 回退到无凭据默认配置并打印明确告警，不会静默使用错误凭据。
+2. 微信开发者工具导入本目录（AppID：接口测试号 wxda07edd368e0f67c，或自己的）。
+3. 编译即可；模拟器内点「影像/街道」切底图，点击地图打蓝色十字（GCJ→WGS 换算见 console）。
 
 ## wechatide CLI 操作备忘（本机）
 
@@ -102,6 +114,8 @@ miniprogram/
 │  └─ colorbar/            # 顶部自动色带
 ├─ services/
 │  ├─ api.js               # 后端客户端（鉴权 / 目录 / 边界 / 瓦片）
+│  ├─ config.js            # 接入默认值（入库，不含任何凭据）
+│  ├─ config.local.example.js  # 本地私有配置模板 → 复制为 config.local.js（gitignore）
 │  ├─ catalog.js           # 目录归一 + xyz 能力标注 + 二次过滤
 │  ├─ tiles.js             # 瓦片调度器（并发队列 + 文件缓存 LRU）
 │  ├─ palettes.js          # 色带表（与后端 _PALETTES 同源）

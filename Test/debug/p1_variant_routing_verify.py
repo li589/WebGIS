@@ -14,6 +14,7 @@
   Env/Python312/python.exe Test/debug/p1_variant_routing_verify.py
 """
 import json
+from _auth import admin_password
 import sqlite3
 import sys
 import time
@@ -49,7 +50,7 @@ def _req(method: str, path: str, payload: dict | None = None, timeout: float = 6
 
 def login() -> bool:
     code, body, headers = _req(
-        "POST", "/auth/login", {"username": "admin", "password": "cgda-dev-admin"}
+        "POST", "/auth/login", {"username": "admin", "password": admin_password()}
     )
     if code != 200:
         print("login failed:", code, str(body)[:200])

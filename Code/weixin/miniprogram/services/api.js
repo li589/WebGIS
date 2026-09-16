@@ -4,17 +4,33 @@
  * 部署形态（方案 §2.3）：
  *  - baseUrl 指向 CGDA 后端（无 /api 前缀）；开发期 http://127.0.0.1:8000 +
  *    project.config.json setting.urlCheck=false（不校验合法域名）。
- *  - 正式环境需 HTTPS 域名并加入小程序后台白名单，只改本文件 CONFIG。
+ *  - 正式环境需 HTTPS 域名并加入小程序后台白名单。
  *
- * 鉴权：POST /auth/login（开发预填账号）→ 会话 cookie cgda_session；
+ * 配置来源（不再硬编码凭据）：
+ *  - services/config.js        默认值（入库，无凭据）；
+ *  - services/config.local.js  本地真实值（**已 gitignore**，不入库）。
+ *  新克隆仓库请复制 config.local.example.js 为 config.local.js 并填写。
+ *
+ * 鉴权：POST /auth/login → 会话 cookie cgda_session；
  * 手动携带 Cookie 头（小程序不自动管理 cookie）；401 时自动重登一次。
  */
 
-var CONFIG = {
-  baseUrl: 'http://127.0.0.1:8000',
-  username: 'admin',
-  password: 'cgda-dev-admin'
-};
+var baseConfig = require('./config.js');
+
+var CONFIG = (function () {
+  var local = null;
+  try {
+    local = require('./config.local.js');
+  } catch (e) {
+    // 缺少本地配置不是致命错误：继续用默认值，但登录会因无凭据而明确失败。
+    console.warn(
+      '[cgda] 未找到 services/config.local.js，已回退默认配置（无凭据）。' +
+        '请复制 services/config.local.example.js 为 config.local.js 并填入' +
+        ' baseUrl / username / password。'
+    );
+  }
+  return Object.assign({}, baseConfig, local || {});
+})();
 
 var COOKIE_KEY = 'cgda_session_cookie';
 var _cookie = '';
@@ -25,6 +41,15 @@ function init() {
 
 function login() {
   return new Promise(function (resolve, reject) {
+    if (!CONFIG.username || !CONFIG.password) {
+      reject(
+        new Error(
+          '缺少登录凭据：请在 services/config.local.js 配置 username / password' +
+            '（参考 config.local.example.js）。'
+        )
+      );
+      return;
+    }
     wx.request({
       url: CONFIG.baseUrl + '/auth/login',
       method: 'POST',

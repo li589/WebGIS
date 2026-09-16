@@ -156,6 +156,10 @@ Code/backend/deployment.config.json
 # Copy from source_uri_map.example.json; the real file must never be committed
 # nor baked into images (also listed in .dockerignore).
 Code/backend/source_uri_map.json
+# WeChat miniprogram local config holds the backend baseUrl + admin credentials.
+# Copy from config.local.example.js; the real file must never be committed
+# (a leaked admin password is directly usable against the public tunnel).
+Code/weixin/miniprogram/services/config.local.js
 
 # Doc task notes (temp)
 Doc/一份任务说明-*.txt
