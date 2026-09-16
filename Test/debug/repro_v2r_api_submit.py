@@ -5,6 +5,7 @@ compile_litegraph + build_payload(python_provider 分支)，dump payload 后提�
 """
 
 import json
+from _auth import admin_password
 import sys
 import time
 import urllib.error
@@ -38,7 +39,7 @@ def http(method: str, path: str, body=None, timeout=60):
 
 
 def main() -> None:
-    http("POST", "/auth/login", {"username": "admin", "password": "cgda-dev-admin"})
+    http("POST", "/auth/login", {"username": "admin", "password": admin_password()})
 
     code, definition = http("GET", f"/workflow-definitions/{WF}")
     print("GET def:", code)

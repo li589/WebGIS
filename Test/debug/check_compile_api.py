@@ -2,13 +2,14 @@ import json
 import sys
 import urllib.request
 from pathlib import Path
+from _auth import admin_password
 
 REPO = Path(__file__).resolve().parents[2]
 BASE = "http://127.0.0.1:8000"
 
 
 def login():
-    body = json.dumps({"username": "admin", "password": "cgda-dev-admin"}).encode()
+    body = json.dumps({"username": "admin", "password": admin_password()}).encode()
     req = urllib.request.Request(
         f"{BASE}/auth/login", data=body, method="POST",
         headers={"Content-Type": "application/json"},

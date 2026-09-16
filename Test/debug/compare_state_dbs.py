@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import urllib.request
+from _auth import admin_password
 
 BASE = "http://127.0.0.1:8000"
 DBS = {
@@ -15,7 +16,7 @@ PROBE_IDS = ("run-3e3a4a01b1bb", "run-probe0001", "run-19e73c905550", "run-cb998
 req = urllib.request.Request(BASE + "/auth/login", method="POST")
 req.add_header("Content-Type", "application/json")
 with urllib.request.urlopen(req, timeout=10, data=json.dumps(
-    {"username": "admin", "password": "cgda-dev-admin"}
+    {"username": "admin", "password": admin_password()}
 ).encode()) as resp:
     cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 

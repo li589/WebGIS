@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 import urllib.request
+from _auth import admin_password
 
 BASE = "http://127.0.0.1:8000"
 DB = r"I:\Geograph_DataSet\_runtime\workflow_state\workflow_state.sqlite3"
@@ -19,11 +20,11 @@ def http(method: str, path: str, body=None, cookie=None):
         return resp.status, json.loads(resp.read())
 
 
-_, _ = http("POST", "/auth/login", {"username": "admin", "password": "cgda-dev-admin"})
+_, _ = http("POST", "/auth/login", {"username": "admin", "password": admin_password()})
 req = urllib.request.Request(BASE + "/auth/login", method="POST")
 req.add_header("Content-Type", "application/json")
 with urllib.request.urlopen(req, timeout=10, data=json.dumps(
-    {"username": "admin", "password": "cgda-dev-admin"}
+    {"username": "admin", "password": admin_password()}
 ).encode()) as resp:
     cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 

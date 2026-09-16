@@ -1,6 +1,7 @@
 import json
 import sys
 import urllib.request
+from _auth import admin_password
 
 BACKEND = "http://127.0.0.1:8000"
 COOKIE: dict[str, str] = {}
@@ -24,8 +25,8 @@ def _req(method: str, path: str, payload: dict | None = None):
 
 def main() -> None:
     rid = sys.argv[1]
-    _req("POST", "/auth/login", {"username": "admin", "password": "cgda-dev-admin"})
-    code, body, headers = _req("POST", "/auth/login", {"username": "admin", "password": "cgda-dev-admin"})
+    _req("POST", "/auth/login", {"username": "admin", "password": admin_password()})
+    code, body, headers = _req("POST", "/auth/login", {"username": "admin", "password": admin_password()})
     set_cookie = headers.get("Set-Cookie", "")
     for part in set_cookie.split(";"):
         if "=" in part and ("session" in part.lower() or "token" in part.lower()):
