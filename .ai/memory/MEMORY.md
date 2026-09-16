@@ -50,7 +50,45 @@
   ⇒ 开发态与交付态必须两套 compose，不能一套通吃**。另两点：Celery worker 不热载（改 worker 代码须重启 worker）；
   Open-Meteo named volume 禁 bind mount（A5），勿与数据盘 bind mount 混淆。
 
+## 启动器与「三态」现状（2026-09-16 逐文件核实）
+
+- **`launch/` 分层**：`start.bat` → `launch.py`(87行) → `launch/cli.py`(argparse+分发表) →
+  `launch/commands.py`(57KB) → `process_manager.py` / `docker_manager.py` / `gateway_manager.py` /
+  `subprocess_utils.py` / `constants.py`。
+- **CLI 10 子命令**：start / stop / status / reload / restart / logs / flush / clean-cache / reset-db / sync。
+  **组件 9 种**：all、docker、fastapi、beat、worker、worker:\<name\>、frontend、gateway、backend。
+- **三个 compose project**：`backend`（Redis/MinIO/Open-Meteo，硬编码于 `docker_manager.py:61,98`）、
+  `gateway`（Nginx，硬编码于 `gateway_manager.py:31-33`）、`data-sync`（可经 env 覆盖）。
+- ⬛ **三态支持真相：只支持两态**。
+  - 裸机态 ✅ `start`（宿主 FastAPI/9 Worker/Beat + 容器基础设施 + 容器 Gateway 静态 dist）
+  - 开发态 ✅ `start --vite`（Gateway :5175 + 宿主 Vite HMR :5174）；`start frontend` 为 Vite 直连
+  - **交付态 ❌ 完全不存在**：全仓**无 Dockerfile**；`docker_manager.py` 只起基础设施三容器；
+    `cmd_start` 无 prod 分支；`nginx.conf:20-23` upstream 写死 `host.docker.internal:8000`；
+    `cli.py` 无 `--mode`。⇒ 补交付态 = 4 个新文件（backend/web Dockerfile、compose.prod.yml、
+    nginx.prod.conf）+ launcher `--mode` 分派（设计见 `Win10-交接部署与三态启动方案.md §3/§4`）。
+- **Docker 自定义现状**：卷名/Open-Meteo 镜像与端口/MinIO 凭据/数据面 project 已 env 化；
+  **Redis/MinIO 端口(16379/9100/9101)、两个 compose project 名、容器名、网关 5175 均硬编码在代码里**。
+  **镜像存储位置不归 launcher 管**——那是 Docker 引擎 data-root（Windows 用 Docker Desktop 设置，
+  本机为 `I:\Docker\DockerDesktop`；Linux 用 `daemon.json` 的 `data-root`）。
+- **`Env/Python312` = 官方安装包全量布局**（非 venv，无 `pyvenv.cfg`；`sys.prefix` 指向该目录；
+  `Lib/site-packages` 595 项；`Scripts/pip.exe` 可用）→ 重建须装 **Python 3.12.9**；
+  依赖 pin 在 `Code/backend/requirements.txt`（+ `-dev.txt`、`Code/algorithms/providers/Python/requirements.txt`）。
+  ⚠️ `.gitignore:2 Env/` 生效，但 `Env/backend/` 下 **8 个 .ps1 是入库的**（历史联调辅助脚本）——
+  不代表 `Env/` 可从 git 复现。
+
+## 交接前必修的两个缺口（2026-09-16 发现）
+
+- **G-F ⬛ `source_uri_map.json` 未被 `.gitignore` 覆盖**：`.example` 入库是有意的，但**真实文件**
+  （含实验室盘符路径，见硬约束 C4）一旦创建就会**被提交**。⇒ 建文件前先往 `.gitignore` 加
+  `Code/backend/source_uri_map.json`。
+- **G-G `deployment.config.json` 真源当前不存在**：`Code/backend/` 下只有 `.bak.1`
+  （内容 `{"schema_version":1,"data":{"data_root":"I:\\test"},...}`）与 `.example`。
+  即本机实际在跑 `.env` 单轨。目标机交接须明确走单轨还是补建（补建须格式合法，否则 fail-closed 拒启）。
+- 其余交接必确认项：`Code/frontend/dist` 在 `Code/frontend/.gitignore:11` 内（目标机须 `npm run build`）；
+  `Code/backend/.env` 在 `.gitignore:3`（含 API Key/管理员密码/CDS Key，只能走安全通道交接）。
+
 ## 坑
+
 - **GBK 文件不能用 Edit/Write 工具改**（会用 UTF-8 覆盖，中文全乱）：`start.bat` 是 GBK+CRLF。
   正解：沙箱 python 读 bytes → `decode('gbk')` → 替换 → `encode('gbk')` 写回（本机 shell 子进程写此文件未被拦）。
   其余 `.md` 均为 UTF-8/LF，可正常用 Edit。判断编码：`b.decode('utf-8')` 失败且 `gbk` 成功即 GBK。
