@@ -194,31 +194,11 @@ export class ScalarFieldWebGLLayer {
   }
 
   private refreshProjectionMatrix(): void {
-    const transform = (
-      this.map as unknown as {
-        transform?: {
-          getProjectionDataForCustomLayer?: (applyGlobe?: boolean) => {
-            mainMatrix?: ArrayLike<number>
-          }
-        }
-      }
-    )?.transform
-    // 跟随 MapLibre 当前投影：globe → mainMatrix(true) 单位球→clip 矩阵；
-    // mercator → mainMatrix(false) mercator→clip 矩阵。两种矩阵的 vertex 输入维度不同。
+    // maplibre-gl v6 起私有 `map.transform` 已移除（v6 的 Map 类型上不再有该成员），
+    // 投影矩阵的唯一来源是 custom layer 的 render(gl, options) 参数：
+    // options.defaultProjectionData.mainMatrix（v6 中该字段为必需项，见上方 render()）。
+    // 故此处只同步投影模式（globe ↔ mercator），矩阵由 render() 负责缓存。
     this.useGlobe = this.map?.getProjection?.()?.type === 'globe'
-    const fromTransform = transform?.getProjectionDataForCustomLayer?.(this.useGlobe)?.mainMatrix
-    if (fromTransform && typeof fromTransform[0] === 'number') {
-      for (let i = 0; i < 16; i++) this.matrix[i] = Number(fromTransform[i])
-      // MapLibre 5 返回的 mainMatrix 可能是 pixel viewport 矩阵（m[15]=viewport
-      // height），而 shader 的 lngLatToMercator 输出是 [0,1] normalized 坐标，
-      // 必须把整矩阵归一到 clip 量纲；否则 computeWorldWrapOffsets 算出的 clip 偏移
-      // 直接加到 pixel 量纲的 m[12] 上仅偏移 3.5 像素而非整幅世界，导致相邻半球世界副本丢失。
-      if (Math.abs(this.matrix[15]) > 1) {
-        const scale = 1 / this.matrix[15]
-        for (let i = 0; i < 16; i++) this.matrix[i] *= scale
-      }
-      this.hasMatrix = true
-    }
   }
 
   setOpacity(opacity: number): void {

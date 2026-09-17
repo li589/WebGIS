@@ -358,7 +358,7 @@ describe('B6 computeWorldWrapOffsets（反子午线世界包裹）', () => {
 })
 
 
-describe('extractMercatorProjectionMatrix（MapLibre 5）', () => {
+describe('extractMercatorProjectionMatrix（maplibre-gl v6）', () => {
   it('优先使用 defaultProjectionData.mainMatrix', () => {
     const main = new Float32Array(16)
     main[0] = 1.5
@@ -378,6 +378,17 @@ describe('extractMercatorProjectionMatrix（MapLibre 5）', () => {
     mvp[5] = 2
     const got = extractMercatorProjectionMatrix({
       modelViewProjectionMatrix: mvp,
+    } as any)
+    expect(got).toBeNull()
+  })
+
+  it('不回退 defaultProjectionData.projectionMatrix（量纲不同，会静默错位）', () => {
+    // v6 的 RendererProjectionData.projectionMatrix 是 view→clip，非 mercator [0,1]→clip，
+    // 且 mercator transform 下根本不产出该字段；一旦误用会渲染错位而非显式失败。
+    const pm = new Float32Array(16)
+    pm[0] = 42
+    const got = extractMercatorProjectionMatrix({
+      defaultProjectionData: { projectionMatrix: pm },
     } as any)
     expect(got).toBeNull()
   })
