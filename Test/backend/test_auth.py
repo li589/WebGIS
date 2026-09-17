@@ -253,3 +253,56 @@ def test_auth_config_dev_prefill(monkeypatch, tmp_path):
     assert body["auth_required"] is True
     assert body["dev_prefill"]["username"] == "admin"
     assert body["dev_write_api_key"] == "cgda-dev-write-key"
+
+
+@pytest.mark.parametrize(
+    "peer_host",
+    [
+        "172.17.0.1",  # Docker 默认网桥网关：nginx 在容器内、后端在宿主机时的对端
+        "192.168.1.50",  # 局域网客户端
+        "203.0.113.7",  # TEST-NET-3，公网形态
+        "unknown",  # 无 client 信息时的占位
+    ],
+)
+def test_auth_config_dev_prefill_hidden_for_non_loopback_peer(
+    monkeypatch, tmp_path, peer_host
+):
+    """非回环对端不得下发 dev_prefill / dev_write_api_key。
+
+    `dev_prefill` 会明文回传 ``BACKEND_ADMIN_PASSWORD``，唯一的收敛条件是
+    ``_direct_client_host`` 为回环地址。此前只有「回环 → 下发」的正向用例，
+    反向分支无覆盖：一旦 nginx 拓扑或 `request.client.host` 语义变化
+    （例如网关改为 host 网络、或后端开始信任 `X-Real-IP`），公网访客就会
+    直接拿到管理员口令，而测试仍全绿。本用例锁死该负向分支。
+    """
+    from dataclasses import replace
+
+    from app.api.routers import auth_router
+    from app.core.config import settings
+    from app.services import user_repository as ur_mod
+    from app.services.user_repository import UserRepository
+
+    clean_repo = UserRepository(tmp_path / "dev_prefill_hidden" / "users.sqlite3")
+    monkeypatch.setattr(ur_mod, "_repo", clean_repo)
+
+    patched = replace(
+        settings,
+        environment="development",
+        # 刻意全开：若少了「回环」这一个条件，下面两条断言必然失败。
+        dev_auth_prefill=True,
+        admin_username="admin",
+        admin_password="Dev-Prefill-Pw-9f2!",
+        dev_default_api_key="cgda-dev-write-key",
+    )
+    monkeypatch.setattr("app.core.config.settings", patched)
+    monkeypatch.setattr(auth_router, "settings", patched)
+    monkeypatch.setattr(auth_router, "_direct_client_host", lambda _request: peer_host)
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as client:
+        resp = client.get("/auth/config")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dev_prefill"] is None
+    assert body["dev_write_api_key"] is None
