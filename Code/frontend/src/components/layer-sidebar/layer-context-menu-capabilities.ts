@@ -12,7 +12,9 @@ export interface ResolveLayerContextCapabilitiesInput {
   supportsAnalysisWorkflow: (catalogId: string) => boolean
   isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
   canRunCatalog: (catalogId: string) => boolean
-  weatherStatus?: { errorType?: string }
+  // errorType 允许 null：WeatherTileLayerStatus.errorType 为 WeatherTileErrorType | null，
+  // 此处只做 `=== 'data-empty'` 判定，放宽为 string|null 即可，无需调用方先归一化。
+  weatherStatus?: { errorType?: string | null }
   findRunGroupById?: (groupId: string) => { dissolvable?: boolean } | null | undefined
 }
 

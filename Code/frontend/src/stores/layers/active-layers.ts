@@ -65,7 +65,9 @@ export interface ActiveLayersSliceDeps {
   getActiveWorkflowCatalogIds: () => Set<string>
   isLocalSubmitJobId: (jobId: string | null | undefined) => boolean
   scheduleWorkspacePersist: () => void
-  flushWorkspacePersistNow: () => void
+  // 与 bindings.ts / workflow-runner.ts / workspace-hydrate.ts 的同名声明保持一致：
+  // 允许可选 opts，否则 workspace-domain 转发时 `(opts) => ...` 与 `() => void` 不兼容。
+  flushWorkspacePersistNow: (opts?: { sync?: boolean }) => void
   debugLog: (module: string, ...args: unknown[]) => void
   // ── Auto-run workflow on layer add ──
   canRunCatalog: (catalogId: string) => boolean

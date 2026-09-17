@@ -277,6 +277,49 @@
         }
       }
     },
+    "/auth/users/{user_id}/unlock": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Unlock User",
+        "description": "清除该账号的登录失败锁定（P2-2 运维出口）。\n\n账号锁定是「防爆破」而非「拒绝服务」手段：真实研究员输错口令被锁、\n或遭遇「恶意连错把管理员锁死」的 DoS 时，管理员需要一条即时解锁路径。",
+        "operationId": "unlock_user_auth_users__user_id__unlock_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnlockResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/tokens": {
       "get": {
         "tags": [
@@ -24545,6 +24588,24 @@
         ],
         "title": "TransformPointRequest",
         "description": "``POST /import/transform-point`` 请求体。"
+      },
+      "UnlockResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "username"
+        ],
+        "title": "UnlockResponse"
       },
       "UpdateThemeRequest": {
         "properties": {

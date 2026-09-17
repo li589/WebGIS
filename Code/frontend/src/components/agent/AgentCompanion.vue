@@ -307,12 +307,7 @@ watch(open, (v) => {
           <span class="agent-companion-ring" aria-hidden="true" />
           <span class="agent-companion-ripple" aria-hidden="true" />
           <span class="agent-companion-body" aria-hidden="true">
-            <img
-              class="agent-companion-icon"
-              :src="companionIcon"
-              alt=""
-              draggable="false"
-            />
+            <img class="agent-companion-icon" :src="companionIcon" alt="" draggable="false" />
             <span class="agent-companion-badge" />
           </span>
           <span

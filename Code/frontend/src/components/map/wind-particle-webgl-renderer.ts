@@ -129,11 +129,13 @@ const MAX_WORLD_WRAP_DRAWS = 12
  * 此时相邻世界副本才是实际可见的副本。抽离为纯函数以便单测。
  */
 export function computeWorldWrapOffsets(matrix: ArrayLike<number>): number[] {
-  // MapLibre 5 getProjectionDataForCustomLayer().mainMatrix 在部分版本返回
-  // pixel viewport 矩阵（m[0]/m[12] 与 m[15] 同量纲），而旧测试/旧 MapLibre
-  // 返回已归一化 clip 矩阵（m[15]≈0/1）。统一归一化到 clip 量纲；否则 IDL
-  // 处 m[0]≈5983、m[12]≈-1.66 会被当成 clip matrix，计算出 [0]，粒子
-  // 全部投到 clip x=3..6 屏外（风场 canvas 存在但完全透明）。
+  // 本函数只接受 clip 量纲矩阵：m[0]=一个世界宽度在裁剪空间(宽 2.0)中的尺寸、
+  // m[12]=主世界 x 平移。历史上某些 MapLibre 版本（v5 部分小版本）在此处返回
+  // pixel viewport 矩阵（m[0]/m[12] 与 m[15] 同量纲），若直接当作 clip matrix
+  // 使用，IDL 处 m[0]≈5983、m[12]≈-1.66 会算出偏移 [0]，粒子全被投到
+  // clip x=3..6 屏外（风场 canvas 存在但完全透明）。
+  // 因此统一按 m[15] 归一化到 clip 量纲（v6 的 defaultProjectionData.mainMatrix
+  // 本身已是 clip 量纲，m[15]≈1，此处为无操作的防御分支）。
   const matrixScale = Number.isFinite(matrix[15]) && Math.abs(matrix[15]) > 1 ? 1 / matrix[15] : 1
   const w = matrix[0] * matrixScale
   const tx = matrix[12] * matrixScale
@@ -153,12 +155,16 @@ export function computeWorldWrapOffsets(matrix: ArrayLike<number>): number[] {
 }
 
 /**
- * 从 MapLibre 5 CustomRenderMethodInput 取出「mercator [0,1]² → clip」矩阵。
- * 优先 `defaultProjectionData.mainMatrix`（官方 custom layer 示例）。
+ * 从 maplibre-gl custom layer 的 render 参数取出「mercator [0,1]² → clip」矩阵。
  *
- * 注意：`modelViewProjectionMatrix` 是像素世界坐标矩阵，与 `lngLatToMercatorNormalized`
- * 不兼容，会导致粒子投影到屏外。此处不再回退到它；调用方应通过 `refreshProjectionMatrix`
- * （走 `transform.getProjectionDataForCustomLayer`）获取矩阵。
+ * v6 起 `CustomRenderMethodInput.defaultProjectionData` 是必需字段，其
+ * `mainMatrix` 即所需矩阵（transform 内部由 `getProjectionDataForCustomLayer`
+ * 生成：tileMatrix × viewProj 再按 EXTENT 缩放，输入已是 mercator [0,1]、输出 clip）。
+ *
+ * 故意**不**设兜底矩阵：`modelViewProjectionMatrix` 是像素世界坐标矩阵、
+ * `defaultProjectionData.projectionMatrix` 亦非 mercator [0,1] 输入量纲，二者与
+ * `lngLatToMercatorNormalized` 混用都会把粒子投到屏外。取不到时返回 null，交由
+ * 上层 `matrixMissFrames` 失败检测显式暴露，而不是静默渲染错位。
  */
 export function extractMercatorProjectionMatrix(
   options: CustomRenderMethodInput | ArrayLike<number> | null | undefined,
@@ -172,13 +178,10 @@ export function extractMercatorProjectionMatrix(
     return options as ArrayLike<number>
   }
   const opts = options as CustomRenderMethodInput & {
-    defaultProjectionData?: { mainMatrix?: ArrayLike<number>; projectionMatrix?: ArrayLike<number> }
+    defaultProjectionData?: { mainMatrix?: ArrayLike<number> }
   }
-  const fromDefault =
-    opts.defaultProjectionData?.mainMatrix ?? opts.defaultProjectionData?.projectionMatrix
+  const fromDefault = opts.defaultProjectionData?.mainMatrix
   if (fromDefault && typeof fromDefault[0] === 'number') return fromDefault
-  // 不再回退到 modelViewProjectionMatrix：该矩阵与 lngLatToMercator 不兼容，
-  // 会导致粒子投影到屏外（只剩色底可见）。返回 null 让上层走 matrixMissFrames 失败检测。
   return null
 }
 
@@ -480,9 +483,10 @@ export class WindParticleWebGLLayer {
   /**
    * 缓存投影矩阵；绘制在自有 RAF / 自有 context 上完成。
    *
-   * MapLibre 5：mercator [0,1]² → clip 应使用 `defaultProjectionData.mainMatrix`
-   *（getProjectionDataForCustomLayer 已按 EXTENT 缩放）。`modelViewProjectionMatrix`
-   * 是像素世界坐标，不能与 lngLatToMercator 混用。
+   * maplibre-gl v6：mercator [0,1]² → clip 使用 `options.defaultProjectionData.mainMatrix`
+   * （transform 内部已按 EXTENT 缩放；globe 模式下该矩阵为「单位球 → clip」）。
+   * 这是本类唯一的矩阵来源——v6 已移除私有 `map.transform`。
+   * `modelViewProjectionMatrix` 是像素世界坐标，不能与 lngLatToMercator 混用。
    */
   render(_gl: WebGLRenderingContext, options: CustomRenderMethodInput): void {
     const matrix = extractMercatorProjectionMatrix(options)
@@ -492,43 +496,26 @@ export class WindParticleWebGLLayer {
   }
 
   /**
-   * 每帧刷新投影矩阵：优先 transform.getProjectionDataForCustomLayer（不依赖
-   * custom layer render 时序），其次沿用 render() 缓存。
+   * 每帧同步投影模式，并汇报投影矩阵是否就绪。
+   *
+   * maplibre-gl v6 起私有 `map.transform` 已移除（v6 的 Map 类型上不再有该成员），
+   * 投影矩阵的唯一来源是 custom layer 的 `render(gl, options)` 参数：
+   * `options.defaultProjectionData.mainMatrix`（v6 中该字段为必需项，见下方 render）。
+   * 因此矩阵由 `render()` 缓存到 `this.matrix`，这里只做两件事：
+   * 探测 globe ↔ mercator 切换（切换时清 trail），以及返回 `hasMatrix`。
+   * `drawFrame` 在首个 map render 之前的连续 miss 由 MATRIX_MISS_FAIL_AFTER 兜底，
+   * 该阈值（90 帧）远大于首帧 render 的延迟。
    */
   private refreshProjectionMatrix(): boolean {
-    const transform = (
-      this.map as MaplibreMap & {
-        transform?: {
-          getProjectionDataForCustomLayer?: (applyGlobe?: boolean) => {
-            mainMatrix?: ArrayLike<number>
-          }
-        }
-      }
-    )?.transform
-    // 跟随 MapLibre 当前投影：globe 模式传 true 拿"单位球 → clip"矩阵，
-    // mercator 模式传 false 拿"mercator [0,1]² → clip"矩阵。两种矩阵的输入
-    // 维度不同（3D 球面 vs 2D mercator），由 uploadParticlePointBuffer /
-    // drawWindField 分支处理。
+    // 跟随 MapLibre 当前投影：globe 模式 shader 走"单位球 → clip"，mercator 模式走
+    // "mercator [0,1]² → clip"。两种矩阵输入维度不同（3D 球面 vs 2D mercator），
+    // 由 uploadParticlePointBuffer / drawWindField 分支处理。
     const isGlobe = this.map?.getProjection?.()?.type === 'globe'
     if (this.useGlobe !== isGlobe) {
       // 投影切换：清空 trail，避免 mercator/globe 残留拖尾叠出穿球鬼影
       this.trailDirty = true
     }
     this.useGlobe = isGlobe
-    const fromTransform = transform?.getProjectionDataForCustomLayer?.(isGlobe)?.mainMatrix
-    if (fromTransform && typeof fromTransform[0] === 'number') {
-      this.matrix.set(fromTransform)
-      // MapLibre 5 返回的 mainMatrix 可能是 pixel viewport 矩阵（m[15]=viewport
-      // height），而 shader 的 lngLatToMercator 输出是 [0,1] normalized 坐标，
-      // 必须把整矩阵归一到 clip 量纲；否则 IDL 视口 m[0]≈5983、m[12]≈-1.66
-      // 将粒子投到 clip x≈3..6 屏外（canvas 存在但全透明）。
-      if (Math.abs(this.matrix[15]) > 1) {
-        const scale = 1 / this.matrix[15]
-        for (let i = 0; i < 16; i += 1) this.matrix[i] *= scale
-      }
-      this.hasMatrix = true
-      return true
-    }
     return this.hasMatrix
   }
 

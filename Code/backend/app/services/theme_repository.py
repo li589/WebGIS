@@ -66,6 +66,7 @@ def assert_svg_safe(content: bytes) -> None:
                 f"({hit.group(0)!r}); use a static SVG or raster image"
             )
 
+
 # 登录页氛围色方案（仅影响 LoginView，不改应用内主题）
 VALID_LOGIN_PALETTES = frozenset({"cyan", "green", "warm", "violet", "slate"})
 DEFAULT_LOGIN_PALETTE = "cyan"

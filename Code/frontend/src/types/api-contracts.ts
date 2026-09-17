@@ -125,6 +125,29 @@ export interface paths {
         patch: operations["update_user_auth_users__user_id__patch"];
         trace?: never;
     };
+    "/auth/users/{user_id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock User
+         * @description 清除该账号的登录失败锁定（P2-2 运维出口）。
+         *
+         *     账号锁定是「防爆破」而非「拒绝服务」手段：真实研究员输错口令被锁、
+         *     或遭遇「恶意连错把管理员锁死」的 DoS 时，管理员需要一条即时解锁路径。
+         */
+        post: operations["unlock_user_auth_users__user_id__unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/tokens": {
         parameters: {
             query?: never;
@@ -9477,6 +9500,13 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** UnlockResponse */
+        UnlockResponse: {
+            /** Status */
+            status: string;
+            /** Username */
+            username: string;
+        };
         /** UpdateThemeRequest */
         UpdateThemeRequest: {
             /** Name Zh */
@@ -10940,6 +10970,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_user_auth_users__user_id__unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnlockResponse"];
                 };
             };
             /** @description Validation Error */

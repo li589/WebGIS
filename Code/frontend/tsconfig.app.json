@@ -6,7 +6,12 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      /* marked-katex-extension 的 package.json `types` 指向其 **源码** src/index.ts，
+       * 会把第三方 .ts 纳入 program 并被本项目的 noUnusedParameters 判错（TS6133）。
+       * 故用类型垫片接管该包的类型解析（详见 src/types/shims/marked-katex-extension.d.ts）。
+       * paths 仅作用于 TS；Vite 用 resolve.alias，打包解析不受影响。 */
+      "marked-katex-extension": ["src/types/shims/marked-katex-extension.d.ts"]
     },
 
     /* Linting */

@@ -12,6 +12,9 @@
  * 承担（主 layer 隐藏）。
  */
 
+// maplibre-gl v6 移除了 UMD 全局命名空间；显式以类型命名空间导入。
+import type * as maplibregl from 'maplibre-gl'
+
 /** 单带最大纬度跨度（度）——4° 带内 Mercator 线性误差 <0.2%。 */
 const BAND_DEG = 4
 

@@ -2,7 +2,8 @@
  * 地图外框控件：缩放 / 旋转指南针 / 定位 + 比例尺
  * 样式与逻辑集中在此文件，便于单独修改。
  */
-import maplibregl from 'maplibre-gl'
+// maplibre-gl v6 为 ESM-only，不再提供 default 导出；改用命名空间导入。
+import * as maplibregl from 'maplibre-gl'
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl'
 
 export interface MapChromeNavigationOptions {
