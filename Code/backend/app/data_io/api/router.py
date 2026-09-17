@@ -239,7 +239,17 @@ def _http_err(exc: Exception) -> HTTPException:
     仅处理：FileNotFoundError→404、QuotaExceededError→507、
     ValueError/RuntimeError→400。未知类型 re-raise 上抛全局处理器。
     QuotaExceededError(RuntimeError) 的 isinstance 检查先于父类，保证 507 先命中。
+
+    ``json.JSONDecodeError`` 同样是「子类先于父类」的一例，但方向相反：
+    它是 ``ValueError`` 子类却**不是**客户端输入错误——它意味着服务端持久化的
+    JSON（``job-*.json``、上传/图层 meta…）损坏或半写，属服务端故障。若被父类
+    分支命中会返回 400，并把解析器原文（``Expecting value: line 1 column 1 (char 0)``，
+    可能含服务端路径）当作 ``detail`` 回给客户端。故**先于** ``ValueError`` re-raise，
+    交由全局处理器返回 500 + 通用文案——与 ``Test/backend/test_exception_narrowing.py``
+    场景 4a 的既有契约一致（2026-09-17：CI 偶发 400 泄露即此分支所致）。
     """
+    if isinstance(exc, json.JSONDecodeError):
+        raise exc
     if isinstance(exc, UploadAccessDenied):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, FileNotFoundError):

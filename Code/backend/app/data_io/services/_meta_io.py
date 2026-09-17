@@ -3,46 +3,96 @@
 append 模式（``upload.py``）与 manifest 模式（``resumable_upload.py``）共用本模块，
 确保两套上传路径的 meta 读写语义一致：
 
-- ``save_meta``：先写 ``meta.json.tmp`` 再 ``os.replace``，避免并发读读到半写 JSON。
+- ``save_meta``：先写临时文件再 ``os.replace``，避免并发读读到半写 JSON。
 - ``meta_lock``：跨进程/线程文件锁（Windows ``msvcrt.locking`` / POSIX ``fcntl.flock``），
   保护「读 meta → 改字段 → 写 meta」的 check-then-act 临界区。
 - ``load_meta``：纯读，``save_meta`` 的原子性保证读不到半写内容，故无需持锁。
 
 量纲：``dest`` 为 staging 会话目录（``staging_dir()/<upload_id>``），meta 文件名固定 ``meta.json``。
+
+原子写的 Windows 注意事项（2026-09-17）
+───────────────────────────────────────
+``os.replace`` 在 Windows 上是 ``MoveFileEx(MOVEFILE_REPLACE_EXISTING)``：若目标文件
+此刻正被读者打开，会直接失败并抛 ``PermissionError [WinError 5]``。因此「固定 ``.tmp``
+名 + 裸 ``os.replace``」在两个维度上不够用：
+
+1. **并发写者**共用同一个 ``.tmp`` 路径 → 互相截断/搬走对方的临时文件；
+2. **写者与读者并发**时 ``replace`` 抛 ``PermissionError``，调用方看到的是硬失败
+   （而非它本应提供的一致性）。
+
+故 ``save_json_atomic`` / ``save_bytes_atomic`` 改为「唯一临时名 + 短退避重试」。
+同一模式在 ``app.weatherengine.client``（``unique_cache_tmp_path`` /
+``replace_with_retry``）已有实现；此处**不跨模块复用**是为了保持依赖方向
+（``data_io`` 不应依赖 ``weatherengine``），代价是一份约 20 行的重复——如需收敛，
+应把两者提到一个公共低层模块，而不是让 ``data_io`` 反向依赖。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import threading
+import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from collections.abc import Iterator
 
 _META_FILENAME = "meta.json"
-_META_TMP_SUFFIX = ".json.tmp"
 _LOCK_FILENAME = "meta.lock"
 
 
+def _atomic_tmp_path(path: Path) -> Path:
+    """为原子写生成**唯一**临时路径（pid + 线程 id + 随机片段）。
+
+    固定 ``.tmp`` 后缀会让并发写者在写同一目标时互相踩踏（Windows 上
+    ``replace`` 目标或源被他人占用还会 ``PermissionError``，交错写则产生损坏文件）。
+    唯一名 + ``os.replace`` 保证「全有或全无」。
+    """
+    return path.with_name(
+        f"{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}.tmp"
+    )
+
+
+def _replace_with_retry(
+    src: Path, dst: Path, *, attempts: int = 5, delay: float = 0.05
+) -> None:
+    """``os.replace`` 的 Windows 安全版本（对 sharing violation 短退避重试）。
+
+    即便临时名唯一，``replace`` 目标在 Windows 上仍可能因读者持有句柄而抛
+    ``PermissionError``(13/WinError 5)。重试后让「最后一次写入获胜」——
+    同一目标的载荷语义等价，覆盖无害。
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+            delay *= 2
+
+
 def save_json_atomic(path: Path, payload: Any) -> None:
-    """原子写任意 JSON 文件（同目录 ``.tmp`` + ``os.replace``）。
+    """原子写任意 JSON 文件（同目录唯一 ``.tmp`` + ``os.replace``）。
 
     安审 2026-08-21 C-2：``bounds.json`` / 时序 ``meta.json`` 等与 staging
     ``meta.json`` 同样存在「worker 写 / API 进程读」并发，半写 JSON 会让
     lazy-load 读端 JSONDecodeError → 图层被判「不存在」。与 ``save_meta``
     同模式，通用化到任意路径。
     """
-    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path = _atomic_tmp_path(path)
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp_path, path)
+    _replace_with_retry(tmp_path, path)
 
 
 def save_bytes_atomic(path: Path, payload: bytes) -> None:
-    """原子写二进制文件（同目录 ``.tmp`` + ``os.replace``）。"""
-    tmp_path = path.with_name(path.name + ".tmp")
+    """原子写二进制文件（同目录唯一 ``.tmp`` + ``os.replace``）。"""
+    tmp_path = _atomic_tmp_path(path)
     tmp_path.write_bytes(payload)
-    os.replace(tmp_path, path)
+    _replace_with_retry(tmp_path, path)
 
 
 def load_meta(dest: Path) -> dict[str, Any]:
@@ -58,15 +108,17 @@ def load_meta(dest: Path) -> dict[str, Any]:
 
 
 def save_meta(dest: Path, meta: dict[str, Any]) -> None:
-    """原子写 ``meta.json``：先写临时文件再 ``os.replace``。
+    """原子写 ``meta.json``：先写唯一临时文件再 ``os.replace``（带重试）。
 
-    避免并发读读到半写 JSON（与 2026-08-09 修复的 manifest 模式 JSONDecodeError 同类根因）。
-    临时文件名固定 ``meta.json.tmp``，与 manifest 模式历史约定一致。
+    避免并发读读到半写 JSON（与 2026-08-09 修复的 manifest 模式 JSONDecodeError
+    同类根因）。临时名不再固定为 ``meta.json.tmp``：``load_meta`` 是无锁纯读，
+    写者与读者并发时 Windows ``replace`` 可能抛 sharing violation，固定名还会让
+    多写者互相踩踏——详见模块 docstring「原子写的 Windows 注意事项」。
     """
     meta_path = dest / _META_FILENAME
-    tmp_path = meta_path.with_suffix(_META_TMP_SUFFIX)
+    tmp_path = _atomic_tmp_path(meta_path)
     tmp_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp_path, meta_path)
+    _replace_with_retry(tmp_path, meta_path)
 
 
 @contextmanager
