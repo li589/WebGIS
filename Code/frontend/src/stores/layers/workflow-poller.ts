@@ -167,10 +167,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
         // 终态保护：已处于终态时，不允许事件流里的中间状态（queued/running）将其降级
         if (!isTerminalStatus(event.payload.status) && isTerminalStatus(nextStatus)) {
           // 保留终态，仅继续累积进度/消息
-        } else if (
-          (event.payload.status === 'queued' || event.payload.status === 'accepted') &&
-          nextStatus === 'running'
-        ) {
+        } else if (event.payload.status === 'queued' && nextStatus === 'running') {
           // 已在跑：忽略派发阶段的 queued 回写（否则与 node_progress 升格来回跳）
         } else {
           nextStatus = event.payload.status
@@ -181,10 +178,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
         ?.node_progress
       if (rawNodeProgress && typeof rawNodeProgress === 'object') {
         // 已有节点进度却仍显示排队：worker 已在跑，立即升为 running（勿等 9s 快照）
-        if (
-          (nextStatus === 'queued' || nextStatus === 'accepted') &&
-          !isTerminalStatus(nextStatus)
-        ) {
+        if (nextStatus === 'queued' && !isTerminalStatus(nextStatus)) {
           nextStatus = 'running'
           if (
             !nextMessage ||
@@ -489,11 +483,12 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
     // 终态/非终态统一：事件侧字段优先保留 existing（buildJobLayer 不产出这些）
     const mergedNodeProgress = existingJobLayer?.nodeProgress ?? jobLayer.nodeProgress
     let mergedStatus = jobLayer.status
-    // 快照若仍为 queued/accepted，但事件侧已升 running：禁止打回排队中
+    // 快照若仍为 queued，但事件侧已升 running：禁止打回排队中
+    // （服务端 accepted 在 result-adapter / 快照摄取处已归一为 queued，此处不会见到）
     if (
       existingJobLayer &&
       existingJobLayer.status === 'running' &&
-      (jobLayer.status === 'queued' || jobLayer.status === 'accepted') &&
+      jobLayer.status === 'queued' &&
       !isTerminalStatus(jobLayer.status)
     ) {
       mergedStatus = 'running'

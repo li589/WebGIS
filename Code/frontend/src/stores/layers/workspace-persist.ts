@@ -431,16 +431,16 @@ export function sanitizeSnapshotForCurrentApi(snapshot: WorkspaceSnapshot): Work
 /** 图层 runGroupId 无对应 group 时清锁，避免「运行中」幽灵占位。 */
 export function reconcileSnapshotGroupRefs(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
   const groupIds = new Set((snapshot.groups || []).map((g) => g.groupId))
-  const clearOrphan = <
-    T extends {
+  // 约束放宽为 `T extends object`：原约束（{runGroupId?} 等全可选属性）构成 TS 的
+  // "weak type"，而 PersistedVectorLayer 等载体没有这些属性 → 触发 "no properties in
+  // common" 报错。改为在函数体内做结构读取，语义不变。
+  const clearOrphan = <T extends object>(layer: T): T => {
+    const g = layer as {
       runGroupId?: string
       runGroupProductTag?: string
       runGroupLocked?: boolean
-    },
-  >(
-    layer: T,
-  ): T => {
-    if (!layer.runGroupId || groupIds.has(layer.runGroupId)) return layer
+    }
+    if (!g.runGroupId || groupIds.has(g.runGroupId)) return layer
     return {
       ...layer,
       runGroupId: undefined,

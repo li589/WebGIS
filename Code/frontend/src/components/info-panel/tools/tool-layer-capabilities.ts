@@ -100,8 +100,13 @@ export function inferToolInputRequirement(tool: AnalysisToolDescriptor): ToolInp
   return { needsRaster, needsVector, needsPoint, needsMapBBox }
 }
 
-/** AutoStats / 多图层对比：从 active layer 记录解析栅格 overlay id */
-export function resolveRasterOverlayIdFromActiveLayer(layer: {
+/**
+ * 「活动图层 → 栅格 overlay 能力」所需的最小结构切片。
+ * `activeLayerHasReadableRaster` 与 `resolveRasterOverlayIdFromActiveLayer` 必须使用
+ * 同一切片：此前后者声明 `importedRaster?: unknown`，调用前者时因 `unknown` 不可赋给
+ * `{ overlayLayerId?: string } | null` 而类型报错（vue-tsc 一直未被 CI 执行，故长期未暴露）。
+ */
+interface RasterCapabilityLayerSlice {
   visible?: boolean
   importedRaster?: { overlayLayerId?: string } | null
   importedRasterOverlayLayerId?: string
@@ -112,7 +117,12 @@ export function resolveRasterOverlayIdFromActiveLayer(layer: {
   isImportedRaster?: boolean
   isImported?: boolean
   isAdminBoundary?: boolean
-}): string | null {
+}
+
+/** AutoStats / 多图层对比：从 active layer 记录解析栅格 overlay id */
+export function resolveRasterOverlayIdFromActiveLayer(
+  layer: RasterCapabilityLayerSlice,
+): string | null {
   if (layer.importedRaster?.overlayLayerId) return layer.importedRaster.overlayLayerId
   if (layer.importedRasterOverlayLayerId) return layer.importedRasterOverlayLayerId
   if (layer.isImportedRaster) return layer.catalogId
@@ -122,16 +132,6 @@ export function resolveRasterOverlayIdFromActiveLayer(layer: {
   return null
 }
 
-export function activeLayerHasReadableRaster(layer: {
-  importedRaster?: unknown
-  importedRasterOverlayLayerId?: string
-  importedVector?: unknown
-  importedVectorBackendLayerId?: string
-  catalogId: string
-  dataState?: string
-  isImportedRaster?: boolean
-  isImported?: boolean
-  isAdminBoundary?: boolean
-}): boolean {
+export function activeLayerHasReadableRaster(layer: RasterCapabilityLayerSlice): boolean {
   return resolveRasterOverlayIdFromActiveLayer(layer) != null
 }

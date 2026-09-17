@@ -282,7 +282,10 @@ export function createMapCanvasModuleBundle(
           const g = f.geometry
           if (g.type === 'Polygon') return `P${g.coordinates.map((r) => r.length).join('_')}`
           if (g.type === 'LineString') return `L${g.coordinates.length}`
-          return g.type
+          // DrawFeature.geometry 现为 Polygon | LineString（stores/draw-store.ts），
+          // 故上面的分支已穷尽，此处 TS 会推断为 never。保留兜底（而非删除）以便未来
+          // 扩宽几何类型时仍产出稳定的同步 key，而不是抛出或静默丢帧。
+          return String((g as { type?: unknown }).type ?? 'unknown')
         })
         .join(',')
       const omit = options.omitCompletedDrawFeatures?.() === true ? 1 : 0
