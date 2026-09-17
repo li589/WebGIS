@@ -119,14 +119,49 @@ _PRINT_WIDTH = 100
 _INDENT = "  "
 
 
+# 除反斜杠/引号外必须转义的字符：C0 控制字符（含 \n \r \t）与 JS 行分隔符。
+# 此前只转义反斜杠与引号，控制字符会以裸字符写进生成的 TS 字面量 → 语法错误
+# （或换行被当成字符串终止）。当前色带名/色值均为中文与 #RRGGBB，尚无实际触发，
+# 属潜伏缺陷；补齐后与 json.dumps 的转义面等价。
+_JS_CONTROL_ESCAPES = {
+    "\b": "\\b",
+    "\f": "\\f",
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+    "\v": "\\v",
+    "\u2028": "\\u2028",
+    "\u2029": "\\u2029",
+}
+
+
+def _js_escape(value: str, quote: str) -> str:
+    """转义反斜杠、指定引号，以及所有 C0 控制字符 / JS 行分隔符。"""
+    out = []
+    for ch in value:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == quote:
+            out.append("\\" + quote)
+        else:
+            esc = _JS_CONTROL_ESCAPES.get(ch)
+            if esc is not None:
+                out.append(esc)
+            elif ord(ch) < 0x20:
+                out.append("\\u%04x" % ord(ch))
+            else:
+                out.append(ch)
+    return "".join(out)
+
+
 def _js_string(value: str) -> str:
     """按 prettier singleQuote 语义输出字符串字面量。
 
     优先单引号；当内容含单引号且不含双引号时改用双引号（与 prettier 一致）。
     """
     if "'" in value and '"' not in value:
-        return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
-    return "'%s'" % value.replace("\\", "\\\\").replace("'", "\\'")
+        return '"%s"' % _js_escape(value, '"')
+    return "'%s'" % _js_escape(value, "'")
 
 
 def _js_key(key: str) -> str:
