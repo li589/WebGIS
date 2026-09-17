@@ -202,7 +202,15 @@ jobs:
         working-directory: Code/frontend
         run: npm ci --prefer-offline
 
-      - name: Build (vue-tsc + vite)
+      # 命名对齐实际执行内容：此前的步骤名为「Build (vue-tsc + vite)」，但 `npm run build`
+      # 只跑 vite（prebuild=gen:catalog），vue-tsc 从未在 CI 执行 → 2026-09-02~09-16 期间
+      # 累积了 9 处类型错误而无人发现（本地 vue-tsc 也从 0 error 变为 9 error）。
+      # 现拆成两步：类型门禁独立成步，失败即红。
+      - name: Type check (vue-tsc)
+        working-directory: Code/frontend
+        run: npm run type-check
+
+      - name: Build (vite)
         working-directory: Code/frontend
         run: npm run build
 
