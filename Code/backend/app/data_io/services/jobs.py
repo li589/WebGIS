@@ -12,6 +12,7 @@ from typing import Any
 from collections.abc import Callable
 
 from app.data_io.services.paths import jobs_dir, ensure_imports_root, safe_import_child
+from app.data_io.services._meta_io import save_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -53,24 +54,47 @@ def create_job(
         "created_at": time.time(),
         "updated_at": time.time(),
     }
-    _job_path(job_id).write_text(
-        json.dumps(record, ensure_ascii=False), encoding="utf-8"
-    )
+    # 原子写：同目录 ``.tmp`` + ``os.replace``（见 ``_meta_io.save_json_atomic``）。
+    # 直接 ``write_text`` 是「先截断再写」，并发读者可读到 0 字节文件 → JSONDecodeError。
+    save_json_atomic(_job_path(job_id), record)
     return job_id
 
 
 def update_job(job_id: str, **fields: Any) -> dict[str, Any]:
+    """读-改-写任务记录。
+
+    **写入**已原子化（``save_json_atomic``），故并发读者不会再读到半写 JSON。
+    但**读-改-写本身未串行化**：两个写者（如 worker 线程与 API 侧 ``cancel_job``）
+    交错时，后写者会覆盖前写者的字段（lost update）。当前状态机对此可容忍
+    （``run_job_sync`` 在关键点复读 ``status``，cancelled 优先），
+    如需强一致需引入按 job 粒度的文件锁——属已知残留风险，勿默认已有互斥。
+    """
     path = _job_path(job_id)
     if not path.exists():
         raise FileNotFoundError(f"任务不存在: {job_id}")
     record = json.loads(path.read_text(encoding="utf-8"))
     record.update(fields)
     record["updated_at"] = time.time()
-    path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    save_json_atomic(path, record)
     return record
 
 
 def get_job(job_id: str) -> dict[str, Any]:
+    """读取任务记录。
+
+    Raises:
+        FileNotFoundError: 记录不存在（含 job_id 校验不通过）。
+
+    **不捕获** ``json.JSONDecodeError``：任务文件不可解析属**服务端故障**
+    （磁盘损坏 / 历史半写文件 / 进程被强杀），按 Phase 3「异常边界收窄」的既定
+    契约上抛全局处理器 → 500 + 通用文案。切勿改成返回 404 或空记录：
+    那会把服务端故障伪装成客户端错误，并让 ``Test/backend/test_exception_narrowing.py``
+    场景 4a 的回归失效。
+
+    正常路径下不会读到半写内容——写入侧统一走 ``save_json_atomic`` 原子替换
+    （2026-09-17 修复：``enqueue_job`` 的 force_async 分支启动 worker 线程后
+    立即回读同一文件，与旧的非原子 ``write_text`` 竞态，偶发 400）。
+    """
     path = _job_path(job_id)
     if not path.exists():
         raise FileNotFoundError(f"任务不存在: {job_id}")
@@ -212,6 +236,9 @@ def enqueue_job(
         logger.debug("celery enqueue unavailable, fallback thread", exc_info=True)
 
     if force_async:
+        # 注意：下一行起 worker 线程后会立即 ``update_job``（重写同一文件），
+        # 而本请求线程紧接着 ``get_job`` 回读。两者曾因非原子写入竞态读到 0 字节
+        # 文件（2026-09-17 CI 偶发 400）。写入已原子化，此回读不再可能读到半写内容。
         threading.Thread(target=_run, name=f"import-{job_id}", daemon=True).start()
         return get_job(job_id)
 
