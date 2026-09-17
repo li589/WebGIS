@@ -101,6 +101,13 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ['geoflow.cgdas.dpdns.org', 'localhost', '127.0.0.1'],
     },
     build: {
+      // 不清空 outDir：`dist` 被 .gitignore 忽略、CI 也从不引用（每次全新 checkout），
+      // 故 skip-empty 对 CI/其他开发者零副作用；而本机（WorkBuddy 沙箱）下
+      // vite 默认的 emptyOutDir 会在一次调用里删除 500+ 个文件（dist/cesium 资源包
+      // 就有约 390 个），触发 safe-delete 的「批量删除」守卫 → 删除被中断，
+      // dist/assets 已被清空但产物未写入 → index.html 引用不存在的 chunk →
+      // 前端整页白屏（2026-09-17 实测）。产物文件名带内容 hash，旧文件残留无害。
+      emptyOutDir: false,
       // MapLibre is large even when isolated, so raise the warning threshold
       // after splitting framework/export libraries into separate chunks.
       chunkSizeWarningLimit: 1100,
