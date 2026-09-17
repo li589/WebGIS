@@ -6,6 +6,8 @@ append 模式（``upload.py``）与 manifest 模式（``resumable_upload.py``）
 - ``save_meta``：先写临时文件再 ``os.replace``，避免并发读读到半写 JSON。
 - ``meta_lock``：跨进程/线程文件锁（Windows ``msvcrt.locking`` / POSIX ``fcntl.flock``），
   保护「读 meta → 改字段 → 写 meta」的 check-then-act 临界区。
+- ``file_lock``：上者的通用形式（任意锁文件路径）；``meta_lock`` 现在委托它。
+  ``jobs.py`` 的按 job 粒度锁也复用它，避免仓库里出现第二套锁实现。
 - ``load_meta``：纯读，``save_meta`` 的原子性保证读不到半写内容，故无需持锁。
 
 量纲：``dest`` 为 staging 会话目录（``staging_dir()/<upload_id>``），meta 文件名固定 ``meta.json``。
@@ -122,35 +124,59 @@ def save_meta(dest: Path, meta: dict[str, Any]) -> None:
 
 
 @contextmanager
-def meta_lock(dest: Path) -> Iterator[None]:
-    """跨进程/线程安全的 meta 文件锁。
+def file_lock(lock_path: Path) -> Iterator[None]:
+    """跨进程/线程的**建议性**文件排他锁（通用化，任意锁文件路径）。
 
     Windows 用 ``msvcrt.locking``（``LK_LOCK`` 阻塞获取 / ``LK_UNLCK`` 释放），
-    POSIX 用 ``fcntl.flock``（``LOCK_EX`` 排他锁）。
+    POSIX 用 ``fcntl.flock``（``LOCK_EX`` 排他锁）。锁文件不存在时创建
+    （``mkdir(parents=True)`` + ``touch``）。
 
-    锁文件 ``meta.lock`` 在 ``dest`` 下（与 ``meta.json`` 同目录），``touch(exist_ok=True)``
-    保证存在。锁是建议性的（advisory），只有同样调用本函数的代码才会互斥。
+    语义与注意：
+    - **阻塞式**：拿不到锁会等，不超时、不降级。请勿在持锁期间做慢 IO。
+    - **不可重入**：同一线程再次对同一路径取锁会**自锁死**
+      （Windows 按句柄判冲突，POSIX ``flock`` 按打开文件描述判冲突）。
+      需要嵌套时请把内层改成不取锁的 ``*_locked`` 变体，而不是递归调用。
+    - 建议性（advisory）：只有同样经过本函数取锁的代码才会互斥。
     """
-    lock_path = dest / _LOCK_FILENAME
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.touch(exist_ok=True)
     with lock_path.open("a+b") as lock_f:
-        try:
-            import msvcrt
-
-            msvcrt.locking(lock_f.fileno(), msvcrt.LK_LOCK, 1)
-        except ImportError:
-            import fcntl
-
-            fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+        _acquire_lock(lock_f)
         try:
             yield
         finally:
-            try:
-                import msvcrt
+            _release_lock(lock_f)
 
-                lock_f.seek(0)
-                msvcrt.locking(lock_f.fileno(), msvcrt.LK_UNLCK, 1)
-            except ImportError:
-                import fcntl
 
-                fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+def _acquire_lock(lock_f: Any) -> None:
+    try:
+        import msvcrt
+
+        msvcrt.locking(lock_f.fileno(), msvcrt.LK_LOCK, 1)
+    except ImportError:
+        import fcntl
+
+        fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+
+
+def _release_lock(lock_f: Any) -> None:
+    try:
+        import msvcrt
+
+        lock_f.seek(0)
+        msvcrt.locking(lock_f.fileno(), msvcrt.LK_UNLCK, 1)
+    except ImportError:
+        import fcntl
+
+        fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def meta_lock(dest: Path) -> Iterator[None]:
+    """staging 会话目录的 meta 文件锁（``dest/meta.lock``）。
+
+    实现委托 ``file_lock``；保留本函数是为了让上传链路（``upload.py`` /
+    ``resumable_upload.py``）的调用点语义不变。
+    """
+    with file_lock(dest / _LOCK_FILENAME):
+        yield

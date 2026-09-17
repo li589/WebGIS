@@ -7,12 +7,13 @@ import logging
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from app.data_io.services.paths import jobs_dir, ensure_imports_root, safe_import_child
-from app.data_io.services._meta_io import save_json_atomic
+from app.data_io.services._meta_io import file_lock, save_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +62,22 @@ def create_job(
 
 
 def update_job(job_id: str, **fields: Any) -> dict[str, Any]:
-    """读-改-写任务记录。
+    """读-改-写任务记录（**按 job 粒度加锁**，不会 lost update）。
 
-    **写入**已原子化（``save_json_atomic``），故并发读者不会再读到半写 JSON。
-    但**读-改-写本身未串行化**：两个写者（如 worker 线程与 API 侧 ``cancel_job``）
-    交错时，后写者会覆盖前写者的字段（lost update）。当前状态机对此可容忍
-    （``run_job_sync`` 在关键点复读 ``status``，cancelled 优先），
-    如需强一致需引入按 job 粒度的文件锁——属已知残留风险，勿默认已有互斥。
+    写入本身是原子的（``save_json_atomic``），读者不会看到半写 JSON；但
+    「读 → 改 → 写」若不串行化，两个写者（worker 线程与 API 侧 ``cancel_job``）
+    交错时后写者会覆盖前写者刚改的字段。本函数用 ``job_lock`` 把整个
+    临界区串起来，故**不要**在持锁期间再调用 ``update_job``（不可重入，会自锁死）——
+    需要更宽的临界区请在调用方用 ``job_lock`` 包住，并在内层调 ``_update_job_locked``。
+
+    锁开销：每个 job 一个 ``<job_id>.lock`` 空文件（只作为锁锚点，不写内容）。
     """
+    with job_lock(job_id):
+        return _update_job_locked(job_id, **fields)
+
+
+def _update_job_locked(job_id: str, **fields: Any) -> dict[str, Any]:
+    """``update_job`` 的无锁内核：**调用方必须已持有 ``job_lock(job_id)``**。"""
     path = _job_path(job_id)
     if not path.exists():
         raise FileNotFoundError(f"任务不存在: {job_id}")
@@ -77,6 +86,19 @@ def update_job(job_id: str, **fields: Any) -> dict[str, Any]:
     record["updated_at"] = time.time()
     save_json_atomic(path, record)
     return record
+
+
+@contextmanager
+def job_lock(job_id: str) -> Iterator[None]:
+    """按 job 粒度的排他文件锁（跨线程/进程，委托 ``_meta_io.file_lock``）。
+
+    锁锚点与任务记录同目录：``<job_id>.lock``。命名后缀有意区别于 ``job-*.json``，
+    不会被 ``list_jobs`` 的 glob 扫到，也不影响 ``_job_path`` 的越界校验。
+
+    **不可重入**——需要嵌套临界区时用 ``_update_job_locked``。
+    """
+    with file_lock(_job_path(job_id).with_suffix(".lock")):
+        yield
 
 
 def get_job(job_id: str) -> dict[str, Any]:
@@ -153,48 +175,75 @@ def list_jobs(
 
 
 def cancel_job(job_id: str) -> dict[str, Any]:
-    """尽力取消：queued 立即可取消；running 标记 cancelled，handler 起点检查。"""
-    record = get_job(job_id)
-    status = str(record.get("status") or "")
-    if status in {"succeeded", "failed", "cancelled"}:
-        return {"job_id": job_id, "status": status}
-    return update_job(job_id, status="cancelled", message="cancelled", progress=1.0)
+    """尽力取消：queued 立即可取消；running 标记 cancelled，handler 起点检查。
+
+    「读状态 → 判终态 → 写 cancelled」整段在 ``job_lock`` 内完成：否则与 worker
+    的终态写入交错时，可能把刚落库的 ``succeeded`` / ``failed`` 覆盖成 ``cancelled``
+    （比单纯的 lost update 更严重——状态被回退）。内层必须用 ``_update_job_locked``，
+    ``update_job`` 会再次取同一把锁而自锁死。
+    """
+    with job_lock(job_id):
+        record = get_job(job_id)
+        status = str(record.get("status") or "")
+        if status in {"succeeded", "failed", "cancelled"}:
+            return {"job_id": job_id, "status": status}
+        return _update_job_locked(
+            job_id, status="cancelled", message="cancelled", progress=1.0
+        )
+
+
+def _cancelled_snapshot(job_id: str) -> dict[str, Any] | None:
+    """**必须在持有 ``job_lock(job_id)`` 时调用**：已取消则返回其记录，否则 ``None``。"""
+    current = get_job(job_id)
+    if str(current.get("status") or "") == "cancelled":
+        return current
+    return None
 
 
 def run_job_sync(job_id: str, handler: JobHandler) -> dict[str, Any]:
-    record = get_job(job_id)
-    if str(record.get("status") or "") == "cancelled":
-        return record
-    update_job(job_id, status="running", progress=0.05, message="running")
-    try:
+    """同步执行任务。
+
+    每次「判 cancelled + 写终态」都放在同一把 ``job_lock`` 内，使取消与终态写入
+    互斥；``handler`` 本身**不在锁内**执行（可能耗时数分钟，持锁会阻塞取消）。
+    """
+    with job_lock(job_id):
         record = get_job(job_id)
         if str(record.get("status") or "") == "cancelled":
             return record
+        _update_job_locked(job_id, status="running", progress=0.05, message="running")
+    try:
+        with job_lock(job_id):
+            cancelled = _cancelled_snapshot(job_id)
+            if cancelled is not None:
+                return cancelled
+            record = get_job(job_id)
         result = handler(record.get("payload") or {})
-        # 若运行中被取消，保留 cancelled，不覆盖为 succeeded
-        current = get_job(job_id)
-        if str(current.get("status") or "") == "cancelled":
-            return current
-        return update_job(
-            job_id,
-            status="succeeded",
-            progress=1.0,
-            message="done",
-            result=result,
-            error=None,
-        )
+        with job_lock(job_id):
+            # 若运行中被取消，保留 cancelled，不覆盖为 succeeded
+            cancelled = _cancelled_snapshot(job_id)
+            if cancelled is not None:
+                return cancelled
+            return _update_job_locked(
+                job_id,
+                status="succeeded",
+                progress=1.0,
+                message="done",
+                result=result,
+                error=None,
+            )
     except Exception as exc:
         logger.exception("import job failed: %s", job_id)
-        current = get_job(job_id)
-        if str(current.get("status") or "") == "cancelled":
-            return current
-        update_job(
-            job_id,
-            status="failed",
-            progress=1.0,
-            message="failed",
-            error=str(exc),
-        )
+        with job_lock(job_id):
+            cancelled = _cancelled_snapshot(job_id)
+            if cancelled is not None:
+                return cancelled
+            _update_job_locked(
+                job_id,
+                status="failed",
+                progress=1.0,
+                message="failed",
+                error=str(exc),
+            )
         raise
 
 

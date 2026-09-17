@@ -205,9 +205,9 @@ def test_concurrent_update_and_read_never_sees_partial_json(jobs_mod):
         t.join(timeout=15)
     assert not any(t.is_alive() for t in threads), "读写线程未在超时内退出"
 
-    assert stats["writes"] > 0 and stats["reads"] > 0, (
-        f"未产生并发读写，用例无效: {stats}"
-    )
+    assert (
+        stats["writes"] > 0 and stats["reads"] > 0
+    ), f"未产生并发读写，用例无效: {stats}"
     assert not writer_errors, f"写入侧抛出异常: {writer_errors[:3]}"
     # 核心断言：读者永远不得看到半写 / 不可解析内容
     assert not corrupt, (
@@ -230,6 +230,156 @@ def test_torn_file_scenario_is_reproduced_by_direct_truncation(jobs_mod):
     jobs_mod._job_path(job_id).write_text("", encoding="utf-8")
     with pytest.raises(json.JSONDecodeError):
         jobs_mod.get_job(job_id)
+
+
+# ---------------------------------------------------------------------------
+# B2. 按 job 粒度的互斥：多写者各写各的字段，不得 lost update
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_distinct_field_writes_do_not_lose_updates(jobs_mod):
+    """8 个写者各写自己的字段：结束后**每个字段都必须在**。
+
+    这是 ``job_lock`` 的核心回归锁。``update_job`` 是「读 → 改 → 写」，若不加锁，
+    写者 A 先读到不含 ``fB`` 的快照、B 写完 ``fB``、A 再落盘就会把 ``fB`` 抹掉
+    （lost update）。**加锁前本用例必红**。
+    """
+    job_id = _create(jobs_mod)
+    n_writers, rounds = 8, 40
+    errors: list[str] = []
+    barrier = threading.Barrier(n_writers)
+
+    def writer(index: int) -> None:
+        try:
+            barrier.wait(timeout=15)  # 尽量让所有写者同时进入临界区竞争
+            for _ in range(rounds):
+                jobs_mod.update_job(job_id, **{f"f{index}": True})
+        except Exception as exc:  # noqa: BLE001 — 收集后统一断言，便于诊断
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(n_writers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    assert not any(t.is_alive() for t in threads), "写者线程未在超时内退出"
+    assert not errors, f"写者抛出异常: {errors[:3]}"
+
+    record = jobs_mod.get_job(job_id)
+    missing = [f"f{i}" for i in range(n_writers) if not record.get(f"f{i}")]
+    assert not missing, f"lost update：这些写者的字段被覆盖丢失 {missing}"
+
+
+def test_job_lock_serializes_critical_sections(jobs_mod):
+    """互斥本身可验证：临界区内并发计数不得 > 1。"""
+    job_id = _create(jobs_mod)
+
+    inside = 0
+    max_inside = 0
+    violations: list[int] = []
+    guard = threading.Lock()
+
+    def worker() -> None:
+        nonlocal inside, max_inside
+        for _ in range(30):
+            with jobs_mod.job_lock(job_id):
+                with guard:
+                    inside += 1
+                    max_inside = max(max_inside, inside)
+                    if inside > 1:
+                        violations.append(inside)
+                time.sleep(0.001)  # 拉长临界区，放大未互斥时的重叠概率
+                with guard:
+                    inside -= 1
+
+    threads = [threading.Thread(target=worker) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    assert not violations, f"临界区出现并发进入（锁失效）: {violations[:5]}"
+    assert max_inside == 1, f"临界区最大并发数应为 1，实为 {max_inside}"
+
+
+def test_lock_anchor_is_not_mistaken_for_a_job(jobs_mod):
+    """锁锚点 ``<job_id>.lock`` 不得被 ``list_jobs`` 的 ``job-*.json`` glob 扫到。"""
+    job_id = _create(jobs_mod)
+    jobs_mod.update_job(job_id, progress=0.1)  # 该调用会创建锁锚点
+
+    job_dir = jobs_mod.jobs_dir()
+    assert list(job_dir.glob("*.lock")), "未创建锁锚点，说明加锁路径没生效"
+
+    listed = [i["job_id"] for i in jobs_mod.list_jobs(limit=100, include_all=True)]
+    assert job_id in listed
+    assert all(".lock" not in str(x) for x in listed)
+
+
+# ---------------------------------------------------------------------------
+# B3. 取消与终态写入互斥（cancel 不得被覆盖 / 也不得覆盖终态）
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_job_does_not_overwrite_terminal_state(jobs_mod):
+    """已成功的任务再取消，状态必须保持 ``succeeded``（不得被回退成 cancelled）。"""
+    job_id = _create(jobs_mod)
+    jobs_mod.update_job(job_id, status="succeeded", progress=1.0)
+
+    result = jobs_mod.cancel_job(job_id)
+
+    assert result["status"] == "succeeded"
+    assert jobs_mod.get_job(job_id)["status"] == "succeeded"
+
+
+def test_cancel_job_marks_queued_job_cancelled(jobs_mod):
+    job_id = _create(jobs_mod)  # 初始 status=queued
+    result = jobs_mod.cancel_job(job_id)
+    assert result["status"] == "cancelled"
+    assert jobs_mod.get_job(job_id)["status"] == "cancelled"
+
+
+def test_run_job_sync_preserves_cancel_issued_inside_handler(jobs_mod):
+    """处理器内取消 → 终态保持 cancelled。
+
+    一个用例锁两件事：
+    1. ``handler`` **不在锁内**执行——否则处理器里再调 ``cancel_job``（要取同一把锁）
+       会自锁死，本用例将直接超时；
+    2. 取消优先于成功——终态写入前在同一把锁内复查，cancelled 不被覆盖为 succeeded。
+    """
+    job_id = _create(jobs_mod)
+
+    def handler(_payload: dict) -> dict:
+        jobs_mod.cancel_job(job_id)
+        return {"layer_id": "should-not-win"}
+
+    final = jobs_mod.run_job_sync(job_id, handler)
+
+    assert final["status"] == "cancelled"
+    assert jobs_mod.get_job(job_id)["status"] == "cancelled"
+
+
+def test_run_job_sync_completes_when_not_cancelled(jobs_mod):
+    """未取消时正常落到 succeeded，并把 handler 结果写入 ``result``。"""
+    job_id = _create(jobs_mod)
+    final = jobs_mod.run_job_sync(job_id, lambda _p: {"layer_id": "L-1"})
+    assert final["status"] == "succeeded"
+    assert final["result"] == {"layer_id": "L-1"}
+    assert final["error"] is None
+
+
+def test_run_job_sync_records_failure(jobs_mod):
+    """handler 抛错 → ``failed`` + ``error`` 文案，且异常继续上抛（调用方需感知）。"""
+    job_id = _create(jobs_mod)
+
+    def boom(_payload: dict) -> dict:
+        raise ValueError("bad shapefile")
+
+    with pytest.raises(ValueError):
+        jobs_mod.run_job_sync(job_id, boom)
+
+    record = jobs_mod.get_job(job_id)
+    assert record["status"] == "failed"
+    assert "bad shapefile" in record["error"]
 
 
 # ---------------------------------------------------------------------------
