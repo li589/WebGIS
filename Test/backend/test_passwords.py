@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.passwords import (
     _ALGO,
     _DEFAULT_ITERATIONS,
+    WEAK_POLICY_BYPASS_ENV_VAR,
+    PasswordPolicyError,
     hash_password,
+    validate_password,
     verify_password,
 )
 
@@ -103,3 +108,68 @@ def test_verify_password_wrong_algo_returns_false():
 def test_verify_password_empty_string_returns_false():
     """An empty stored string returns False instead of raising."""
     assert verify_password(PLAIN, "") is False, "empty stored must return False"
+
+
+# ---------------------------------------------------------------------------
+# Password strength policy + the development-only weak-policy bypass
+# ---------------------------------------------------------------------------
+
+WEAK = "cgda-dev-admin"
+STRONG = "R0qh5KPJDhGFt3P3xFQf4dXdKgFn"
+
+
+def test_validate_password_rejects_known_weak_password():
+    """A denylisted (historically leaked) password is refused even standalone."""
+    with pytest.raises(PasswordPolicyError):
+        validate_password(WEAK)
+
+
+def test_validate_password_rejects_password_containing_username():
+    """Rule 4: the password must not contain the username (case-insensitive)."""
+    with pytest.raises(PasswordPolicyError):
+        validate_password("Xk7-admin-Qz2", username="admin")
+
+
+def test_validate_password_accepts_strong_password():
+    validate_password(STRONG, username="admin")
+
+
+def test_weak_bypass_off_by_default(monkeypatch):
+    """Without the flag, development must still enforce the policy."""
+    monkeypatch.delenv(WEAK_POLICY_BYPASS_ENV_VAR, raising=False)
+    monkeypatch.setenv("BACKEND_ENV", "development")
+    with pytest.raises(PasswordPolicyError):
+        validate_password(WEAK, username="admin")
+
+
+def test_weak_bypass_flag_value_must_be_truthy(monkeypatch):
+    monkeypatch.setenv(WEAK_POLICY_BYPASS_ENV_VAR, "0")
+    monkeypatch.setenv("BACKEND_ENV", "development")
+    with pytest.raises(PasswordPolicyError):
+        validate_password(WEAK, username="admin")
+
+
+def test_weak_bypass_requires_both_flag_and_development_env(monkeypatch):
+    """The switch is deliberately double-gated so it can never leak into prod."""
+    monkeypatch.setenv(WEAK_POLICY_BYPASS_ENV_VAR, "1")
+
+    # flag set but no environment declared -> still enforced
+    monkeypatch.delenv("BACKEND_ENV", raising=False)
+    with pytest.raises(PasswordPolicyError):
+        validate_password(WEAK, username="admin")
+
+    # flag set but non-development environment -> still enforced
+    monkeypatch.setenv("BACKEND_ENV", "production")
+    with pytest.raises(PasswordPolicyError):
+        validate_password(WEAK, username="admin")
+
+    # flag + development -> bypassed
+    monkeypatch.setenv("BACKEND_ENV", "development")
+    validate_password(WEAK, username="admin")
+
+
+def test_weak_bypass_still_accepts_strong_passwords(monkeypatch):
+    """Enabling the bypass must not change behaviour for valid passwords."""
+    monkeypatch.setenv(WEAK_POLICY_BYPASS_ENV_VAR, "1")
+    monkeypatch.setenv("BACKEND_ENV", "development")
+    validate_password(STRONG, username="admin")

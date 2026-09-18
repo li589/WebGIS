@@ -8,9 +8,12 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import secrets
 import string
+
+logger = logging.getLogger(__name__)
 
 _ALGO = "pbkdf2-sha256"
 _DEFAULT_ITERATIONS = 200_000
@@ -67,6 +70,30 @@ class PasswordPolicyError(ValueError):
     """口令不满足强度策略。"""
 
 
+#: 显式旁路口令强度策略的开关环境变量名。
+WEAK_POLICY_BYPASS_ENV_VAR = "BACKEND_PASSWORD_POLICY_ALLOW_WEAK"
+
+#: 只有这些环境允许旁路（生产环境**即使设了开关也不生效**）。
+_WEAK_BYPASS_ENVS = frozenset({"development", "dev", "test", "testing"})
+
+
+def _weak_policy_bypass() -> bool:
+    """开发期是否旁路口令强度策略（默认关闭，需**双重**条件同时满足）。
+
+    为什么做成双条件而不是只看开关：``BACKEND_PASSWORD_POLICY_ALLOW_WEAK`` 一旦
+    被误带进生产配置（镜像/编排/env 泄漏），单独一个开关就会把整条口令策略废掉。
+    这里再叠加一层环境判定，生产（``BACKEND_ENV`` 非 development/test）下**直接忽略开关**。
+
+    注意：``passwords.py`` 刻意只依赖 stdlib（不 import ``app.core.config``），
+    以免这个底层模块反向依赖配置层，所以这里直接读环境变量。
+    """
+    flag = os.getenv(WEAK_POLICY_BYPASS_ENV_VAR, "").strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        return False
+    env = os.getenv("BACKEND_ENV", "").strip().lower()
+    return env in _WEAK_BYPASS_ENVS
+
+
 def _class_count(password: str) -> int:
     chars = set(password)
     return sum(1 for cls in _CLASSES if chars & cls)
@@ -80,7 +107,21 @@ def validate_password(password: str, *, username: str | None = None) -> None:
       2. 至少包含 2 类字符（小写/大写/数字/符号）—— 内部系统取中等强度；
       3. 不在弱口令黑名单内（忽略大小写与首尾空白）；
       4. 不等于用户名，也不包含用户名（忽略大小写）。
+
+    **开发期旁路**：``BACKEND_PASSWORD_POLICY_ALLOW_WEAK=1`` 且 ``BACKEND_ENV`` 属于
+    development/dev/test/testing 时，整条策略被跳过（只打一条 WARNING）。
+    用于开发阶段统一用弱口令便于联调；**生产环境该开关不生效**（见 ``_weak_policy_bypass``）。
     """
+    if _weak_policy_bypass():
+        logger.warning(
+            "Password policy BYPASSED via %s (BACKEND_ENV=%s) for user=%r — "
+            "DEVELOPMENT ONLY. Unset it and rotate credentials before any real deployment.",
+            WEAK_POLICY_BYPASS_ENV_VAR,
+            os.getenv("BACKEND_ENV", ""),
+            username,
+        )
+        return
+
     if not isinstance(password, str) or not password:
         raise PasswordPolicyError("password is required")
 
