@@ -226,3 +226,7 @@ Tools/sync_server_data.py
 # 本地 IDE/插件工作区根指针（不入库）
 .v2c/
 .video_agent/
+
+# 误拷入仓库根的传输归档（远端清理用，勿入库；2026-09-18）
+Code/backend.7z
+Code/frontend.zip
