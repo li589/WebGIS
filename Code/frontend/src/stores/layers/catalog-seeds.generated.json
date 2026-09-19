@@ -1,37 +1,9 @@
 {
   "categories": [
     {
-      "id": "climate",
-      "name": "气候与灾害",
-      "icon": "C",
-      "accentColor": "#ff9d6c",
-      "chipTone": "rgba(255, 157, 108, 0.16)"
-    },
-    {
-      "id": "landcover",
-      "name": "土地利用",
-      "icon": "L",
-      "accentColor": "#7fd99a",
-      "chipTone": "rgba(127, 217, 154, 0.16)"
-    },
-    {
-      "id": "terrain",
-      "name": "地形数据",
-      "icon": "T",
-      "accentColor": "#eab308",
-      "chipTone": "rgba(234, 179, 8, 0.16)"
-    },
-    {
-      "id": "vegetation",
-      "name": "植被相关",
-      "icon": "V",
-      "accentColor": "#4daf4a",
-      "chipTone": "rgba(77, 175, 74, 0.16)"
-    },
-    {
       "id": "research-group",
       "name": "核心资产",
-      "icon": "R",
+      "icon": "",
       "accentColor": "#ff6f91",
       "chipTone": "rgba(255, 111, 145, 0.16)",
       "subCategories": [
@@ -41,16 +13,44 @@
       ]
     },
     {
+      "id": "climate",
+      "name": "气候与灾害",
+      "icon": "",
+      "accentColor": "#ff9d6c",
+      "chipTone": "rgba(255, 157, 108, 0.16)"
+    },
+    {
+      "id": "landcover",
+      "name": "土地利用",
+      "icon": "",
+      "accentColor": "#7fd99a",
+      "chipTone": "rgba(127, 217, 154, 0.16)"
+    },
+    {
+      "id": "terrain",
+      "name": "地形数据",
+      "icon": "",
+      "accentColor": "#eab308",
+      "chipTone": "rgba(234, 179, 8, 0.16)"
+    },
+    {
+      "id": "vegetation",
+      "name": "植被相关",
+      "icon": "",
+      "accentColor": "#4daf4a",
+      "chipTone": "rgba(77, 175, 74, 0.16)"
+    },
+    {
       "id": "imported",
       "name": "本地导入",
-      "icon": "I",
+      "icon": "",
       "accentColor": "#7ee0a8",
       "chipTone": "rgba(126, 224, 168, 0.16)"
     },
     {
       "id": "weather",
       "name": "在线天气",
-      "icon": "W",
+      "icon": "",
       "accentColor": "#67d4ff",
       "chipTone": "rgba(103, 212, 255, 0.18)"
     }

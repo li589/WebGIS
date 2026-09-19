@@ -1,51 +1,51 @@
 [
   {
+    "id": "research-group",
+    "name": "核心资产",
+    "icon": "",
+    "accent_color": "#ff6f91",
+    "chip_tone": "rgba(255, 111, 145, 0.16)",
+    "sub_categories": ["模型输入", "模型输出", "辅助数据"]
+  },
+  {
     "id": "climate",
     "name": "气候与灾害",
-    "icon": "C",
+    "icon": "",
     "accent_color": "#ff9d6c",
     "chip_tone": "rgba(255, 157, 108, 0.16)"
   },
   {
     "id": "landcover",
     "name": "土地利用",
-    "icon": "L",
+    "icon": "",
     "accent_color": "#7fd99a",
     "chip_tone": "rgba(127, 217, 154, 0.16)"
   },
   {
     "id": "terrain",
     "name": "地形数据",
-    "icon": "T",
+    "icon": "",
     "accent_color": "#eab308",
     "chip_tone": "rgba(234, 179, 8, 0.16)"
   },
   {
     "id": "vegetation",
     "name": "植被相关",
-    "icon": "V",
+    "icon": "",
     "accent_color": "#4daf4a",
     "chip_tone": "rgba(77, 175, 74, 0.16)"
   },
   {
-    "id": "research-group",
-    "name": "核心资产",
-    "icon": "R",
-    "accent_color": "#ff6f91",
-    "chip_tone": "rgba(255, 111, 145, 0.16)",
-    "sub_categories": ["模型输入", "模型输出", "辅助数据"]
-  },
-  {
     "id": "imported",
     "name": "本地导入",
-    "icon": "I",
+    "icon": "",
     "accent_color": "#7ee0a8",
     "chip_tone": "rgba(126, 224, 168, 0.16)"
   },
   {
     "id": "weather",
     "name": "在线天气",
-    "icon": "W",
+    "icon": "",
     "accent_color": "#67d4ff",
     "chip_tone": "rgba(103, 212, 255, 0.18)"
   }
