@@ -19,13 +19,20 @@ const generatedData = generatedDataRaw as unknown as {
 }
 
 // ── 类别定义（X1: 从后端 JSON codegen 派生）────────────────────────────────────
-// research-group 显示名统一走 ORG_CATEGORY_NAME（默认「核心资产」），勿在 JSON/组件里写死旧名。
+// research-group 显示名统一走 ORG_CATEGORY_NAME（默认「科研数据」），勿在 JSON/组件里写死旧名；
+// 该分组恒定置顶（与侧栏「空组也常显」的既有特例同源），故分组管理里的排序对它不生效。
 export function applyResearchGroupCategoryLabel<T extends { id: string; name: string }>(
   categories: readonly T[],
 ): T[] {
-  return categories.map((cat) =>
+  const patched = categories.map((cat) =>
     cat.id === 'research-group' ? { ...cat, name: ORG_CATEGORY_NAME } : cat,
   )
+  const index = patched.findIndex((cat) => cat.id === 'research-group')
+  if (index > 0) {
+    const [research] = patched.splice(index, 1)
+    if (research) patched.unshift(research)
+  }
+  return patched
 }
 
 export const LAYER_CATEGORIES: LayerCategory[] = applyResearchGroupCategoryLabel(

@@ -306,7 +306,8 @@ h2 {
   border: none;
   border-radius: 0.6rem;
   background: var(--surface-sunken);
-  color: var(--text-strong);
+  /* 2026-09-20：分组名统一用正文主色（同分析面板标题），不再随分类变色 */
+  color: var(--text-primary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -322,9 +323,9 @@ h2 {
   transform: translateX(2px);
 }
 
+/* 2026-09-20：分组名前缀字母（C/L/T/V/R/I/W）整体隐藏 */
 .cat-icon {
-  font-size: var(--font-size-caption);
-  flex-shrink: 0;
+  display: none;
 }
 
 .cat-name {
@@ -387,7 +388,8 @@ h2 {
   border: 1px solid rgba(136, 216, 255, 0.35);
   border-radius: 999px;
   background: rgba(136, 216, 255, 0.1);
-  color: var(--text-strong);
+  /* 2026-09-20：统一用正文主色（同分组名），不再随分类变色 */
+  color: var(--text-primary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);

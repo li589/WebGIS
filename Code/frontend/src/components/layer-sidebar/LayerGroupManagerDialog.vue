@@ -25,6 +25,7 @@ import {
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useAuthStore } from '../../stores/auth'
 import { notifyPermissionResourcesStale } from '../../utils/layer-group-manager-bridge'
+import { ORG_CATEGORY_NAME } from '../../ui-copy/brand'
 
 const props = defineProps<{
   open: boolean
@@ -129,18 +130,28 @@ async function loadGroups() {
         seedName,
       }
     })
-    groups.value = catResp.items.map((def) => ({
-      def,
-      editing: false,
-      draftName: def.name,
-      draftIcon: def.icon ?? '',
-      draftAccent: def.accent_color ?? '',
-      draftSubCategories: (def.sub_categories ?? []).join('、'),
-      draftHidden: Boolean(def.hidden),
-      draftHiddenSubCategories: [...(def.hidden_sub_categories ?? [])],
-      membersOpen: false,
-      memberDraft: null,
-    }))
+    const rows: GroupRow[] = catResp.items.map((rawDef) => {
+      // 2026-09-20：与侧栏分组名保持一致——research-group 统一取 ORG_CATEGORY_NAME
+      // （后端种子/主题预设里仍可能是旧名「核心资产」，前端在此归一，避免两处不一致）。
+      const def: LayerCategoryDef =
+        rawDef.id === 'research-group' ? { ...rawDef, name: ORG_CATEGORY_NAME } : rawDef
+      return {
+        def,
+        editing: false,
+        draftName: def.name,
+        draftIcon: def.icon ?? '',
+        draftAccent: def.accent_color ?? '',
+        draftSubCategories: (def.sub_categories ?? []).join('、'),
+        draftHidden: Boolean(def.hidden),
+        draftHiddenSubCategories: [...(def.hidden_sub_categories ?? [])],
+        membersOpen: false,
+        memberDraft: null,
+      }
+    })
+    // 2026-09-20：与侧栏顺序保持一致——research-group 置顶（侧栏由代码强制排第一，此处同步）。
+    const pinned = rows.findIndex((row) => row.def.id === 'research-group')
+    if (pinned > 0) rows.splice(0, 0, rows.splice(pinned, 1)[0])
+    groups.value = rows
   } catch (err) {
     error.value = err instanceof Error ? err.message : '分组加载失败'
   } finally {
@@ -860,10 +871,11 @@ async function importFromPersonalWorkspace() {
   align-items: center;
   gap: 0.65rem;
 }
+/* 2026-09-20：与侧栏保持一致，隐藏分组图标字（C/L/T/V/R/I/W） */
 .lgm-group-icon {
+  display: none;
   width: 1.7rem;
   height: 1.7rem;
-  display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 6px;
