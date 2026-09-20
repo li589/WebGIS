@@ -109,9 +109,6 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
           type="button"
           @click="emit('toggleCategory', group.category.id)"
         >
-          <span class="cat-icon" aria-hidden="true">{{
-            getCategoryMeta(group.category.id)?.icon ?? '◈'
-          }}</span>
           <span class="cat-name">{{
             getCategoryMeta(group.category.id)?.name ?? group.category.id
           }}</span>
