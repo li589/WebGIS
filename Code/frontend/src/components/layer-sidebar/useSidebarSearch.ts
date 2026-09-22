@@ -57,7 +57,17 @@ export function useSidebarSearch(
         values.add(sub)
       }
     }
-    return ['all', ...Array.from(values).sort((a, b) => a.localeCompare(b, 'zh-CN'))]
+    // 排序跟随分组声明的 subCategories 顺序（模型输出 → 模型输入 → 辅助数据），
+    // 未声明的排最后；同级再按拼音，避免纯拼音序把「辅助数据」插到「模型输出」前。
+    const declaredOrder = new Map((research?.subCategories ?? []).map((sub, index) => [sub, index]))
+    return [
+      'all',
+      ...Array.from(values).sort((a, b) => {
+        const orderA = declaredOrder.get(a) ?? Number.MAX_SAFE_INTEGER
+        const orderB = declaredOrder.get(b) ?? Number.MAX_SAFE_INTEGER
+        return orderA !== orderB ? orderA - orderB : a.localeCompare(b, 'zh-CN')
+      }),
+    ]
   })
 
   watch(researchSubCategoryPills, (pills) => {

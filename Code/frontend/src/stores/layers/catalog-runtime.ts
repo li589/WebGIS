@@ -120,6 +120,21 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   )
   const categoryIndexById = computed(() => buildCategoryIndex(layerCategories.value))
 
+  /**
+   * 二级分类展示顺序索引：categoryId → (subCategory 名 → 序号)。
+   * 取自分组声明的 subCategories（种子 layer_categories.json / 管理端编辑），
+   * 用于「科研数据」等分组内的卡片排序——先按 模型输出 → 模型输入 → 辅助数据 归位，
+   * 未出现在声明列表中的二级分类排在其后。
+   */
+  const subCategoryIndexById = computed(() => {
+    const map = new Map<string, Map<string, number>>()
+    for (const category of layerCategories.value) {
+      const subs = category.subCategories ?? []
+      map.set(category.id, new Map(subs.map((sub, index) => [sub, index])))
+    }
+    return map
+  })
+
   const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
     const categories = layerCategories.value
     const allRuntimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
@@ -257,6 +272,18 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
         const categoryOrderB = categoryIndex.get(b.category) ?? Number.MAX_SAFE_INTEGER
         if (categoryOrderA !== categoryOrderB) {
           return categoryOrderA - categoryOrderB
+        }
+        // 同分组内先按分组声明的二级分类顺序归位（如 模型输出 → 模型输入 → 辅助数据），
+        // 保证「模型输出」整体排在最前、「辅助数据」整体排在最后；未声明二级分类者排最后，同级再按名称（拼音）。
+        const subOrderMap = subCategoryIndexById.value.get(a.category)
+        const subOrderA = a.subCategory
+          ? (subOrderMap?.get(a.subCategory) ?? Number.MAX_SAFE_INTEGER)
+          : Number.MAX_SAFE_INTEGER
+        const subOrderB = b.subCategory
+          ? (subOrderMap?.get(b.subCategory) ?? Number.MAX_SAFE_INTEGER)
+          : Number.MAX_SAFE_INTEGER
+        if (subOrderA !== subOrderB) {
+          return subOrderA - subOrderB
         }
         return a.name.localeCompare(b.name, 'zh-CN')
       })
