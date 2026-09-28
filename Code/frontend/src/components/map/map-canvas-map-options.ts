@@ -51,8 +51,9 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
     pitch: 0,
     bearing: 0,
     attributionControl: false,
-    // 允许全球浏览：世界在东西方向重复渲染，用户可拖动到任意经度
-    renderWorldCopies: true,
+    // 只渲染一份世界：不再东西方向重复世界副本，拖动到 ±180° 边界即停住
+    // （全球覆盖的叠加层如 smap-aux-h 此前会在 ±360° 各重复一份）
+    renderWorldCopies: false,
     cancelPendingTileRequestsWhileZooming: true,
     refreshExpiredTiles: false,
     canvasContextAttributes: {
