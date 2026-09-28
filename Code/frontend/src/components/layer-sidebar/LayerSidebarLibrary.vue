@@ -165,14 +165,10 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
         <div
           v-for="(item, index) in group.items"
           :key="item.catalogId"
-          v-spotlight="{ color: item.accentGlow || 'rgba(56, 189, 248, 0.08)' }"
+          v-spotlight="{ color: 'rgba(91, 157, 245, 0.1)' }"
           class="library-card cgda-stagger-item"
           :class="{ added: isAdded(effectiveSourceId(item)) }"
-          :style="{
-            '--accent': item.accentColor,
-            '--glow': item.accentGlow,
-            '--stagger-i': index,
-          }"
+          :style="{ '--stagger-i': index }"
         >
           <div class="card-top">
             <div class="card-title-row">
@@ -187,7 +183,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
                 <span
                   v-if="item.subCategory"
                   class="card-chip subcategory-chip"
-                  style="background: var(--surface-hover); margin-left: 4px; color: var(--accent)"
+                  :data-sub="item.subCategory"
                   >{{ item.subCategory }}</span
                 >
               </div>
@@ -200,7 +196,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             <template v-if="item.category === 'weather'">
               <div class="source-weather-live">
                 <label class="weather-src-label">
-                  <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                  <span class="src-dot" :style="{ background: 'var(--accent)' }"></span>
                   <AppSelect
                     :model-value="weatherSourcePrefsValue(item.catalogId)"
                     :disabled="!!weatherProvidersLoading[item.catalogId]"
@@ -246,7 +242,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
               </div>
               <div v-else-if="item.sources.length === 1" class="source-single">
                 <div class="src-line">
-                  <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                  <span class="src-dot" :style="{ background: 'var(--accent)' }"></span>
                   <span class="src-name">{{ item.sources[0].name }}</span>
                 </div>
                 <div class="src-meta">
@@ -269,7 +265,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
               <div v-else class="source-multi">
                 <div class="source-selector">
                   <label class="source-selector-label">
-                    <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                    <span class="src-dot" :style="{ background: 'var(--accent)' }"></span>
                     <AppSelect
                       :model-value="effectiveSourceId(item)"
                       size="sm"

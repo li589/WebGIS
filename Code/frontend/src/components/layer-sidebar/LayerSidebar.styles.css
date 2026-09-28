@@ -469,6 +469,12 @@ h2 {
   border: 1px solid var(--border-subtle);
   border-radius: var(--sidebar-card-radius);
   background: linear-gradient(135deg, var(--surface-1), var(--surface-sunken));
+  /* 2026-09-28 配色统一：卡片不再跟随图层 accentColor（此前 55 个图层 45 种颜色
+     灌进「数据源圆点 / 二级标签 / 数据源徽标 / +添加按钮 / hover 光晕」导致整列很花），
+     改为全库统一柔和蓝。此处直接定义卡片作用域的 --accent / --glow，
+     覆盖模板里原先注入的图层色；下面各处 var(--accent) 自动跟随。 */
+  --accent: #5b9df5;
+  --glow: rgba(91, 157, 245, 0.22);
   transition:
     border-color var(--motion-base) var(--ease-standard),
     box-shadow var(--motion-base) var(--ease-standard),
@@ -481,9 +487,25 @@ h2 {
   transform: translateY(-1px);
 }
 
+/* 「已添加」状态：此前只有一层 12% 的淡青底，扫一眼分不出来。
+   2026-09-28 改为「边框明显变蓝 + 底色淡蓝」，仅动颜色不动尺寸/间距。 */
 .library-card.added {
-  border-color: var(--accent-surface);
-  background: linear-gradient(135deg, var(--surface-1), var(--accent-surface));
+  border-color: rgba(91, 157, 245, 0.55);
+  background: linear-gradient(135deg, var(--surface-1), rgba(91, 157, 245, 0.14));
+}
+
+/* 浅色主题：卡片统一色改用深蓝，保证白底上的可读性（与全局 --accent 同值）
+   ⚠ 必须用 :root[data-theme='light'] 前缀。写成 :global([data-theme='light']) .foo 时
+   （本文件其他历史规则即如此），scoped 编译会丢掉后面的类名，只剩 [data-theme=light]{...}
+   ⇒ 规则浮到根元素上、既失效又污染整页。 */
+:root[data-theme='light'] .library-card {
+  --accent: #0066cc;
+  --glow: rgba(0, 102, 204, 0.18);
+}
+
+:root[data-theme='light'] .library-card.added {
+  border-color: rgba(0, 102, 204, 0.45);
+  background: linear-gradient(135deg, var(--surface-1), rgba(0, 102, 204, 0.1));
 }
 
 .card-top {
@@ -512,6 +534,59 @@ h2 {
   color: var(--text-primary);
   font-size: var(--font-size-caption);
   flex-shrink: 0;
+}
+
+/* 二级分类小标签（模型输出 / 模型输入 / 辅助数据 / 灾害事件）
+   2026-09-28 第一次调整：由「跟随图层色」改为「按分类固定色」，全库同类恒同色；
+   2026-09-28 第二次调整（本次）：上一版是「淡彩底(0.18) + 中等亮彩字」，
+     两者明度太接近、且底色与卡片底几乎糊在一起 ⇒ 文字发闷、看久了难受。
+     现改为「实心彩底 + 近白字」：底色不透明度 0.18 → 0.5~0.55，文字由中等亮彩字 → 近白，
+     底色与文字之间对比度升至约 7~9:1，同时底色明显跳出卡片底色。
+     仅改颜色（background / color），尺寸、内外边距、字号、文字内容一律未动。 */
+.subcategory-chip {
+  margin-left: 4px;
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.subcategory-chip[data-sub='模型输出'] {
+  background: rgba(124, 105, 220, 0.55);
+  color: #f2eeff;
+}
+
+.subcategory-chip[data-sub='模型输入'] {
+  background: rgba(38, 156, 178, 0.55);
+  color: #e6fbff;
+}
+
+.subcategory-chip[data-sub='辅助数据'] {
+  background: rgba(120, 136, 158, 0.5);
+  color: #f1f5fa;
+}
+
+.subcategory-chip[data-sub='灾害事件'] {
+  background: rgba(190, 96, 66, 0.5);
+  color: #ffefe8;
+}
+
+:root[data-theme='light'] .subcategory-chip[data-sub='模型输出'] {
+  background: rgba(96, 74, 196, 0.18);
+  color: #43309f;
+}
+
+:root[data-theme='light'] .subcategory-chip[data-sub='模型输入'] {
+  background: rgba(13, 122, 145, 0.18);
+  color: #0a5666;
+}
+
+:root[data-theme='light'] .subcategory-chip[data-sub='辅助数据'] {
+  background: rgba(71, 85, 105, 0.14);
+  color: #334155;
+}
+
+:root[data-theme='light'] .subcategory-chip[data-sub='灾害事件'] {
+  background: rgba(176, 74, 48, 0.16);
+  color: #8a3520;
 }
 
 .card-source {
@@ -846,11 +921,13 @@ h2 {
   background: var(--surface-hover, var(--surface-2));
 }
 
+/* 2026-09-28：按钮配色统一为柔和蓝（原用全局 --accent-surface / --border-accent，
+   深色主题下是偏荧光的亮青，与卡片统一色不搭）。 */
 .add-btn {
   padding: 0.18rem 0.46rem;
-  border: 1px solid var(--border-accent);
+  border: 1px solid rgba(91, 157, 245, 0.42);
   border-radius: 999px;
-  background: var(--accent-surface);
+  background: rgba(91, 157, 245, 0.14);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
@@ -863,9 +940,19 @@ h2 {
 }
 
 .add-btn:hover:not(:disabled) {
-  background: var(--accent-border);
-  border-color: var(--border-strong);
+  background: rgba(91, 157, 245, 0.26);
+  border-color: rgba(91, 157, 245, 0.68);
   transform: translateY(-1px);
+}
+
+:global([data-theme='light']) .add-btn {
+  border-color: rgba(0, 102, 204, 0.32);
+  background: rgba(0, 102, 204, 0.08);
+}
+
+:global([data-theme='light']) .add-btn:hover:not(:disabled) {
+  background: rgba(0, 102, 204, 0.16);
+  border-color: rgba(0, 102, 204, 0.5);
 }
 
 .add-btn:disabled {
