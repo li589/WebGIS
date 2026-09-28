@@ -138,7 +138,9 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
       </div>
 
       <div v-if="expandedCategories.has(group.category.id)" class="category-items">
-        <!-- 核心资产二级分类筛选 Pills -->
+        <!-- 核心资产二级分类筛选 Pills ｜ 按需求隐藏「全部 / 模型输入 / 模型输出 / 辅助数据」这一行。
+             保留代码未删除，后续需要时去掉本段注释首尾的标记即可恢复。
+             说明：selectedSubCategory 初值即 'all' 且有兜底回退，隐藏此唯一入口后恒等于「全部」，所有图层照常显示。
         <div
           v-if="group.category.id === 'research-group' && researchSubCategoryPills.length > 1"
           class="subcategory-pills-bar"
@@ -154,6 +156,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             {{ sub === 'all' ? '全部' : sub }}
           </button>
         </div>
+        ↑↑↑ 隐藏段结束 -->
         <div v-if="group.items.length === 0" class="empty-subcategory-hint">
           暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的{{
             getCategoryName('research-group')
@@ -175,9 +178,12 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             <div class="card-title-row">
               <strong>{{ item.name }}</strong>
               <div class="chips-group">
+                <!-- 按需求隐藏卡片上的「科研数据」小标签（保留代码，需要时去掉注释标记即可恢复）。
+                     注意：仅隐藏本标签，下方 subCategory 标签（模型输入/模型输出/辅助数据）保持显示。
                 <span class="card-chip" :style="{ background: item.chipTone }">{{
                   getCategoryName(item.category)
                 }}</span>
+                隐藏段结束 -->
                 <span
                   v-if="item.subCategory"
                   class="card-chip subcategory-chip"

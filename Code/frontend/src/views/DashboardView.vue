@@ -427,7 +427,8 @@ const sidePanelDimensions = computed(() => ({
   minWidth: 280,
   maxWidth: 420,
 }))
-const layerPanelDimensions = computed(() => ({ ...sidePanelDimensions.value, defaultWidth: 292 }))
+// 图层容器默认宽度：292 → 312（略加宽，避免图层名 /「模型输出」等标签换行）
+const layerPanelDimensions = computed(() => ({ ...sidePanelDimensions.value, defaultWidth: 312 }))
 const analysisPanelDimensions = computed(() => ({
   ...sidePanelDimensions.value,
   defaultWidth: 304,
