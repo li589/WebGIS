@@ -425,6 +425,11 @@ h2 {
   justify-content: center;
   gap: 0.22rem;
   padding: 0.32rem 0.2rem;
+  /* 窄面板兜底：文字过长时省略而不是溢出压到相邻按钮（2026-09-30） */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   background: var(--surface-raised);
@@ -1431,16 +1436,17 @@ h2 {
   border-top: 1px solid var(--border-subtle);
 }
 
-/* 单位（2026-08-25 UX 简化：从图例行挪入状态行）——相对整个图层条
-   水平居中（left:50% 位移），不随左右徽标挤压漂移。 */
+/* 单位（2026-09-30 调整）：原先用绝对定位水平居中（left:50% + translateX），
+   窄面板下会与左侧长文本（如「导入 · 栅格 · 29 块 · 20251231」）叠字。
+   改为普通流靠右（margin-left:auto），与右侧「顺序 N/M」同处一行末端，
+   空间不足时随 flex-wrap 换行，绝不再叠字。 */
 .layer-metric-unit {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  margin-left: auto;
   color: var(--text-muted);
   font-size: var(--layer-meta-size);
   letter-spacing: 0.02em;
-  pointer-events: none; /* 不遮挡左右交互元素 */
+  white-space: nowrap;
+  pointer-events: none; /* 纯展示，不遮挡左右交互元素 */
 }
 
 .availability-chip {

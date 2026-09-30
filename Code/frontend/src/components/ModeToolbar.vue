@@ -60,7 +60,13 @@ const authStore = useAuthStore()
 const brand = computed(() => authStore.resolvedBrand)
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
-const { isMobile } = useBreakpoint()
+const { greaterOrEqual } = useBreakpoint()
+/**
+ * 按钮文字标签只在宽屏（≥1280px）显示。
+ * 2026-09-30：原为「仅移动端隐藏」（!isMobile），在 1024~1280 这段单行排布里
+ * 左右两簇都挤不下，文字会互相压住；改为窄屏自动收成纯图标（title/tooltip 仍在）。
+ */
+const showToolLabels = computed(() => greaterOrEqual('xl'))
 const { workflowSummary } = useWorkflowRun()
 const activityVersion = toRef(weatherTileManager, 'activityVersion')
 const statusVersion = toRef(weatherTileManager, 'statusVersion')
@@ -304,7 +310,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
         <Tooltip text="截图" position="bottom">
           <AppButton size="sm" variant="secondary" aria-label="导出截图" @click="handleScreenshot">
             <template #icon><Camera :size="14" /></template>
-            <span v-if="!isMobile">截图</span>
+            <span v-if="showToolLabels">截图</span>
           </AppButton>
         </Tooltip>
 
@@ -317,7 +323,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             @click="handleWorkflowEditor"
           >
             <template #icon><Workflow :size="14" /></template>
-            <span v-if="!isMobile">{{ WORKFLOW_COPY.entry }}</span>
+            <span v-if="showToolLabels">{{ WORKFLOW_COPY.entry }}</span>
           </AppButton>
         </Tooltip>
 
@@ -330,7 +336,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             @click="handleSettings"
           >
             <template #icon><Settings :size="14" /></template>
-            <span v-if="!isMobile">{{ SETTINGS_COPY.panelTitle }}</span>
+            <span v-if="showToolLabels">{{ SETTINGS_COPY.panelTitle }}</span>
           </AppButton>
         </Tooltip>
 
@@ -339,7 +345,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
           <Tooltip text="日志" position="bottom">
             <AppButton size="sm" variant="secondary" aria-label="系统日志" @click="emit('openLog')">
               <template #icon><ScrollText :size="14" /></template>
-              <span v-if="!isMobile">日志</span>
+              <span v-if="showToolLabels">日志</span>
             </AppButton>
           </Tooltip>
           <span

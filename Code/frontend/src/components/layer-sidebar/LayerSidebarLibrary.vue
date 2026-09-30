@@ -174,7 +174,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             <div class="card-title-row">
               <strong>{{ item.name }}</strong>
               <div class="chips-group">
-                <!-- 按需求隐藏卡片上的「科研数据」小标签（保留代码，需要时去掉注释标记即可恢复）。
+                <!-- 按需求隐藏卡片上的「研发数据」小标签（保留代码，需要时去掉注释标记即可恢复）。
                      注意：仅隐藏本标签，下方 subCategory 标签（模型输入/模型输出/辅助数据）保持显示。
                 <span class="card-chip" :style="{ background: item.chipTone }">{{
                   getCategoryName(item.category)

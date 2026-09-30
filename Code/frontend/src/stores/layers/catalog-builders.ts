@@ -185,9 +185,15 @@ const CATEGORY_ALIASES: Record<string, string> = {
   气象场: 'weather',
   气候产品: 'climate',
   课题组数据: 'research-group',
-  科研数据: 'research-group',
+  研发数据: 'research-group',
   核心资产: 'research-group',
 }
+
+/**
+ * 保留分组值：图层已被显式移出图层库（分组管理里取消勾选）。
+ * 侧栏不会为它建分组桶，因此不会出现在任何分组下。
+ */
+export const EXCLUDED_CATEGORY_ID = '__excluded__'
 
 export function resolveCategory(
   descriptor: LayerDescriptor,
@@ -197,6 +203,9 @@ export function resolveCategory(
   const raw = descriptor.category || fallbackCategory
   const category = raw ? (CATEGORY_ALIASES[raw] ?? raw) : undefined
   if (category) {
+    // 保留值（__ 前缀）：必须原样放行——若按「未知分组」处理会被下方兜底
+    // 打回 research-group，「取消勾选 = 移出图层库」就会失效。
+    if (category.startsWith('__')) return category
     // 图层平台 P1：运行时分组（含管理员自建组）不在静态表中，需按传入的有效 id 集校验
     if (knownCategoryIds) {
       if (knownCategoryIds.has(category)) return category

@@ -40,6 +40,7 @@ import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import { syncWorkspaceOnBoot, teardownWorkspaceSync } from '../stores/layers/workspace-sync'
+import { ensureDefaultLayers } from '../stores/layers/default-layers'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
@@ -93,6 +94,10 @@ void (async () => {
   } finally {
     workflowRun.setWorkspaceHydrationGuard(false)
   }
+  // 默认图层：打开网页即自动挂载（如 SMAP 平均散射约束产品的 ω）。
+  // 刻意放在水合保护之外——挂载结果能正常落盘，下次打开直接由快照恢复；
+  // 且原有恢复流程先跑完，已存在的层不会被重复添加（见 default-layers.ts）。
+  await ensureDefaultLayers()
 })()
 
 // Dashboard 卸载时清理所有 429 重试定时器，防止已取消的工作流被重新提交

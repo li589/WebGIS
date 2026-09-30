@@ -3,6 +3,9 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--space-4);
+  /* 窄屏兜底（2026-09-30）：左右两簇都放不下时**换行**而不是互相压字 */
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -19,6 +22,8 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
 }
 
 .brand {
@@ -70,6 +75,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* 窄屏兜底（2026-09-30）：原为单行不可换行，min-content 撑破容器后
+     按钮会压到右侧状态簇上。允许换行 + min-width:0 后改为折行显示。 */
+  flex-wrap: wrap;
+  min-width: 0;
+  row-gap: 6px;
 }
 
 /* 统一工具按钮 — 已迁移至 AppButton */

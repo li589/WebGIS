@@ -619,7 +619,7 @@ export interface paths {
         get?: never;
         /**
          * Set Layer Group Members
-         * @description 全量替换分组内图层成员。
+         * @description 全量替换分组内图层成员（theme 预设支持「取消勾选 = 从图层库移除」）。
          */
         put: operations["set_layer_group_members_layers_categories__group_id__members_put"];
         post?: never;
@@ -7113,6 +7113,11 @@ export interface components {
         LayerGroupMembersRequest: {
             /** Layer Ids */
             layer_ids: string[];
+            /**
+             * Excluded Layer Ids
+             * @description 本次从该分组取消勾选的图层。后端写入保留值 __excluded__，使这些图层不再出现在图层库的任何分组下；在分组管理里重新勾选即恢复。
+             */
+            excluded_layer_ids?: string[];
         };
         /**
          * LayerGroupReorderRequest

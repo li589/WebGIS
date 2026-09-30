@@ -174,6 +174,13 @@ class LayerGroupReorderRequest(BaseModel):
 class LayerGroupMembersRequest(BaseModel):
     """设置分组内图层成员（layer_id 全量替换该分组成员关系）。"""
     layer_ids: list[str]
+    excluded_layer_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "本次从该分组取消勾选的图层。后端写入保留值 __excluded__，"
+            "使这些图层不再出现在图层库的任何分组下；在分组管理里重新勾选即恢复。"
+        ),
+    )
 
 
 class LayerThemeDisplayNamesRequest(BaseModel):

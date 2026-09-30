@@ -123,7 +123,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   /**
    * 二级分类展示顺序索引：categoryId → (subCategory 名 → 序号)。
    * 取自分组声明的 subCategories（种子 layer_categories.json / 管理端编辑），
-   * 用于「科研数据」等分组内的卡片排序——先按 模型输出 → 模型输入 → 辅助数据 归位，
+   * 用于「研发数据」等分组内的卡片排序——先按 模型输出 → 模型输入 → 辅助数据 归位，
    * 未出现在声明列表中的二级分类排在其后。
    */
   const subCategoryIndexById = computed(() => {
