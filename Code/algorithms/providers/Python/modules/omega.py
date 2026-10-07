@@ -141,6 +141,20 @@ class OmegaBlockModule(BaseModule):
                 "output_dir", ctx.workspace / "products" / "omega_block"
             )
         )
+        # tb_source 隔离（2026-10-07）：FY/GLDAS 等非 SMAP 链的 D1 产物追加
+        # tb_source 后缀目录（如 Inversion_Results/omega_block_fy），防止与
+        # SMAP 链互相覆盖 daily_omega / h-alpha（SMAP 保持历史路径不变，
+        # 存量数据无需迁移）。D2 消费侧在 modules/omega_avg_daily.py 做配对
+        # 重定向。显式 output_dir 同样追加后缀（隔离优先于配置原样透传）。
+        tb_source_raw = str(
+            algorithm_params.get("tb_source")
+            or datasource_selection.get("tb_source")
+            or "SMAP"
+        ).strip().upper()
+        if tb_source_raw and tb_source_raw != "SMAP":
+            output_dir = output_dir.with_name(
+                f"{output_dir.name}_{tb_source_raw.lower()}"
+            )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if ctx.logger_adapter is not None:

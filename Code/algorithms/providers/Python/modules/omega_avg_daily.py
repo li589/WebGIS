@@ -133,6 +133,82 @@ def _find_omega_block_mat(omega_block_dir: str | Path) -> Path | None:
     return None
 
 
+def _redirect_omega_block_for_tb_source(
+    omega_block_dir: Path,
+    omega_block_mat_path: Path | None,
+    tb_source: str,
+    *,
+    logger_adapter: object = None,
+) -> tuple[Path, Path | None]:
+    """tb_source != SMAP 时优先使用 tb 专属 omega_block 目录（2026-10-07）。
+
+    历史问题：D1(FY) 与 D1(SMAP) 共写同一 ``Inversion_Results/omega_block``，
+    交替跑两条链会互相覆盖 daily_omega 与 h/alpha（``_find_omega_block_mat``
+    恒取字典序最新块）⇒ SMAP 在线链拿到 FY 的产物（或反之）。D1 侧已按
+    tb_source 分目录落盘（见 ``modules/omega.py``）；本函数在 D2 消费侧做
+    同步重定向：tb 专属目录**存在**才切换（兼容尚无 FY 专属目录的存量环境，
+    此时保持原路径并原样工作）。
+    """
+    tb = tb_source.strip().upper()
+    if tb in ("", "SMAP"):
+        return omega_block_dir, omega_block_mat_path
+    candidate = omega_block_dir.with_name(f"{omega_block_dir.name}_{tb.lower()}")
+    if candidate.is_dir() and candidate != omega_block_dir:
+        if logger_adapter is not None:
+            try:
+                logger_adapter.emit_stage_start(
+                    "omega_avg_daily",
+                    f"omega_block dir redirected for tb_source={tb}: "
+                    f"{omega_block_dir} -> {candidate}",
+                )
+            except Exception:  # noqa: BLE001 - 日志失败不阻断主链
+                pass
+        redirected_mat = omega_block_mat_path
+        if redirected_mat is not None:
+            try:
+                rel = redirected_mat.relative_to(omega_block_dir)
+                redirected_mat = candidate / rel
+            except ValueError:
+                pass  # mat 不在共享目录下（显式指定），保持原样
+        return candidate, redirected_mat
+    return omega_block_dir, omega_block_mat_path
+
+
+def _doy_cache_stale(
+    omega_block_dir: Path, avg_omega_doy_dir: Path
+) -> bool:
+    """daily_omega 比已缓存 DOY 气候态新 → 需要增量重建（2026-10-07）。
+
+    持久缓存（Fix：DOY 气候态不再放 run workspace）引入的新语义：缓存命中后
+    D1 新产出的 daily_omega 不应被无视。以 ``daily_omega/*.mat`` 的最大 mtime
+    对比 ``doy_*.mat`` 的最小 mtime 判断是否过期；目录缺失按"未过期"处理
+    （调用方已有 missing 分支）。
+    """
+    daily_dir = Path(omega_block_dir) / "daily_omega"
+    if not daily_dir.is_dir() or not avg_omega_doy_dir.is_dir():
+        return False
+    newest_daily = 0.0
+    try:
+        for entry in daily_dir.iterdir():
+            if entry.suffix.lower() == ".mat":
+                newest_daily = max(newest_daily, entry.stat().st_mtime)
+    except OSError:
+        return False
+    if newest_daily <= 0.0:
+        return False
+    oldest_doy = None
+    try:
+        for entry in avg_omega_doy_dir.iterdir():
+            if entry.name.startswith("doy_") and entry.suffix.lower() == ".mat":
+                mtime = entry.stat().st_mtime
+                oldest_doy = mtime if oldest_doy is None else min(oldest_doy, mtime)
+    except OSError:
+        return False
+    if oldest_doy is None:
+        return False
+    return newest_daily > oldest_doy + 1.0  # 1s 容差，抗拷贝时间戳抖动
+
+
 @register_module_decorator(
     name="omega_avg_daily",
     aliases=["omega_avg_daily_pipeline"],
@@ -280,12 +356,23 @@ class OmegaAvgDailyModule(BaseModule):
             )
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 解析 omega_block 目录与 .mat 文件
+        # 解析 omega_block 目录与 .mat 文件（先探测，tb 重定向后再做硬校验）
         omega_block_dir = Path(str(datasource_selection["omega_block_dir"]))
         omega_block_mat_path = datasource_selection.get("omega_block_mat")
         if omega_block_mat_path:
             omega_block_mat_path = Path(str(omega_block_mat_path))
         else:
+            omega_block_mat_path = _find_omega_block_mat(omega_block_dir)
+
+        # tb_source != SMAP 时重定向到 tb 专属 omega_block 目录（与 D1 侧
+        # modules/omega.py 的分目录落盘配对，消除 FY/SMAP 互相覆盖）。
+        omega_block_dir, omega_block_mat_path = _redirect_omega_block_for_tb_source(
+            omega_block_dir,
+            omega_block_mat_path,
+            tb_source,
+            logger_adapter=ctx.logger_adapter,
+        )
+        if omega_block_mat_path is None or not omega_block_mat_path.exists():
             omega_block_mat_path = _find_omega_block_mat(omega_block_dir)
         if omega_block_mat_path is None or not omega_block_mat_path.exists():
             raise FileNotFoundError(
@@ -293,12 +380,18 @@ class OmegaAvgDailyModule(BaseModule):
                 "ensure D1 omega_block has run"
             )
 
-        # DOY 气候态缓存目录
+        # DOY 气候态缓存目录：默认挂到 omega_block 输出目录下（**持久共享**，
+        # 按 tb_source + 构建年份窗口键控），跨 run 复用；2026-10-07 之前默认
+        # 在 run workspace 下导致每次全新 run 全量重建 Stage A+B。
         avg_omega_doy_dir = datasource_selection.get("avg_omega_doy_dir")
         if avg_omega_doy_dir:
             avg_omega_doy_dir = Path(str(avg_omega_doy_dir))
         else:
-            avg_omega_doy_dir = output_dir / "avg_omega_doy"
+            avg_omega_doy_dir = (
+                omega_block_dir
+                / "doy_clim"
+                / f"{tb_source.lower()}_{config.avg_build_start_year}_{config.avg_build_end_year}"
+            )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_start(
@@ -306,14 +399,22 @@ class OmegaAvgDailyModule(BaseModule):
                 f"D2 avg-omega daily retrieval for year {target_year}",
             )
 
-        # Stage A+B: 构建 DOY 气候态（若缺失或强制重建）
+        # Stage A+B: 构建 DOY 气候态。持久缓存语义：缓存存在即跳过重建，
+        # 但 daily_omega 有比缓存更新的产物时增量重建（_doy_cache_stale）。
         build_years = list(
             range(config.avg_build_start_year, config.avg_build_end_year + 1)
         )
         doy_files_exist = any(avg_omega_doy_dir.glob("doy_*.mat"))
-        if config.force_rebuild_avg or not doy_files_exist:
-            if not doy_files_exist or config.force_rebuild_avg:
-                cache_dir = output_dir / "raw_omega_cache"
+        cache_stale = (not config.force_rebuild_avg) and _doy_cache_stale(
+            omega_block_dir, avg_omega_doy_dir
+        )
+        if config.force_rebuild_avg or not doy_files_exist or cache_stale:
+            if not doy_files_exist or config.force_rebuild_avg or cache_stale:
+                cache_dir = (
+                    omega_block_dir
+                    / "raw_omega_cache"
+                    / f"{tb_source.lower()}_{config.avg_build_start_year}_{config.avg_build_end_year}"
+                )
                 build_raw_omega_daily_cache(
                     omega_block_dir=omega_block_dir,
                     output_cache_dir=cache_dir,
