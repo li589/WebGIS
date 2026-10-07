@@ -23,6 +23,7 @@ import {
   type LayerCategoryDef,
 } from '../../services/layer-groups-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { EXCLUDED_CATEGORY_ID } from '../../stores/layers/catalog-builders'
 import { useAuthStore } from '../../stores/auth'
 import { notifyPermissionResourcesStale } from '../../utils/layer-group-manager-bridge'
 import { ORG_CATEGORY_NAME } from '../../ui-copy/brand'
@@ -334,14 +335,28 @@ async function remove(group: GroupRow) {
 }
 
 async function saveMembers(group: GroupRow) {
-  const layerIds = group.memberDraft ?? []
+  // 保存前的「本组成员」快照（libraryItems 每次保存后都会重新拉取，故始终为最新）
+  const originalIds = libraryItems.value
+    .filter((item) => item.category === group.def.id)
+    .map((item) => item.id)
+  // memberDraft 为 null = 用户没动过勾选，按当前成员原样提交（避免误清空）
+  const layerIds = group.memberDraft ?? originalIds
+  // 本次取消勾选的层 → 从图层库移除（后端写保留值）
+  const excluded = originalIds.filter((id) => !layerIds.includes(id))
   const tid = requireThemeId()
-  await run(async () => {
-    await setLayerGroupMembers(group.def.id, { layer_ids: layerIds }, tid)
-    group.membersOpen = false
-    group.memberDraft = null
-    await loadGroups()
-  }, '分组成员已更新')
+  await run(
+    async () => {
+      await setLayerGroupMembers(
+        group.def.id,
+        { layer_ids: layerIds, excluded_layer_ids: excluded },
+        tid,
+      )
+      group.membersOpen = false
+      group.memberDraft = null
+      await loadGroups()
+    },
+    excluded.length ? `分组成员已更新 · ${excluded.length} 个图层已从图层库移除` : '分组成员已更新',
+  )
 }
 
 async function saveDisplayNames() {
@@ -441,7 +456,8 @@ async function importFromPersonalWorkspace() {
             <p class="lgm-hint">
               针对选定主题直接编辑分组预设（移动图层、改组名、增删组、主题显示名）。
               绑定该主题的用户只读消费此预设；运行时变更<strong>不会</strong>改写种子
-              JSON（gen:catalog / check:catalog 口径不变）。
+              JSON（gen:catalog / check:catalog 口径不变）。 「成员」里<strong>取消勾选</strong> =
+              该图层从图层库移除（其它分组下也不再出现）， 重新勾选保存即可恢复。
             </p>
           </div>
           <IconButton size="sm" label="关闭" @click="close">
@@ -654,6 +670,13 @@ async function importFromPersonalWorkspace() {
                     @change="toggleMember(group, item.id)"
                   />
                   <span class="lgm-member-name">{{ item.name }}</span>
+                  <span
+                    v-if="item.category === EXCLUDED_CATEGORY_ID"
+                    class="lgm-member-flag"
+                    title="当前不在图层库任何分组下显示；勾选并保存即恢复"
+                  >
+                    已移除
+                  </span>
                   <input
                     class="lgm-member-rename"
                     type="text"
@@ -1021,6 +1044,15 @@ async function importFromPersonalWorkspace() {
   white-space: nowrap;
   min-width: 5rem;
   max-width: 8rem;
+}
+.lgm-member-flag {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--danger, #f87171) 45%, transparent);
+  color: var(--danger, #f87171);
+  white-space: nowrap;
 }
 .lgm-member-rename {
   flex: 1;

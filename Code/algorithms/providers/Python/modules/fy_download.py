@@ -596,7 +596,94 @@ def _fetch_fy3f_tif_fallback(
     return last_local
 
 
-def _fetch_from_nas(
+_NAS_SOURCE_MODES = {"smb", "filebrowser", "off"}
+
+
+def _nas_source_mode(ds: dict[str, object]) -> str:
+    """NAS 数据源模式开关（2026-10-07 收敛）。
+
+    背景：旧 FileBrowser 直连通道（Cloudflare b13d 隧道 + nas-filebrowser
+    profile）已随 NAS 通道收敛退役；远端已改挂局域网 SMB（群晖
+    ``\\\\222.200.176.12\\group_nas``，Windows 侧映射 ``Z:``）。本开关决定
+    ``nas`` 数据源的实现方式：
+
+    - ``smb``（默认）— 局域网 SMB 直拷（``_fetch_from_nas_smb``）。要求
+      运行进程在**交互登录会话**内（celery worker 经 CGDA-Stack 计划任务
+      启动即满足），凭据随登录会话直通认证；非交互会话（SSH）无出站
+      NTLM 凭据，SMB 必失败。
+    - ``filebrowser`` — 旧 FileBrowser REST 直连（遗留，仅回滚用；需
+      ``nas-filebrowser`` profile 与隧道在场）。
+    - ``off`` — 显式禁用 ``nas`` 数据源（命中即报错，触发上层回退 NSMC）。
+
+    优先级：dataset ``nas_mode`` > 环境变量 ``CGDA_FY_NAS_MODE`` > ``smb``。
+    非法值按 ``smb`` 处理并告警。
+    """
+    raw = str(ds.get("nas_mode") or "").strip().lower()
+    if not raw:
+        raw = os.getenv("CGDA_FY_NAS_MODE", "").strip().lower()
+    if not raw:
+        return "smb"
+    if raw not in _NAS_SOURCE_MODES:
+        return "smb"
+    return raw
+
+
+def _nas_daily_targets(
+    satellite: str, date_ymd: str, ds: dict[str, object]
+) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    """按卫星推导（远端子目录, 波段名, 逐日既知文件名）——免列举直连。
+
+    2026-08-17 实测：NAS 目录含 3600+ 文件、列举代价高，故按既知文件名
+    定位。2026-10-07 实测（SMB ``Z:`` 交互会话枚举）：
+    - ``Chenhaojun/Data/fy3dhdf2425``：3657 文件，FY3D 逐日双极化 TIF 对
+      （``FY3D_GBAL_L1_10V_YYYYMMDD_MWRID_0.tif`` / ``10H_…``）；
+    - ``Chenhaojun/Data/3Ffinal``：1120 文件，FY3F 逐日双极化合并 HDF
+      （``FY3F_GBAL_L1_ORBA_10V10H_YYYYMMDD_ORBA.hdf``）+ 单极化 TIF 对。
+
+    ``ds`` 覆盖：``nas_remote_path``（FileBrowser 风格绝对路径或相对子路径）
+    > ``nas_remote_dir_<sat>`` 风格暂不支持 > 内置默认。
+    """
+    if satellite == "FY3D":
+        default_dir = "/Chenhaojun/Data/fy3dhdf2425"
+        # 每日每波段一个文件；omega 反演需 TBv+TBh 双极化，只拉 10H 会导致
+        # fy_daily 缺 V 极化。
+        band_names = ("10V", "10H")
+        remote_names = tuple(
+            f"FY3D_GBAL_L1_{band}_{date_ymd}_MWRID_0.tif" for band in band_names
+        )
+    elif satellite == "FY3F":
+        default_dir = "/Chenhaojun/Data/3Ffinal"
+        band_names = ("10V10H",)
+        remote_names = (f"FY3F_GBAL_L1_ORBA_10V10H_{date_ymd}_ORBA.hdf",)
+    else:
+        raise ValueError(
+            f"NAS source only holds FY3D/FY3F daily files (got {satellite}); "
+            "FY3B retired in 2020; 其它卫星请经 NSMC 在线或本地目录供给"
+        )
+    remote_dir = str(ds.get("nas_remote_path") or "").strip() or default_dir
+    return remote_dir, band_names, remote_names
+
+
+def _smb_copy_file(remote_path: Path, local_path: Path) -> bool:
+    """局域网 SMB 单文件直拷（``shutil.copy2`` + 原子替换）。
+
+    先落 ``*.tmp`` 再 ``os.replace``，避免 SMB 中断留下半截成品被
+    ``_local_download_ok`` 之外的链路误判为有效。返回是否成功。
+    """
+    import shutil
+
+    tmp_path = local_path.with_suffix(local_path.suffix + ".smbtmp")
+    try:
+        shutil.copy2(remote_path, tmp_path)
+        os.replace(tmp_path, local_path)
+        return True
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
+        return False
+
+
+def _fetch_from_nas_smb(
     ctx: NodeExecutionContext,
     *,
     satellite: str,
@@ -604,19 +691,191 @@ def _fetch_from_nas(
     ds: dict[str, object],
     target_dir: Path,
 ) -> Path:
-    """从 NAS FileBrowser 直连拉取 FY3D/FY3F 逐日数据（免目录列举）。
+    """经局域网 SMB 挂载直拷 FY3D/FY3F 逐日数据（FileBrowser 通道的替代）。
 
-    2026-08-17 实测修正：NAS 侧唯一可用凭据是 FileBrowser profile
-    （``nas_profile``，protocol=filebrowser），旧 smb:// RemoteSource 路径因
-    协议不匹配永远失败。FileBrowser 目录含 3600+ 文件、列举 >30s 会超时，
-    故按既知文件名走 ``GET /api/raw/{path}`` 直连下载（免列举）。
+    目录解析：``nas_smb_root`` / ``CGDA_FY_NAS_SMB_ROOT``（默认 ``Z:\\Chenhaojun\\Data``
+    ——群晖 ``group_nas`` 共享在 Windows 侧的映射盘）+ ``_nas_daily_targets``
+    推导的子目录。FileBrowser 风格的 ``/Chenhaojun/Data/...`` 绝对路径会被
+    剥掉盘符式前缀后拼到根下，旧配置无需改动。
 
-    2026-08-20 扩展 FY3F：NAS ``/Chenhaojun/Data/3Ffinal`` 实测有 224 天
-    （2023-12-01..2024-08-09）逐日双极化合并 HDF
-    （``FY3F_GBAL_L1_ORBA_10V10H_YYYYMMDD_ORBA.hdf``，TBv+TBh 单文件），
-    命名与 ingest/fy.py 的 HDF 轨道识别（ORBA 升轨 + 8 位日期 + FY3F）
-    兼容，可直接供 fy_preprocess 消费；HDF 缺失时回退 10H/10V 单极化
-    TIF 对。FY3B 无 2020 年后数据（卫星退役）。
+    硬约束（2026-10-07 实测）：调用进程必须持有**交互登录会话**的出站
+    NTLM 凭据（CGDA-Stack 计划任务拉起的 celery worker 满足）；SSH 等网络
+    型登录会话中 ``Z:``/UNC 均报“用户名或密码不正确”，属 Windows 凭据
+    会话隔离，不是配置问题。
+    """
+    date_ymd = date_path.replace(".", "").replace("-", "")
+    purged = _purge_incomplete_orbit_hdf(target_dir, date_ymd)
+    if purged and ctx.logger_adapter is not None:
+        ctx.logger_adapter.emit_warning(
+            "fy_download",
+            f"purged {len(purged)} incomplete orbit HDF for {date_ymd}: "
+            + ", ".join(purged[:5])
+            + ("…" if len(purged) > 5 else ""),
+        )
+
+    smb_root = str(
+        ds.get("nas_smb_root") or os.getenv("CGDA_FY_NAS_SMB_ROOT") or ""
+    ).strip() or "Z:\\Chenhaojun\\Data"
+    remote_dir, band_names, remote_names = _nas_daily_targets(
+        satellite, date_ymd, ds
+    )
+
+    # 取远端目录末段作为 SMB 根下的子目录：
+    # "/Chenhaojun/Data/fy3dhdf2425" → "fy3dhdf2425"（与 FileBrowser 风格
+    # 旧配置兼容），"fy3dhdf2425" 原样。盘符/共享前缀差异不必逐段对齐。
+    rel_sub = Path(remote_dir.strip("/").strip("\\")).name
+    smb_dir = Path(smb_root)
+    if rel_sub:
+        smb_dir = smb_dir / rel_sub
+
+    if ctx.logger_adapter is not None:
+        ctx.logger_adapter.emit_stage_start(
+            "fy_download:nas",
+            f"NAS SMB fetch ({smb_dir}): "
+            f"({' + '.join(band_names)})_{date_ymd} -> {target_dir}",
+        )
+
+    from modules.download_nodes import _make_multi_file_progress_cb
+
+    total_files = len(remote_names)
+    _progress_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download:nas")
+    downloaded_bytes = 0
+
+    if not smb_dir.is_dir():
+        raise RuntimeError(
+            f"NAS SMB 目录不可达: {smb_dir}（root={smb_root}）。"
+            "请确认: (1) 运行进程位于交互登录会话（CGDA-Stack 计划任务拉起）；"
+            "(2) SMB 挂载盘/路径存在（net use 查看 Z: 状态）；"
+            "(3) CGDA_FY_NAS_SMB_ROOT 与实际共享路径一致。"
+        )
+
+    last_local_path: Path | None = None
+    done_count = 0
+    for remote_name in remote_names:
+        remote_path = smb_dir / remote_name
+        local_path = target_dir / remote_name
+        if _local_download_ok(local_path):
+            done_count += 1
+            _progress_cb(
+                done_count, total_files, downloaded_bytes, remote_name, skipped=True
+            )
+            last_local_path = local_path
+            continue
+        _unlink_incomplete(local_path)
+        if not remote_path.is_file():
+            # FY3F 合并 HDF 缺失 → 回退单极化 TIF 对（10V + 10H）
+            if satellite == "FY3F" and remote_name.endswith(".hdf"):
+                last_local_path = _smb_fetch_fy3f_tif_fallback(
+                    ctx,
+                    smb_dir=smb_dir,
+                    date_ymd=date_ymd,
+                    target_dir=target_dir,
+                )
+                break
+            raise RuntimeError(
+                f"NAS SMB 文件缺失: {remote_path}. "
+                "The requested date/file may not be available on NAS; "
+                "verify the FY archive date and SMB path before retrying."
+            )
+        if not _smb_copy_file(remote_path, local_path):
+            _unlink_incomplete(local_path)
+            raise RuntimeError(f"NAS SMB copy failed: {remote_path}")
+        if not _local_download_ok(local_path):
+            _unlink_incomplete(local_path)
+            raise RuntimeError(
+                f"NAS SMB copy 后校验失败（大小/HDF 不可读）: {remote_path}"
+            )
+        done_count += 1
+        downloaded_bytes += local_path.stat().st_size
+        _progress_cb(done_count, total_files, downloaded_bytes, remote_name)
+        last_local_path = local_path
+
+    if done_count == 0 and total_files > 0 and ctx.logger_adapter is not None:
+        from modules.download_nodes import _make_skip_complete_emit
+
+        _make_skip_complete_emit(
+            ctx.logger_adapter,
+            "fy_download:nas",
+            total=total_files,
+            skipped=total_files,
+        )
+
+    if ctx.logger_adapter is not None:
+        fetched = ", ".join(str(target_dir / name) for name in remote_names)
+        ctx.logger_adapter.emit_stage_end("fy_download:nas", f"Fetched to: {fetched}")
+    return last_local_path or (target_dir / remote_names[-1])
+
+
+def _smb_fetch_fy3f_tif_fallback(
+    ctx: NodeExecutionContext,
+    *,
+    smb_dir: Path,
+    date_ymd: str,
+    target_dir: Path,
+) -> Path:
+    """SMB 版 FY3F 单极化 TIF 对回退（10V + 10H，与 FileBrowser 版同契约）。"""
+    from modules.download_nodes import (
+        _emit_download_progress,
+        _make_multi_file_progress_cb,
+    )
+
+    bands = ("10V", "10H")
+    _progress_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download:nas")
+    if ctx.logger_adapter is not None:
+        _emit_download_progress(
+            ctx.logger_adapter,
+            "fy_download:nas",
+            0.0,
+            f"FY3F 合并 HDF 缺失，回退单极化 TIF 对: {smb_dir} ({date_ymd})",
+            {
+                "download_mode": "multi_file",
+                "downloaded_items": 0,
+                "total_items": len(bands),
+                "downloaded_bytes": 0,
+                "phase": "downloading",
+                "items_display": "filename",
+            },
+        )
+    last_local: Path | None = None
+    downloaded_bytes = 0
+    for i, band in enumerate(bands, start=1):
+        remote_name = f"FY3F_GBAL_L1_{band}_{date_ymd}_ORBA_0.tif"
+        remote_path = smb_dir / remote_name
+        local_path = target_dir / remote_name
+        if _local_download_ok(local_path):
+            _progress_cb(i, len(bands), downloaded_bytes, remote_name, skipped=True)
+            last_local = local_path
+            continue
+        _unlink_incomplete(local_path)
+        if not remote_path.is_file():
+            raise RuntimeError(f"NAS SMB 文件缺失: {remote_path}")
+        if not _smb_copy_file(remote_path, local_path):
+            _unlink_incomplete(local_path)
+            raise RuntimeError(f"NAS SMB copy failed: {remote_path}")
+        if not _local_download_ok(local_path):
+            _unlink_incomplete(local_path)
+            raise RuntimeError(f"NAS SMB copy 后校验失败: {remote_path}")
+        downloaded_bytes += local_path.stat().st_size
+        _progress_cb(i, len(bands), downloaded_bytes, remote_name)
+        last_local = local_path
+    if last_local is None:
+        raise RuntimeError(f"NAS SMB FY3F TIF 回退亦无文件: {smb_dir} ({date_ymd})")
+    return last_local
+
+
+def _fetch_from_nas_filebrowser(
+    ctx: NodeExecutionContext,
+    *,
+    satellite: str,
+    date_path: str,
+    ds: dict[str, object],
+    target_dir: Path,
+) -> Path:
+    """（遗留）从 NAS FileBrowser 直连拉取 FY3D/FY3F 逐日数据。
+
+    2026-10-07 起默认停用（``CGDA_FY_NAS_MODE`` 默认 ``smb``）；仅当显式
+    配置 ``filebrowser`` 时进入本路径。保留原因：NAS 通道收敛期间可一键
+    回滚，无需回退代码。原实现要点与历史实测见 git blame 本函数。
     """
     from ingest.remote_sync import _filebrowser_download, filebrowser_login
     from modules.download_nodes import _resolve_profile_server_config
@@ -632,33 +891,16 @@ def _fetch_from_nas(
         )
 
     # 按卫星分派（远端目录, 逐日既知文件名）——免列举直连。
-    if satellite == "FY3D":
-        remote_dir = (
-            str(
-                ds.get("nas_remote_path") or os.getenv("CGDA_FY_NAS_PATH") or ""
-            ).strip()
-            or "/Chenhaojun/Data/fy3dhdf2425"
-        )
-        # 每日每波段一个文件（FY3D_GBAL_L1_10V_YYYYMMDD_MWRID_0.tif / 10H_…）；
-        # omega 反演需 TBv+TBh 双极化，只拉 10H 会导致 fy_daily 缺 V 极化。
-        band_names = ("10V", "10H")
-        remote_names = tuple(
-            f"FY3D_GBAL_L1_{band}_{date_ymd}_MWRID_0.tif" for band in band_names
-        )
-    elif satellite == "FY3F":
-        remote_dir = (
-            str(
-                ds.get("nas_remote_path") or os.getenv("CGDA_FY3F_NAS_PATH") or ""
-            ).strip()
-            or "/Chenhaojun/Data/3Ffinal"
-        )
-        band_names = ("10V10H",)
-        remote_names = (f"FY3F_GBAL_L1_ORBA_10V10H_{date_ymd}_ORBA.hdf",)
-    else:
-        raise ValueError(
-            f"NAS source only holds FY3D/FY3F daily files (got {satellite}); "
-            "FY3B retired in 2020; 其它卫星请经 NSMC 在线或本地目录供给"
-        )
+    remote_dir, band_names, remote_names = _nas_daily_targets(satellite, date_ymd, ds)
+    # 遗留环境变量覆盖（历史行为保留；dataset nas_remote_path 优先级更高）
+    if satellite == "FY3D" and not str(ds.get("nas_remote_path") or "").strip():
+        env_dir = str(os.getenv("CGDA_FY_NAS_PATH") or "").strip()
+        if env_dir:
+            remote_dir = env_dir
+    elif satellite == "FY3F" and not str(ds.get("nas_remote_path") or "").strip():
+        env_dir = str(os.getenv("CGDA_FY3F_NAS_PATH") or "").strip()
+        if env_dir:
+            remote_dir = env_dir
     # NAS FileBrowser profile：dataset 配置可经 nas_profile 覆盖；默认对齐
     # 「远程与存储」面板实际登记的 profile_id（nas-filebrowser，2026-08-21
     # 实测旧默认 "nas_profile" 在凭据库中不存在，导致 NSMC 回退 NAS 恒失败）。
@@ -735,12 +977,38 @@ def _fetch_from_nas(
     return last_local_path or (target_dir / remote_names[-1])
 
 
+def _fetch_from_nas(
+    ctx: NodeExecutionContext,
+    *,
+    satellite: str,
+    date_path: str,
+    ds: dict[str, object],
+    target_dir: Path,
+) -> Path:
+    """``nas`` 数据源统一入口：按 ``CGDA_FY_NAS_MODE`` 分发到 SMB/FileBrowser。"""
+    mode = _nas_source_mode(ds)
+    if mode == "off":
+        raise RuntimeError(
+            "NAS 数据源已被显式禁用（nas_mode / CGDA_FY_NAS_MODE = off）。"
+            "如需恢复，设为 'smb'（局域网直拷）或 'filebrowser'（遗留通道）。"
+        )
+    if mode == "filebrowser":
+        return _fetch_from_nas_filebrowser(
+            ctx, satellite=satellite, date_path=date_path, ds=ds, target_dir=target_dir
+        )
+    return _fetch_from_nas_smb(
+        ctx, satellite=satellite, date_path=date_path, ds=ds, target_dir=target_dir
+    )
+
+
 @register_module_decorator(name="fy_download", template_overrides={"phase": "download"})
 class FYDownloadModule(BaseModule):
     name = "fy_download"
     description = (
-        "风云卫星数据专用下载模块：支持 NSMC 门户 HTTP 下载、NAS FileBrowser 直连拉取、"
-        "auto 自动回退（NSMC→NAS）。下载 FY-3 MWRI 亮温数据供 fy_preprocess 处理。"
+        "风云卫星数据专用下载模块：支持 NSMC 门户 HTTP 下载、NAS 拉取"
+        "（默认局域网 SMB 直拷，可切遗留 FileBrowser 或禁用，见 "
+        "CGDA_FY_NAS_MODE）、auto 自动回退（NSMC→NAS）。下载 FY-3 MWRI "
+        "亮温数据供 fy_preprocess 处理。"
     )
     input_ports = [
         PortSpec(

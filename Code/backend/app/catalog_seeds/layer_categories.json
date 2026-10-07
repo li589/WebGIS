@@ -5,7 +5,7 @@
     "icon": "",
     "accent_color": "#ff6f91",
     "chip_tone": "rgba(255, 111, 145, 0.16)",
-    "sub_categories": ["模型输入", "模型输出", "辅助数据"]
+    "sub_categories": ["模型输出", "模型输入", "辅助数据"]
   },
   {
     "id": "climate",

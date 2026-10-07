@@ -2505,14 +2505,22 @@ def retrieve_omega_pixel_timeseries(
             alpha0_clamped = min(
                 max(config.alpha0, halpha_lower_bounds[1]), halpha_upper_bounds[1]
             )
-            xhat = least_squares(
-                halpha_fun,
-                x0=[h0_clamped, alpha0_clamped],
-                bounds=(halpha_lower_bounds, halpha_upper_bounds),
-                jac=halpha_jac,
-            )
-            h_star = float(xhat.x[0])
-            alpha_star = float(xhat.x[1])
+            try:
+                xhat = least_squares(
+                    halpha_fun,
+                    x0=[h0_clamped, alpha0_clamped],
+                    bounds=(halpha_lower_bounds, halpha_upper_bounds),
+                    jac=halpha_jac,
+                )
+                h_star = float(xhat.x[0])
+                alpha_star = float(xhat.x[1])
+            except ValueError:
+                # Same policy as the other least_squares calls in this module
+                # (see "except ValueError: return nan, nan"): a single pixel whose
+                # initial guess is infeasible yields an empty result instead of
+                # aborting the whole workflow. h_star / alpha_star keep the NaN
+                # values they were initialised with above.
+                pass
         h_series[valid_tau] = h_star
         alpha_series[valid_tau] = alpha_star
 
@@ -2921,12 +2929,17 @@ def execute_omega_retrieval(
 
     # Skip ocean / missing-ancillary pixels before Mironov context build.
     # CF or NDVI extrema outside [0,1]/non-finite would raise in build_mironov_context.
+    # H (static roughness) must also be finite: it seeds the h/alpha initial guess,
+    # and a NaN h_static would propagate into least_squares x0 and abort the run.
+    # This mirrors the original MATLAB static mask
+    # (D1_raw_omeg.m: mask_static_ok includes isfinite(H)).
     pixel_ok = (
         np.isfinite(clay_fraction)
         & (clay_fraction >= 0.0)
         & (clay_fraction <= 1.0)
         & np.isfinite(ndvi_v_max)
         & np.isfinite(ndvi_v_min)
+        & np.isfinite(h_static)
     )
     pixel_indices = [int(j) for j in np.flatnonzero(pixel_ok)]
 

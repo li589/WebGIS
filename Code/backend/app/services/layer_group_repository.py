@@ -36,6 +36,12 @@ _GROUP_SOURCE_SEED = "seed"
 _GROUP_SOURCE_CUSTOM = "custom"
 _GROUP_SOURCE_OVERRIDE = "override"
 
+# 保留分组值：表示「该图层已被显式移出图层库」（分组管理里取消勾选）。
+# 它不是真实分组——list_groups_for_scope 不会下发它，因此侧栏不会为它建桶，
+# 该图层在图层库的任何分组下都不再展示；在分组管理里重新勾选即恢复。
+# 前缀 __ 由前端 resolveCategory 原样放行（否则会被兜底打回研究组）。
+EXCLUDED_GROUP_ID = "__excluded__"
+
 ScopeKind = Literal["shared", "personal", "theme"]
 
 
@@ -930,8 +936,16 @@ class LayerGroupRepository:
         group_id: str,
         layer_ids: list[str],
         *,
+        excluded_layer_ids: list[str] | None = None,
         updated_by_user_id: int | None = None,
     ) -> dict[str, Any]:
+        """Replace *group_id* membership; optionally hide unselected layers.
+
+        ``excluded_layer_ids`` are the layers the admin just unchecked in this
+        group: they are written as :data:`EXCLUDED_GROUP_ID` so the layer
+        library stops listing them anywhere (re-checking in the group manager
+        restores them, because the next write stores a real group id again).
+        """
         gid = str(group_id).strip().lower()
         payload = self.ensure_theme_preset_payload(
             theme_id, updated_by_user_id=updated_by_user_id
@@ -948,10 +962,23 @@ class LayerGroupRepository:
             for k, v in (payload.get("assignments") or {}).items()
             if str(v).strip().lower() != gid
         }
+        included: list[str] = []
         for lid in layer_ids:
             cleaned = str(lid).strip()
-            if cleaned:
-                assignments[cleaned] = gid
+            if cleaned and cleaned not in included:
+                included.append(cleaned)
+        for cleaned in included:
+            assignments[cleaned] = gid
+        # 取消勾选 → 保留值。只对「原本归本组（上面已被清掉）或本就无归属」的
+        # 图层生效，避免把已经改归到其它真实分组的图层误伤成已移除。
+        for lid in excluded_layer_ids or []:
+            cleaned = str(lid).strip()
+            if not cleaned or cleaned in included:
+                continue
+            current = assignments.get(cleaned)
+            if current is not None and current != EXCLUDED_GROUP_ID:
+                continue
+            assignments[cleaned] = EXCLUDED_GROUP_ID
         payload = {**payload, "assignments": assignments}
         return self._save_mutated_theme_preset(
             theme_id, payload, updated_by_user_id=updated_by_user_id

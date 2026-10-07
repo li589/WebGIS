@@ -433,6 +433,13 @@ class Settings:
     workflow_stuck_reclaim_seconds: int = int(
         os.getenv("BACKEND_WORKFLOW_STUCK_RECLAIM_SECONDS", "1800")
     )
+    # 回收时自动重派（2026-10-07）：broker 重启/worker 停机导致派发丢失的 run，
+    # 优先原地重派（retry_attempt+1，受 retry_policy.max_attempts 上限约束），
+    # 重派失败才落 failed。此前一律标 failed 需用户手动点重试。
+    workflow_reclaim_auto_redispatch: bool = (
+        os.getenv("BACKEND_WORKFLOW_RECLAIM_AUTOREDISPATCH", "true").lower()
+        == "true"
+    )
     workflow_queue_algorithm_realtime: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_ALGORITHM_REALTIME", workflow_queue_realtime
     )

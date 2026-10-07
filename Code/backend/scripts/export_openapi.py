@@ -39,7 +39,11 @@ def export_openapi(output_path: str | None = None) -> Path:
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(schema, indent=2, ensure_ascii=False), encoding="utf-8")
+    # 末尾补换行：pre-commit 的 end-of-file-fixer 要求文本文件以换行结尾，
+    # 否则每次重出本文件都会被钩子改写（导致提交失败 / 契约漂移假象）。
+    out.write_text(
+        json.dumps(schema, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     print(
         f"OpenAPI schema exported to {out} ({len(schema.get('paths', {}))} paths, {len(schema.get('components', {}).get('schemas', {}))} schemas)"
     )

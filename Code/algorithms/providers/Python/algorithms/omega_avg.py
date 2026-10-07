@@ -47,6 +47,21 @@ _DOY_FILE_PREFIX = "doy_"
 _MAX_DOY = 366
 
 
+def _atomic_replace(src: "Path", dst: "Path") -> None:
+    """os.replace 落盘；Windows 上目标被占用时做有限次重试后放弃。"""
+    import os as _os
+    import time as _time
+
+    for attempt in range(5):
+        try:
+            _os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            _time.sleep(0.2 * (attempt + 1))
+
+
 @dataclass(frozen=True, slots=True)
 class OmegaAvgConfig:
     """D2 avg-omega 反演配置参数。
@@ -198,7 +213,11 @@ def build_raw_omega_daily_cache(
                     f"for {date_key}"
                 )
             omega_2d = omega_arr.reshape(grid_shape)
-            savemat(dst, {"OMEGA_2d": omega_2d}, do_compression=True)
+            # 原子写入（tmp + os.replace）：持久缓存目录可能被并发 run 共享，
+            # 半截 savemat 文件会被后续 run 当有效缓存误读。
+            dst_tmp = dst.with_suffix(".mat.tmp")
+            savemat(dst_tmp, {"OMEGA_2d": omega_2d}, do_compression=True)
+            _atomic_replace(dst_tmp, dst)
             cached_days += 1
             year_cached += 1
         if year_cached > 0:
@@ -289,8 +308,10 @@ def build_doy_omega_climatology(
             omega_avg = np.nanmean(stacked, axis=0)
         count_grid = np.sum(~np.isnan(stacked), axis=0).astype(np.float64)
         dst = output_doy_dir / f"{_DOY_FILE_PREFIX}{doy:03d}.mat"
+        # 原子写入（tmp + os.replace）：并发 run 共享持久缓存时防止半截文件
+        dst_tmp = dst.with_suffix(".mat.tmp")
         savemat(
-            dst,
+            dst_tmp,
             {
                 "OMEGA_AVG": omega_avg,
                 "count_grid": count_grid,
@@ -298,6 +319,7 @@ def build_doy_omega_climatology(
             },
             do_compression=True,
         )
+        _atomic_replace(dst_tmp, dst)
         doy_files += 1
         total_samples += len(samples)
 

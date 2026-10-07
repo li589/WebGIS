@@ -584,7 +584,7 @@ def set_layer_group_members(
     admin=Depends(require_admin),
     theme_id: int | None = Query(default=None),
 ) -> LayerCategoryResponse:
-    """全量替换分组内图层成员。"""
+    """全量替换分组内图层成员（theme 预设支持「取消勾选 = 从图层库移除」）。"""
     repo = get_layer_group_repository()
     try:
         if theme_id is not None:
@@ -593,9 +593,12 @@ def set_layer_group_members(
                 tid,
                 group_id,
                 payload.layer_ids,
+                excluded_layer_ids=payload.excluded_layer_ids,
                 updated_by_user_id=_owner_user_id(admin),
             )
         else:
+            # 个人工作区（兼容路径）：保留值需要 layer_groups 行承载，暂不支持
+            # 排除语义；管理端始终传 theme_id，正常不走到这里。
             repo.set_layer_assignments(
                 group_id, payload.layer_ids, owner_user_id=_owner_user_id(admin)
             )

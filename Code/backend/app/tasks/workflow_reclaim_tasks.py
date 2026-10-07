@@ -17,6 +17,13 @@ updated_at。
 CAS 使用 max_retries=1：禁止在冲突时把 expected 从 queued 刷新为
 running 后再强写 failed（默认 save_run_cas 的 refresh 语义会误杀
 「刚被 worker 接手」的长任务，例如 omega_sf_fenkuai）。
+
+2026-10-07 自动重派：派发丢失的 run 若仍在 retry_policy 预算内
+（retry_attempt+1 <= max_attempts），先 CAS 置回 queued 再原地重派
+（``dispatch_workflow_task``，retry_attempt 递增以复用既有重试机
+制），用户无感恢复；重派抛错（broker 仍不可达等）才 CAS 落 failed。
+开关：settings.workflow_reclaim_auto_redispatch（env
+``BACKEND_WORKFLOW_RECLAIM_AUTOREDISPATCH``，默认开）。
 """
 
 from __future__ import annotations
@@ -52,6 +59,64 @@ def _last_activity_at(
     return updated_at
 
 
+def _try_auto_redispatch(
+    repository: SQLiteWorkflowRepository,
+    run,
+    now: datetime,
+) -> str | None:
+    """尝试对派发丢失的 run 原地自动重派。
+
+    Returns:
+        "redispatched"（已 CAS 置 queued 并重派成功）/
+        "exhausted"（重试预算用尽或请求不可解析）/ None（开关关闭等）。
+        重派抛错不在此处吞——由调用方回退 CAS failed。
+    """
+    if not bool(getattr(settings, "workflow_reclaim_auto_redispatch", True)):
+        return None
+    from app.tasks.workflow_tasks import dispatch_workflow_task
+    from shared.contracts.api_contracts import WorkflowSubmitRequest
+
+    request_json = repository.get_run_request_json(run.run_id)
+    if not request_json:
+        return "exhausted"
+    try:
+        payload = WorkflowSubmitRequest.model_validate_json(request_json)
+    except Exception:
+        logger.warning(
+            "Reclaim auto-redispatch: run %s request_json invalid, fallback to failed",
+            run.run_id,
+        )
+        return "exhausted"
+
+    current_attempt = int(payload.retry_attempt or 1)
+    max_attempts = int(getattr(payload.retry_policy, "max_attempts", 3) or 3)
+    if current_attempt >= max_attempts:
+        return "exhausted"
+
+    # 先 CAS 置回 queued（带计数消息），再重派；重派失败由调用方落 failed。
+    expected = ExecutionStatus(run.status)
+    run.status = ExecutionStatus.queued
+    run.message = (
+        f"检测到任务派发丢失（broker 重启或 worker 停机），"
+        f"自动重派（第 {current_attempt + 1}/{max_attempts} 次尝试）…"
+    )
+    run.updated_at = now
+    if not repository.save_run_cas(run, expected_status=expected, max_retries=1):
+        return "exhausted"  # 状态已被并发推进（如 worker 恰好接手），不重派
+
+    dispatch_workflow_task(
+        run_id=run.run_id,
+        payload=payload.model_copy(update={"retry_attempt": current_attempt + 1}),
+    )
+    logger.warning(
+        "Auto-redispatched dispatch-lost workflow run %s (attempt %d/%d)",
+        run.run_id,
+        current_attempt + 1,
+        max_attempts,
+    )
+    return "redispatched"
+
+
 @celery_app.task(name="app.tasks.workflow_reclaim_tasks.reclaim_stuck_workflow_runs")
 def reclaim_stuck_workflow_runs() -> dict[str, object]:
     """扫描并回收卡死的 accepted/queued run（beat 周期触发）。"""
@@ -59,6 +124,7 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
     timeout_s = int(getattr(settings, "workflow_stuck_reclaim_seconds", 1800) or 1800)
     now = datetime.now(UTC)
     reclaimed: list[str] = []
+    redispatched: list[str] = []
     skipped = 0
 
     for run in repository.list_runs():
@@ -68,6 +134,21 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
         idle_s = (now - last_activity).total_seconds()
         if idle_s <= timeout_s:
             skipped += 1
+            continue
+
+        # 自动重派优先（2026-10-07）：预算内原地重派，用户无感恢复。
+        try:
+            outcome = _try_auto_redispatch(repository, run, now)
+        except Exception:
+            # 重派抛错（broker 仍不可达 / 队列名解析失败等）→ 回退 CAS failed
+            logger.warning(
+                "Auto-redispatch failed for run %s, falling back to failed",
+                run.run_id,
+                exc_info=True,
+            )
+            outcome = None
+        if outcome == "redispatched":
+            redispatched.append(run.run_id)
             continue
 
         # CAS：仅当状态仍是读取时的 accepted/queued 才落 failed。
@@ -103,10 +184,16 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
             logger.debug("Skip reclaim run %s (error)", run.run_id, exc_info=True)
             skipped += 1
 
-    if reclaimed:
+    if reclaimed or redispatched:
         logger.warning(
-            "Zombie run reclaim: %d reclaimed, %d still within timeout",
+            "Zombie run reclaim: %d reclaimed, %d auto-redispatched, "
+            "%d still within timeout",
             len(reclaimed),
+            len(redispatched),
             skipped,
         )
-    return {"reclaimed": reclaimed, "skipped_active": skipped}
+    return {
+        "reclaimed": reclaimed,
+        "redispatched": redispatched,
+        "skipped_active": skipped,
+    }

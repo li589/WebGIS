@@ -138,7 +138,9 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
       </div>
 
       <div v-if="expandedCategories.has(group.category.id)" class="category-items">
-        <!-- 核心资产二级分类筛选 Pills -->
+        <!-- 核心资产二级分类筛选 Pills ｜ 按需求隐藏「全部 / 模型输入 / 模型输出 / 辅助数据」这一行。
+             保留代码未删除，后续需要时去掉本段注释首尾的标记即可恢复。
+             说明：selectedSubCategory 初值即 'all' 且有兜底回退，隐藏此唯一入口后恒等于「全部」，所有图层照常显示。
         <div
           v-if="group.category.id === 'research-group' && researchSubCategoryPills.length > 1"
           class="subcategory-pills-bar"
@@ -154,6 +156,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             {{ sub === 'all' ? '全部' : sub }}
           </button>
         </div>
+        ↑↑↑ 隐藏段结束 -->
         <div v-if="group.items.length === 0" class="empty-subcategory-hint">
           暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的{{
             getCategoryName('research-group')
@@ -162,26 +165,25 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
         <div
           v-for="(item, index) in group.items"
           :key="item.catalogId"
-          v-spotlight="{ color: item.accentGlow || 'rgba(56, 189, 248, 0.08)' }"
+          v-spotlight="{ color: 'rgba(91, 157, 245, 0.1)' }"
           class="library-card cgda-stagger-item"
           :class="{ added: isAdded(effectiveSourceId(item)) }"
-          :style="{
-            '--accent': item.accentColor,
-            '--glow': item.accentGlow,
-            '--stagger-i': index,
-          }"
+          :style="{ '--stagger-i': index }"
         >
           <div class="card-top">
             <div class="card-title-row">
               <strong>{{ item.name }}</strong>
               <div class="chips-group">
+                <!-- 按需求隐藏卡片上的「研发数据」小标签（保留代码，需要时去掉注释标记即可恢复）。
+                     注意：仅隐藏本标签，下方 subCategory 标签（模型输入/模型输出/辅助数据）保持显示。
                 <span class="card-chip" :style="{ background: item.chipTone }">{{
                   getCategoryName(item.category)
                 }}</span>
+                隐藏段结束 -->
                 <span
                   v-if="item.subCategory"
                   class="card-chip subcategory-chip"
-                  style="background: var(--surface-hover); margin-left: 4px; color: var(--accent)"
+                  :data-sub="item.subCategory"
                   >{{ item.subCategory }}</span
                 >
               </div>
@@ -194,7 +196,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             <template v-if="item.category === 'weather'">
               <div class="source-weather-live">
                 <label class="weather-src-label">
-                  <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                  <span class="src-dot" :style="{ background: 'var(--accent)' }"></span>
                   <AppSelect
                     :model-value="weatherSourcePrefsValue(item.catalogId)"
                     :disabled="!!weatherProvidersLoading[item.catalogId]"
@@ -240,7 +242,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
               </div>
               <div v-else-if="item.sources.length === 1" class="source-single">
                 <div class="src-line">
-                  <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                  <span class="src-dot" :style="{ background: 'var(--accent)' }"></span>
                   <span class="src-name">{{ item.sources[0].name }}</span>
                 </div>
                 <div class="src-meta">
@@ -263,7 +265,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
               <div v-else class="source-multi">
                 <div class="source-selector">
                   <label class="source-selector-label">
-                    <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                    <span class="src-dot" :style="{ background: 'var(--accent)' }"></span>
                     <AppSelect
                       :model-value="effectiveSourceId(item)"
                       size="sm"
