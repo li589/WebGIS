@@ -19,8 +19,10 @@
  * 往 `DEFAULT_LAYERS` 里加一条即可；编号可用 Python 复核：
  *   `'imported-' + hashlib.sha1(f'{catalogId}|{role}|{role}'.encode()).hexdigest()[:12]`
  */
+import { nextTick } from 'vue'
 import { resolveInversionCatalogId } from './inversion-catalog'
 import { useLayerWorkspace, useWorkflowRun } from './selectors'
+import { useUiStore } from '../ui'
 import type { ActiveLayer } from './types'
 
 /** 总开关：改为 false 并重新构建前端即可整体停用（不碰其它逻辑）。 */
@@ -56,39 +58,71 @@ interface DefaultLayerEntry {
 /**
  * 默认加载名单。
  *
- * 编号复核（2026-09-29 实测，三处与磁盘目录一致）：
- *   sha1('method-smap-omega-doy-avg|SM|SM')[:12]       = 136c60293bbf
- *   sha1('method-smap-omega-doy-avg|VOD|VOD')[:12]     = 169f6402583c
- *   sha1('method-smap-omega-doy-avg|OMEGA|OMEGA')[:12] = 9a7cf36832cd
+ * 编号复核（2026-10-09 实测，三处与磁盘目录一致）：
+ *   sha1('method-fy-omega-doy-avg|SM|SM')[:12]       = 55359b8ecd3d
+ *   sha1('method-fy-omega-doy-avg|VOD|VOD')[:12]     = a94205dad5f9
+ *   sha1('method-fy-omega-doy-avg|OMEGA|OMEGA')[:12] = 72aa577da95e
  *
- * 默认显隐（2026-09-30 用户确认）：**只显示「土壤水分」**（ω 改为不显示）。
+ * 2026-10-09 用户调整：默认改为**风云（FY3D）平均散射约束产品反演（本地）**，
+ * 默认帧＝该图层的 default_time（十天合成 2025-12-03 ~ 12-12，见 overlay meta）；
+ * 原 SMAP 三条目移入 RETIRED_OVERLAY_IDS 退役（不再自动加载）。
+ *
+ * 默认显隐：**只显示「土壤水分」**（VOD / ω 不显示）。
  */
 export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
   {
-    catalogId: 'method-smap-omega-doy-avg',
-    groupTitle: 'SMAP 平均散射约束产品反演（本地）',
-    workflowId: 'omega_avg_daily_smap_single',
+    catalogId: 'method-fy-omega-doy-avg',
+    groupTitle: '风云 平均散射约束产品反演（本地）',
+    workflowId: 'omega_avg_daily_fy_single',
     members: [
       {
         role: 'SM',
-        overlayId: 'imported-136c60293bbf',
-        label: '土壤水分（SMAP 平均）',
+        overlayId: 'imported-55359b8ecd3d',
+        label: '土壤水分（风云 平均）',
         visible: true,
       },
       {
         role: 'VOD',
-        overlayId: 'imported-169f6402583c',
-        label: '植被光学厚度（SMAP 平均）',
+        overlayId: 'imported-a94205dad5f9',
+        label: '植被光学厚度（风云 平均）',
         visible: false,
       },
       {
         role: 'OMEGA',
-        overlayId: 'imported-9a7cf36832cd',
-        label: '等效散射 ω（SMAP 平均）',
+        overlayId: 'imported-72aa577da95e',
+        label: '等效散射 ω（风云 平均）',
         visible: false,
       },
     ],
   },
+]
+
+/**
+ * 默认图层的「主成员」overlay 编号（首个 `visible: true` 的成员，退化为第一个）。
+ *
+ * 供启动流程把**初始视野**落到该图层的整体范围用（见 `DashboardView.vue`
+ * 的 `focusDefaultLayerExtent`）——与侧栏右键「缩放到图层」是同一条路径。
+ */
+export function defaultPrimaryOverlayId(): string | null {
+  const entry = DEFAULT_LAYERS[0]
+  if (!entry) return null
+  const primary = entry.members.find((member) => member.visible) ?? entry.members[0]
+  return primary?.overlayId ?? null
+}
+
+/**
+ * 已退役的默认图层（2026-10-09 起不再自动加载）。
+ *
+ * 处理方式（见 `retireDefaultLayers`）：
+ * - 若工作区里还挂着这些产物（历史快照 / 跨设备同步带回），移除并登记；
+ * - 只从前端工作区摘除，**不删后端数据目录**（`deleteBackendFile: false`）。
+ * 想恢复 SMAP 默认加载：把 overlay 编号挪回 DEFAULT_LAYERS，并在浏览器控制台
+ * 执行 `localStorage.removeItem('geo:dismissed-layers:v1')` 后强刷。
+ */
+const RETIRED_OVERLAY_IDS: readonly string[] = [
+  'imported-136c60293bbf', // SMAP 土壤水分
+  'imported-169f6402583c', // SMAP 植被光学厚度
+  'imported-9a7cf36832cd', // SMAP 等效散射 ω
 ]
 
 interface ProbedOverlay {
@@ -142,7 +176,8 @@ type WorkflowRunApi = ReturnType<typeof useWorkflowRun>
 
 /** 成员显隐策略只在策略版本变化时强制一次，之后尊重用户的手动开关。 */
 const VISIBILITY_POLICY_KEY = 'cgda.default-layers.visibility-policy'
-const VISIBILITY_POLICY_VERSION = '2026-09-30-sm-visible'
+// 2026-10-09：默认名单由 SMAP 切换为风云，需要重新强制一次显隐（只显示土壤水分）
+const VISIBILITY_POLICY_VERSION = '2026-10-09-fy-sm-visible'
 
 function shouldForceVisibilityPolicy(): boolean {
   try {
@@ -248,6 +283,79 @@ async function attachByStableOverlayIds(
 }
 
 /**
+ * 摘除已退役的默认图层（幂等）。
+ *
+ * 只对**本地导入栅格**且 overlay 编号命中名单的图层生效：
+ * - `dismiss: true` ⇒ 登记到 dismissed，刷新 / 跨设备同步都不会再自动恢复；
+ * - `deleteBackendFile: false` ⇒ **不删除** `Data\ProjectOutput\imports\<id>` 产物目录，
+ *   随时可手动从「数据管理器」重新加回。
+ */
+function retireDefaultLayers(workspace: WorkspaceApi): void {
+  if (!RETIRED_OVERLAY_IDS.length) return
+  const retired = new Set<string>(RETIRED_OVERLAY_IDS)
+  const hits = workspace.activeLayers.value.filter((layer) => {
+    const overlayId = layer.importedRaster?.overlayLayerId
+    return Boolean(overlayId && retired.has(overlayId))
+  })
+  for (const layer of hits) {
+    workspace.removeLayer(layer.instanceId, { dismiss: true, deleteBackendFile: false })
+  }
+  if (hits.length) {
+    console.warn(
+      '[default-layers] 已退役 %d 个默认图层（仅从工作区移除，未删后端数据）',
+      hits.length,
+    )
+  }
+}
+
+/**
+ * 把时间轴定位到默认图层的 `default_time` 帧（「打开即显示默认帧」）。
+ *
+ * 为什么需要：前端约定「新加图层 → 吸附到最新切片」（`useTimelineSync` →
+ * `snapTargetFromLayer` → `latestSlice`），而最新切片通常是**单日帧**，会把后端
+ * 写在 `meta.json` 里的 `default_time`（这里是十天合成帧）盖掉 ⇒ 一进去仍显示一天。
+ *
+ * 做法：在挂载 + 吸附都跑完之后，把时间轴日期落到默认帧**内部**，让
+ * `resolveSliceForInstant` 解析回该帧。区间帧取**结束日**，因为 `time_list` 按字典序
+ * 排列时 `20251203_20251212` 排在 `20251212` 之前，`find` 会先命中它。
+ *
+ * 只对区间帧（`YYYYMMDD_YYYYMMDD`）生效：单日 `default_time` 与「最新切片」本就一致。
+ */
+async function alignTimelineToDefaultFrame(
+  workspace: WorkspaceApi,
+  entry: DefaultLayerEntry,
+): Promise<void> {
+  const primary = entry.members.find((member) => member.visible) ?? entry.members[0]
+  if (!primary) return
+  const probed = await probeOverlay(primary.overlayId)
+  const defaultTime = probed?.defaultTime
+  const matched = defaultTime ? /^(\d{8})_(\d{8})$/.exec(defaultTime) : null
+  if (!matched) return
+  const end = matched[2]!
+  const date = new Date(
+    Number(end.slice(0, 4)),
+    Number(end.slice(4, 6)) - 1,
+    Number(end.slice(6, 8)),
+    0,
+    0,
+    0,
+    0,
+  )
+  const uiStore = useUiStore()
+  uiStore.applyDateHour(date, 0)
+  uiStore.applyTimelineFromLayerGranularity('day')
+  uiStore.rememberLayerTime(entry.catalogId, { force: true })
+  // 反演 / 导入栅格层的 catalogId 可能被改写成 imported-<instanceId>，再按真实
+  // catalogId 各记一次时刻，避免切层时命中「记忆日无覆盖 → 吸附最新切片」把默认帧顶掉。
+  for (const member of entry.members) {
+    const layer = workspace.activeLayers.value.find(
+      (item) => item.importedRaster?.overlayLayerId === member.overlayId,
+    )
+    if (layer) uiStore.rememberLayerTime(layer.catalogId, { force: true })
+  }
+}
+
+/**
  * 确保默认图层已挂载（幂等、静默降级）。
  *
  * 单项流程：
@@ -264,6 +372,13 @@ export async function ensureDefaultLayers(): Promise<void> {
     const workflowRun = useWorkflowRun()
     const forceVisibility = shouldForceVisibilityPolicy()
 
+    // 先卸下已退役的默认图层（如 SMAP），再挂新的默认图层
+    try {
+      retireDefaultLayers(workspace)
+    } catch (err) {
+      console.warn('[default-layers] 退役清理失败', err)
+    }
+
     for (const entry of DEFAULT_LAYERS) {
       try {
         if (!isEntryPresent(workspace.activeLayers.value, entry)) {
@@ -278,6 +393,9 @@ export async function ensureDefaultLayers(): Promise<void> {
         // 分组头：无论图层是刚挂的还是历史快照里已有的，都要保证有数据集名
         ensureDefaultGroup(workspace, workflowRun, entry)
         if (forceVisibility) applyVisibilityStrategy(workspace, entry)
+        // 等「吸附最新切片」那批 watcher 跑完，再把时间轴定位到默认帧（十天合成）
+        await nextTick()
+        await alignTimelineToDefaultFrame(workspace, entry)
       } catch (err) {
         console.warn('[default-layers] 跳过', entry.catalogId, err)
       }

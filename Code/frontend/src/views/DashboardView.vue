@@ -40,7 +40,7 @@ import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import { syncWorkspaceOnBoot, teardownWorkspaceSync } from '../stores/layers/workspace-sync'
-import { ensureDefaultLayers } from '../stores/layers/default-layers'
+import { defaultPrimaryOverlayId, ensureDefaultLayers } from '../stores/layers/default-layers'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
@@ -98,6 +98,8 @@ void (async () => {
   // 刻意放在水合保护之外——挂载结果能正常落盘，下次打开直接由快照恢复；
   // 且原有恢复流程先跑完，已存在的层不会被重复添加（见 default-layers.ts）。
   await ensureDefaultLayers()
+  // 打开网页即把初始视野落到默认图层的整体范围（详见 focusDefaultLayerExtent）
+  void focusDefaultLayerExtent()
 })()
 
 // Dashboard 卸载时清理所有 429 重试定时器，防止已取消的工作流被重新提交
@@ -473,6 +475,36 @@ function handleZoomToLayer(instanceId: string): boolean {
   const ok = Boolean(mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
   if (ok) logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
   return ok
+}
+
+/**
+ * 打开网页时把初始视野落到**默认图层的整体范围**（而不是停在默认中心 / 缩放）。
+ *
+ * 为什么需要：地图初始视野来自「默认中心 + 缩放」（默认华南，zoom≈4.8），而默认
+ * 图层是风云全球产品（EASE-Grid 2.0 全球 9km，覆盖 ±180° / ±85°）——停在区域级
+ * 缩放下几乎看不到数据（稀疏轨道条带被放大后基本是空白）。
+ *
+ * 做法：复用侧栏右键「缩放到图层」的同一条路径（`handleZoomToLayer`），视野＝整个
+ * 图层。图层边界来自 `importedRaster.bounds`（挂载 / 快照恢复都带）或 overlay 元数据
+ * 加载结果（`overlayTimeStates`）；两者都没就绪时最多等约 3 秒。失败静默——失败表现
+ * 是「停在默认视野」，不影响其它任何功能。
+ */
+async function focusDefaultLayerExtent(): Promise<void> {
+  const overlayId = defaultPrimaryOverlayId()
+  if (!overlayId) return
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const layer = workspace.activeLayers.value.find(
+      (item) => item.importedRaster?.overlayLayerId === overlayId,
+    )
+    const boundsReady =
+      Boolean(layer?.importedRaster?.bounds) ||
+      overlayTimeStates.value.some((state) => state.layerId === overlayId && Boolean(state.bounds))
+    if (layer && boundsReady && handleZoomToLayer(layer.instanceId)) {
+      logStore.logOperation('map-zoom', '打开网页缩放到默认图层范围')
+      return
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 250))
+  }
 }
 
 function handleFitChina(): boolean {
