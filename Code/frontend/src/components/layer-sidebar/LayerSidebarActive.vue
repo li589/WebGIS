@@ -36,6 +36,9 @@ const props = defineProps<{
   openOnlinePlan?: () => void
 }>()
 
+// 2026-10-09：唯一调用点是下方「本地导入」分类胶囊（已按需求注释掉），故此处暂时"未使用"。
+// 恢复那段注释后，请把下面这行 eslint-disable 一并删掉。
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function isComputingRunMember(layer: ActiveLayerDisplay): boolean {
   if (!layer.runGroupId) return false
   return props.runGroupOf(layer.runGroupId)?.status === 'computing'
@@ -199,12 +202,14 @@ const emit = defineEmits<{
                 "
                 >{{ row.layer.name }}</strong
               >
+              <!-- 2026-10-09 按要求隐藏「本地导入」分类胶囊（未删除，取消注释即可恢复）
               <span
                 v-if="!isComputingRunMember(row.layer)"
                 class="layer-chip"
                 :style="{ background: row.layer.chipTone }"
                 >{{ getCategoryName(row.layer.category) }}</span
               >
+              -->
               <button
                 class="del-btn"
                 title="移除图层"
@@ -235,8 +240,13 @@ const emit = defineEmits<{
               <!-- 统一数据状态徽标（2026-08-25 UX 简化）：三源归并为
                    五态（运行中/排队中/异常/完成/旧数据）——去掉
                    「数据异常/资产陈旧/失败」堆叠与「资产」术语。 -->
+              <!-- 2026-10-09 按要求只隐藏「完成」态徽标；运行中/排队中/异常/旧数据照常显示。
+                   如需恢复显示「完成」：删掉 v-if 里 `&& getUnifiedDataStatus(row.layer)!.state !== 'done'` 即可。 -->
               <span
-                v-if="getUnifiedDataStatus(row.layer)"
+                v-if="
+                  getUnifiedDataStatus(row.layer) &&
+                  getUnifiedDataStatus(row.layer)!.state !== 'done'
+                "
                 class="data-status-badge"
                 :class="`data-status-${getUnifiedDataStatus(row.layer)!.state}`"
                 :title="getUnifiedDataStatus(row.layer)!.title ?? undefined"
@@ -276,6 +286,8 @@ const emit = defineEmits<{
                 >导入 · {{ row.layer.importedGeometryType }} ·
                 {{ row.layer.importedFeatureCount }} 要素</span
               >
+              <!-- 2026-10-09 按要求：只隐藏「导入 · 栅格 · N 块」这种技术前缀，日期单独保留（见下方 template）。
+                   想完全恢复原样：把下面这段取消注释、并把紧邻的 template 段注释掉即可。
               <span v-else-if="row.layer.isImportedRaster" class="admin-tip-inline"
                 >导入 · 栅格{{
                   row.layer.importedRasterTimeCount
@@ -287,6 +299,16 @@ const emit = defineEmits<{
                     : ''
                 }}</span
               >
+              -->
+              <!-- 2026-10-09 栅格图层的「生效时间」单独显示（如 20260201）；无日期时该分支不占位 -->
+              <template v-else-if="row.layer.isImportedRaster">
+                <span
+                  v-if="row.layer.importedRasterEffectiveTime"
+                  class="admin-tip-inline"
+                  :title="`数据时间：${row.layer.importedRasterEffectiveTime}`"
+                  >{{ row.layer.importedRasterEffectiveTime }}</span
+                >
+              </template>
               <span
                 v-else-if="
                   row.layer.runGroupId &&
@@ -310,12 +332,14 @@ const emit = defineEmits<{
               </template>
               <!-- 单位（2026-08-25 UX 简化）：从图例行挪入状态行，
                    相对整个图层条水平居中（绝对定位，不随左右内容挤压）。 -->
+              <!-- 2026-10-09 按要求隐藏计量单位小字（本处会显示 OMEGA / VOD / SM 等变量角色）；未删除，取消注释即可恢复
               <span
                 v-if="getSymbologyUnit(row.layer) && !row.layer.runGroupLocked"
                 class="layer-metric-unit"
                 :title="`图层计量单位：${getSymbologyUnit(row.layer)}`"
                 >{{ getSymbologyUnit(row.layer) }}</span
               >
+              -->
               <span v-if="!row.layer.runGroupId && !row.layer.runGroupLocked" class="order-hint"
                 >顺序
                 {{

@@ -192,7 +192,7 @@ export const PRODUCT_TAG_LABELS: Record<string, string> = {
 export const PRODUCT_TAG_DESCRIPTIONS: Record<string, string> = {
   SM: '土壤水分',
   VOD: '植被光学厚度',
-  OMEGA: '反演参数 ω',
+  OMEGA: '等效散射 ω',
   NDVI: '植被指数 NDVI',
   result: '工作流分析结果',
 }

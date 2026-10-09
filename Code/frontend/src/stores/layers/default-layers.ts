@@ -84,7 +84,7 @@ export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
       {
         role: 'OMEGA',
         overlayId: 'imported-9a7cf36832cd',
-        label: '反演参数 ω（SMAP 平均）',
+        label: '等效散射 ω（SMAP 平均）',
         visible: false,
       },
     ],
