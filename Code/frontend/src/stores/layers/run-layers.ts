@@ -1200,11 +1200,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   }
 
   function reorderLayers(fromIndex: number, toIndex: number) {
-    // Display order is descending (list top = map top = high order)
+    // 2026-10-13：面板显示顺序改为 order 升序（列表顶部 = order 最小），
+    // 与 activeLayersDisplay、useSidebarDragReorder 的落点索引保持一致。
     const sorted = deps
       .getActiveLayers()
       .slice()
-      .sort((a, b) => b.order - a.order)
+      .sort((a, b) => a.order - b.order)
     const moved = sorted[fromIndex]
     if (!moved) return
 
@@ -1238,7 +1239,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     if (!item) return
     sorted.splice(toIndex, 0, item)
     sorted.forEach((layer, i) => {
-      layer.order = sorted.length - 1 - i
+      // order 升序：列表第 1 行 = order 最小，最后一行 = order 最大
+      layer.order = i
     })
     deps.scheduleWorkspacePersist()
   }

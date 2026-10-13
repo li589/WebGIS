@@ -104,7 +104,9 @@ export function useSidebarDragReorder(
         const firstIdx = firstMember
           ? sorted.findIndex((l) => l.instanceId === firstMember.instanceId)
           : -1
-        const placeAfter = firstIdx >= 0 ? targetIdx < firstIdx : true
+        // 2026-10-13：「已添加图层」显示顺序为 order 升序（列表越靠上 order 越小）。
+        // 落点在组块上方（索引更小）时插到锚点之前，否则插到锚点之后。
+        const placeAfter = firstIdx >= 0 ? targetIdx > firstIdx : false
         layersDeps.moveRunGroupBlock(draggedGroupId.value, targetInstanceId, placeAfter)
       }
       onDragEnd()
