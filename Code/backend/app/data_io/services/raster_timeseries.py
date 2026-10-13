@@ -319,6 +319,60 @@ def upsert_block_dir_timeseries(
         )
 
 
+def _preserve_existing_time_slices(
+    dest_dir: Path,
+    time_list: list[str],
+    bounds_by_time: dict[str, list[float]],
+) -> int:
+    """把旧 meta 里仍齐全的历史切片并回 ``time_list``（清单只增不减）。
+
+    2026-10-13：一次窄窗重跑（典型：时间轴停在某个 9 天区间 → run 窗口 9 天）
+    过去会把 ``meta.time_list`` 整页覆盖，把历史宽窗 / 手工物化的切片从清单里
+    抹掉 —— 切片文件仍在磁盘，只是不再被列出，表现为「时间轴上只剩几天，
+    图还在但选不到」。此处保留旧清单中 preview/source/bounds 三件仍齐全的
+    切片，返回并入数量。
+    """
+    old_meta_path = dest_dir / "meta.json"
+    if not old_meta_path.is_file():
+        return 0
+    try:
+        old_payload = json.loads(old_meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return 0
+    raw_old = old_payload.get("time_list") if isinstance(old_payload, dict) else None
+    if not isinstance(raw_old, list):
+        return 0
+    known = set(time_list)
+    kept: list[str] = []
+    for old_label in (str(x) for x in raw_old if x):
+        if old_label in known:
+            continue
+        png_old = dest_dir / f"preview_{old_label}.png"
+        tif_old = dest_dir / f"source_{old_label}.tif"
+        bnd_old = dest_dir / f"bounds_{old_label}.json"
+        if not (png_old.is_file() and tif_old.is_file() and bnd_old.is_file()):
+            continue
+        try:
+            old_bounds = json.loads(bnd_old.read_text(encoding="utf-8")).get("bounds")
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+        if not (isinstance(old_bounds, list) and len(old_bounds) == 4):
+            continue
+        kept.append(old_label)
+        bounds_by_time[old_label] = [float(v) for v in old_bounds]
+    if not kept:
+        return 0
+    time_list.extend(kept)
+    time_list.sort()
+    logger.info(
+        "upsert_block_dir_timeseries: %s 清单只增不减，保留 %d 个历史切片（合计 %d）",
+        dest_dir.name,
+        len(kept),
+        len(time_list),
+    )
+    return len(kept)
+
+
 def _upsert_block_dir_timeseries_locked(
     *,
     mats: list[tuple[str, Path]],
@@ -410,6 +464,8 @@ def _upsert_block_dir_timeseries_locked(
                 },
             },
         )
+
+    _preserve_existing_time_slices(dest_dir, time_list, bounds_by_time)
 
     if not time_list:
         raise RuntimeError("未能物化任何时间切片")
