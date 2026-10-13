@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -24,6 +25,8 @@ from app.services.overlay_registry import (
     unregister_overlay,
 )
 from app.services.raster_preview_service import raster_preview_service
+
+logger = logging.getLogger(__name__)
 
 # YYYYMMDD_YYYYMMDD.mat（8 日块，Omega-SF 动态链）或 YYYYMMDD.mat（单日，
 # omega_avg_daily 逐日产品视为一天块：start=end）。
@@ -257,6 +260,29 @@ def upsert_block_dir_timeseries(
         time_end=time_end,
         canonical_viirs8_only=canonical_viirs8_only,
     )
+    if not mats and (time_start or time_end):
+        # 运行时间窗与块目录无交集（典型：按时间轴跑了一个本地没有数据的日期，
+        # 如时间轴停在 2026-09 而块产物只有 2025-12~2026-02）。
+        # 此处若直接抛错，run 记录仍是 succeeded，但 SM/VOD/OMEGA 三层会**全部
+        # 静默丢失** —— 前端表现为「工作流执行成功、地图上却没有图层」，且再次
+        # 「添加图层」会不停重跑工作流（2026-10-13 定位 run-402e1a6847b8）。
+        # 回退为「不过滤」：块目录里有多少帧就发多少帧，保证「跑过就一定有图」。
+        fallback = list_block_mats(
+            block_dir,
+            time_start=None,
+            time_end=None,
+            canonical_viirs8_only=canonical_viirs8_only,
+        )
+        if fallback:
+            logger.warning(
+                "upsert_block_dir_timeseries: 运行时间窗 %s~%s 在块目录 %s 内无匹配 "
+                ".mat，回退为不过滤并发布全部 %d 个切片",
+                time_start,
+                time_end,
+                block_dir,
+                len(fallback),
+            )
+            mats = fallback
     if not mats:
         raise FileNotFoundError(f"块目录无 YYYYMMDD[_YYYYMMDD].mat: {block_dir}")
 

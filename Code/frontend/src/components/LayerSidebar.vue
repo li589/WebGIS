@@ -304,7 +304,21 @@ async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
   // 添加后 snap / attach 会改时间轴——抑制确认卡，避免自触发
   useTimelineActionBannerStore().suppressConfirm(4_000)
   try {
-    const attached = await workflowRun.autoAttachProductsForNewLayer(catalogId)
+    // 两段式复用（2026-10-13）：**已有产物优先于重跑工作流**。
+    // 1) 先按当前时间轴时刻取产物——用户"把轴拖到某天 → 添加图层"应看到那天的
+    //    数据，而不是被跳到产物最新帧；
+    // 2) 该时刻取不到时退到"产物最新可用帧"，仍然复用、不重跑。
+    // 只有两条都取不到才提交工作流（真·无数据）。
+    const preferred = currentTimelineTimeKey()
+    let attached = 0
+    if (preferred) {
+      attached = await workflowRun.autoAttachProductsForNewLayer(catalogId, {
+        preferredTimeKey: preferred,
+      })
+    }
+    if (attached <= 0) {
+      attached = await workflowRun.autoAttachProductsForNewLayer(catalogId)
+    }
     if (attached > 0) {
       uiStore.rememberLayerTime(catalogId, { force: true })
       return // 已有缓存/数据，直接显示
@@ -320,6 +334,16 @@ async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
     const message = err instanceof Error ? err.message : String(err)
     logStore.logOperation('layer-add', `图层「${catalogId}」自动运行未启动：${message}`)
   }
+}
+
+/** 当前时间轴时刻（YYYY-MM-DD）；非法/不可用时返回 null（退化为"取最新产物"）。 */
+function currentTimelineTimeKey(): string | null {
+  const d = uiStore.currentDate
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function getCatalogItem(catalogId: string) {
