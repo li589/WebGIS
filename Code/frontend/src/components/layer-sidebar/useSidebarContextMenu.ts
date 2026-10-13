@@ -314,7 +314,8 @@ export function useSidebarContextMenu(
         case 'removeGroup': {
           const members = [...(g?.memberInstanceIds ?? [])]
           for (const id of members) {
-            layersDeps.removeLayer(id)
+            // 只从面板移除，不删后端产物（与侧栏 × 行为一致）
+            layersDeps.removeLayer(id, { deleteBackendFile: false })
           }
           logStore.logOperation('layer-remove-group', `移除计算组 ${groupId}`)
           closeContextMenu()

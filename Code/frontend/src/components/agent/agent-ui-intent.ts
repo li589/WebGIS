@@ -238,7 +238,8 @@ export function executeAgentUiIntent(
         message: `图层 ${resolved.catalogId} 仍有进行中的任务（${status}），请先取消后再移除`,
       }
     }
-    workspace.removeLayer(resolved.instanceId)
+    // 只从面板移除，不删后端产物（与侧栏 × 行为一致）
+    workspace.removeLayer(resolved.instanceId, { deleteBackendFile: false })
     return { ok: true, message: `已移除图层 ${resolved.catalogId}` }
   }
 

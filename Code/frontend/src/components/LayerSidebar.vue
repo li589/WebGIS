@@ -459,7 +459,9 @@ function removeItem(instanceId: string, event: MouseEvent) {
     )
     if (!ok) return
   }
-  workspace.removeLayer(instanceId)
+  // 只从面板移除，**不删除后端产物目录**（2026-10-11 用户确认：移除 ≠ 删数据）。
+  // 数据删除请到「数据管理器」里操作。
+  workspace.removeLayer(instanceId, { deleteBackendFile: false })
   // 移除的是当前绘制/编辑图层时，退出绘制模式（孤儿草稿安全网会随之清空绘制 store）
   if (isActiveDrawLayer && uiStore.interactionMode === 'draw') {
     void requestInteractionMode('move')

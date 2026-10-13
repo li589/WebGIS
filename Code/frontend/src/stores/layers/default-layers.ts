@@ -23,6 +23,7 @@ import { nextTick } from 'vue'
 import { resolveInversionCatalogId } from './inversion-catalog'
 import { useLayerWorkspace, useWorkflowRun } from './selectors'
 import { useUiStore } from '../ui'
+import { forgetDismissedLayer } from './workspace-persist'
 import type { ActiveLayer } from './types'
 
 /** 总开关：改为 false 并重新构建前端即可整体停用（不碰其它逻辑）。 */
@@ -377,6 +378,15 @@ export async function ensureDefaultLayers(): Promise<void> {
       retireDefaultLayers(workspace)
     } catch (err) {
       console.warn('[default-layers] 退役清理失败', err)
+    }
+
+    // 默认图层必须「每次打开都在」：先解除历史「移除」留下的 dismissed 登记，
+    // 否则用户移除过默认层后刷新就再也不回来了（2026-10-11 用户明确要求）。
+    // 只解除本名单内的编号，不影响其它图层的移除记录。
+    for (const entry of DEFAULT_LAYERS) {
+      for (const member of entry.members) {
+        forgetDismissedLayer({ overlayLayerId: member.overlayId, catalogId: entry.catalogId })
+      }
     }
 
     for (const entry of DEFAULT_LAYERS) {
