@@ -141,8 +141,8 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "SMAP_L3": DatasetInfo(
         name="SMAP L3 土壤水分产品",
         logical_name="SMAP_L3",
-        relative_path="Soil_Moisture/SMAP",
-        description="NASA SMAP L3 土壤水分被动微波遥感产品（HDF5 格式），2023-01 两周序列 + 2022-09",
+        relative_path="Soil_Moisture/SMAP_L3_SPL3SMP_E",
+        description="NASA SMAP L3 土壤水分被动微波遥感产品（HDF5 格式）；本机实际落盘于 Soil_Moisture/SMAP_L3_SPL3SMP_E",
         file_format="hdf5",
         variables=(
             "soil_moisture",

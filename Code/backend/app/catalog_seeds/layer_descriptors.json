@@ -719,8 +719,8 @@
   "default_task_type": "smap_daily",
   "default_data_access_sources": {
    "SMAP_L3_DEC2025": [
+    "Soil_Moisture/SMAP_L3_SPL3SMP_E",
     "SMAP_L3",
-    "Soil_Moisture/SMAP",
     "Soil_Moisture/SMAP_Origin_Data"
    ]
   },
