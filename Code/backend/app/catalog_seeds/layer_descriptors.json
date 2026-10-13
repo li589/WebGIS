@@ -2573,7 +2573,7 @@
    "crs": "EPSG:4326"
   },
   "style": {
-   "palette": "RdBu",
+   "palette": "YlGn",
    "unit_label": "",
    "opacity": 0.8
   },

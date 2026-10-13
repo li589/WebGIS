@@ -1667,6 +1667,8 @@ def export_smap_aux_layers() -> None:
       线性网格（全球产品，默认全球全幅 0.25°）。
     - Koppen 为全球 0.083° 等经纬网格：构建源仿射后同样重投影（全球全幅）。
     - 分类场（igbp/koppen）：0 视为无效掩膜，vmin/vmax 固定类别范围。
+    - B 参数（smap-aux-b）：海上恒为 0（非有效观测）→ 同视为无效掩膜渲染透明，
+      色带 YlGn；定标仍在掩膜前完成，故 vmin/vmax 与注册表一致。
     - 连续场：vmin/vmax 取 1%/99% 分位并打印——注册表需同步该值以保持
       图例与 PNG 一致。
     """
@@ -1677,7 +1679,7 @@ def export_smap_aux_layers() -> None:
         ("Albedo.mat", "ALBEDO", "smap_aux_albedo", "smap-aux-albedo", "YlOrRd"),
         ("BD.mat", "BD", "smap_aux_bd", "smap-aux-bd", "YlOrBr"),
         ("SF.mat", "SF", "smap_aux_sf", "smap-aux-sf", "YlGn"),
-        ("B.mat", "B", "smap_aux_b", "smap-aux-b", "RdBu"),
+        ("B.mat", "B", "smap_aux_b", "smap-aux-b", "YlGn"),
         ("CF.mat", "CF", "smap_aux_cf", "smap-aux-cf", "PuBu"),
         ("H.mat", "H", "smap_aux_h", "smap-aux-h", "Oranges"),
         (
@@ -1690,6 +1692,11 @@ def export_smap_aux_layers() -> None:
         ("VI_v_qa.mat", "NDVI_v_mean", "smap_aux_vi_qa", "smap-aux-vi-qa", "RdYlGn"),
     ]
     discrete = {"smap-aux-igbp"}
+    # 海域掩膜：B 参数（tau-omega 模型植被结构参数）仅对陆地植被有定义，海上
+    # 恒为 0（并非有效观测值）。把 0 当作"无数据"渲染成透明，露出底图海色；
+    # 否则 0 会落在色带最低端，把半个地球染成一片深色。
+    # 2026-10-13：原色带 RdBu 最低端=深红 → 海洋一片暗红，故一并换单向色带 YlGn。
+    ocean_masked = {"smap-aux-b"}
 
     for mat_file, var, subdir, layer_id, cmap in ease_fields:
         src = _SMAP_AUX_DATA_DIR / mat_file
@@ -1720,6 +1727,11 @@ def export_smap_aux_layers() -> None:
         else:
             vmin, vmax = _smap_aux_continuous_range(data)
             print(f"  display range (p1/p99): vmin={vmin}, vmax={vmax}")
+        if layer_id in ocean_masked:
+            # 先定标（vmin/vmax 仍与注册表一致，含 0）再掩膜：海=0 → NaN → 透明
+            n_ocean = int(np.count_nonzero(data <= 0))
+            data[data <= 0] = np.nan
+            print(f"  ocean masked -> transparent: {n_ocean} 像元")
         _render_png(
             data,
             out_dir / f"{subdir}_overlay.png",

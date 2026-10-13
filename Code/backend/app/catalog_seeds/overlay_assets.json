@@ -211,7 +211,7 @@
   "overlay_subdir": "smap_aux_b",
   "png_filename": "smap_aux_b_overlay.png",
   "bounds_filename": "smap_aux_b_overlay_bounds.json",
-  "palette": "RdBu",
+  "palette": "YlGn",
   "vmin": 0.0,
   "vmax": 0.1286,
   "opacity": 0.8,
