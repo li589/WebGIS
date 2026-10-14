@@ -175,21 +175,17 @@ function isEntryPresent(layers: ActiveLayer[], entry: DefaultLayerEntry): boolea
 type WorkspaceApi = ReturnType<typeof useLayerWorkspace>
 type WorkflowRunApi = ReturnType<typeof useWorkflowRun>
 
-/** 成员显隐策略只在策略版本变化时强制一次，之后尊重用户的手动开关。 */
-const VISIBILITY_POLICY_KEY = 'cgda.default-layers.visibility-policy'
-// 2026-10-09：默认名单由 SMAP 切换为风云，需要重新强制一次显隐（只显示土壤水分）
-const VISIBILITY_POLICY_VERSION = '2026-10-09-fy-sm-visible'
-
-function shouldForceVisibilityPolicy(): boolean {
-  try {
-    if (localStorage.getItem(VISIBILITY_POLICY_KEY) === VISIBILITY_POLICY_VERSION) return false
-    localStorage.setItem(VISIBILITY_POLICY_KEY, VISIBILITY_POLICY_VERSION)
-    return true
-  } catch {
-    // 隐私模式等 localStorage 不可用：退化为「每次都按名单对齐」（可接受）
-    return true
-  }
-}
+/**
+ * 成员显隐**每次打开都按名单对齐一次**（2026-10-14 用户要求）。
+ *
+ * 历史实现用 `VISIBILITY_POLICY_VERSION` 做「只强制一次」的门控，之后尊重用户手动开关；
+ * 实测后果（用户复现）：侧栏把风云三条都自动挂上了，但**土壤水分的勾选状态没被纠正**，
+ * 必须手动点一下才显示。原因是版本号在 2026-10-09 那次打开就已写入 localStorage，
+ * 此后 `applyVisibilityStrategy` 永不执行。
+ *
+ * 用户口径：「任何账号登录都要默认加载风云的土壤水分」⇒ 取消门控，每次打开都对齐。
+ * 对齐范围仅限 `DEFAULT_LAYERS` 名单内的成员（按 overlayId 匹配），不会碰其它图层。
+ */
 
 /**
  * 确保默认图层成组显示（侧栏顶部出现「数据名称」分组头）。
@@ -364,14 +360,13 @@ async function alignTimelineToDefaultFrame(
  *   2. 优先走官方自动挂载 `autoAttachProductsForNewLayer`（有成功 run 时最完整：
  *      成组 + 时间轴对齐）；该接口按账号返回，非 admin 通常拿不到别人的 run；
  *   3. 上一步挂载数为 0 ⇒ 走稳定编号兜底（跨账号 / 跨设备可用）；
- *   4. 最后统一 `ensureDefaultGroup`（补「数据名称」分组头）+ 一次性显隐策略。
+ *   4. 最后统一 `ensureDefaultGroup`（补「数据名称」分组头）+ 按名单对齐显隐（每次打开都做）。
  */
 export async function ensureDefaultLayers(): Promise<void> {
   if (!DEFAULT_LAYERS_ENABLED) return
   try {
     const workspace = useLayerWorkspace()
     const workflowRun = useWorkflowRun()
-    const forceVisibility = shouldForceVisibilityPolicy()
 
     // 先卸下已退役的默认图层（如 SMAP），再挂新的默认图层
     try {
@@ -402,7 +397,8 @@ export async function ensureDefaultLayers(): Promise<void> {
         }
         // 分组头：无论图层是刚挂的还是历史快照里已有的，都要保证有数据集名
         ensureDefaultGroup(workspace, workflowRun, entry)
-        if (forceVisibility) applyVisibilityStrategy(workspace, entry)
+        // 每次打开都对齐一次显隐（盖掉快照恢复 / 历史手动取消勾选留下的状态）
+        applyVisibilityStrategy(workspace, entry)
         // 等「吸附最新切片」那批 watcher 跑完，再把时间轴定位到默认帧（十天合成）
         await nextTick()
         await alignTimelineToDefaultFrame(workspace, entry)
