@@ -145,6 +145,24 @@ const sessionLabel = computed(() => {
   return `${authStore.user.username} · ${role}`
 })
 
+/** 系统配置读取被拦（典型：demo 角色读 GET /config/general 返回 403）⇒ 内容区整块降级为错误提示。 */
+const configUnavailable = computed(
+  () => Boolean(settingsStore.error) && !settingsStore.generalConfig,
+)
+
+/**
+ * 「账户」分区只依赖当前登录态（用户名 / 角色 / 退出登录），不依赖那份被拦下的系统配置。
+ * 因此它不受上面的错误闸门影响、始终可打开 —— 保证任何角色都能从设置里退出登录。
+ * 注意：这里只放行「显示」，不触碰任何权限判定。
+ */
+const accountTabActive = computed(() => activeTab.value === 'accounts')
+
+async function handleLogout() {
+  await authStore.logout()
+  emit('close')
+  await router.replace('/login')
+}
+
 function openAccountsTab() {
   activeTab.value = 'accounts'
 }
@@ -162,6 +180,11 @@ onMounted(async () => {
     await settingsStore.loadAll({ quiet: Boolean(settingsStore.generalConfig) })
   } catch {
     /* loadAll 自行写入 error / partialError */
+  }
+  // 配置读不到（典型：demo 角色被 /config/general 403 拦下）⇒ 直接落到「账户」分区，
+  // 让「退出登录」在任何角色下都触手可及（admin 能读到配置，不受影响）。
+  if (settingsStore.error && !settingsStore.generalConfig) {
+    activeTab.value = 'accounts'
   }
 })
 
@@ -429,15 +452,18 @@ onUnmounted(() => {
             <span class="loading-spinner"></span>
             <span>加载配置中...</span>
           </div>
-          <div
-            v-else-if="settingsStore.error && !settingsStore.generalConfig"
-            class="content-error"
-          >
+          <div v-else-if="configUnavailable && !accountTabActive" class="content-error">
             <span>{{ settingsStore.error }}</span>
-            <button type="button" class="retry-btn" @click="settingsStore.loadAll()">重试</button>
+            <div class="content-error-actions">
+              <button type="button" class="retry-btn" @click="settingsStore.loadAll()">重试</button>
+              <button type="button" class="retry-btn" @click="handleLogout">退出登录</button>
+            </div>
           </div>
           <template v-else>
-            <div v-if="settingsStore.partialError" class="content-partial-error">
+            <div
+              v-if="settingsStore.partialError && !accountTabActive"
+              class="content-partial-error"
+            >
               <span>{{ settingsStore.partialError }}</span>
               <button type="button" class="retry-btn" @click="settingsStore.loadAll()">
                 重试失败项
@@ -713,6 +739,12 @@ onUnmounted(() => {
   padding: 3rem 1rem;
   color: var(--text-disabled);
   font-size: var(--font-size-caption);
+}
+
+.content-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .content-partial-error {
