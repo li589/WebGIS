@@ -49,6 +49,9 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
     # vmin/vmax：科学默认拉伸（run-11369247180a 抽样 SM p50~0.08 p98~0.45；
     # OMEGA p50~0.11 p98~0.28；VOD p50~0.03 p98~0.75）。缺省时 FE 曾强制 0–1
     # 导致色差被压扁。
+    # VOD 上限 2026-10-14 由 1.0 调至 1.5：实测 SMAP/FY 的 VOD p99≈1.04/1.08、
+    # max≈1.77/1.55；设 1.0 会把 >1 的尾部压成色带顶同一色（风云片约 2% 像元），
+    # 1.5 既覆盖到接近实测极值、又不过度拉大上限导致画面整体偏暗。
     "omega_sf_omega_pixel": {
         "variable": "omega_pix_map",
         "grid_preset": "ease2-global-9km",
@@ -73,7 +76,7 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "palette": "viridis",
         "from_block_dir": True,
         "vmin": 0.0,
-        "vmax": 1.0,
+        "vmax": 1.5,
     },
     "omega_sf_omega_block_dir": {
         "variable": "OMEGA",
@@ -1815,10 +1818,13 @@ class PythonProviderResultBuilder:
                         ):
                             block_dirs.append(sub)
                 for block_dir in block_dirs:
-                    for variable, label, palette in (
-                        ("SM", "SM", "ylgnbu"),
-                        ("VOD", "VOD", "viridis"),
-                        ("OMEGA", "OMEGA", "cividis"),
+                    # vmin/vmax 必须与 _MAPPABLE_PRODUCTS 主注册路径一致，否则
+                    # 兜底扫描会用空范围覆盖已落盘的色阶（VOD 会被冲回自适应，
+                    # 2026-10-14 定位）。VOD 上限 1.5 见 _MAPPABLE_PRODUCTS 注释。
+                    for variable, label, palette, vmin, vmax in (
+                        ("SM", "SM", "ylgnbu", 0.0, 0.5),
+                        ("VOD", "VOD", "viridis", 0.0, 1.5),
+                        ("OMEGA", "OMEGA", "cividis", 0.0, 0.5),
                     ):
                         try:
                             synced = upsert_block_dir_timeseries(
@@ -1828,6 +1834,8 @@ class PythonProviderResultBuilder:
                                 run_id=run_id,
                                 layer_key=str(run_status.layer_id or ""),
                                 palette=palette,
+                                vmin=vmin,
+                                vmax=vmax,
                                 native_step="8d",
                                 time_start=time_start,
                                 time_end=time_end,

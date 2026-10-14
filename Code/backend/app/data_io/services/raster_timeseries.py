@@ -428,6 +428,9 @@ def _upsert_block_dir_timeseries_locked(
         # 预览渲染到 EPSG:3857：MapLibre 底图为 Web Mercator，ImageSource 按 WGS84
         # 四角线性贴图；若 PNG 是 equirectangular（4326），全球框会南北严重拉伸。
         # 导出仍用 source_*.tif 原网格（EPSG:6933），与显示无关。
+        # 烘 PNG 用注册范围（vmin/vmax）。传 None 时 render 内部回落到该帧
+        # p2/p98 自适应；传具体值时按固定色阶上色，保证「PNG 成品」与
+        # meta.json / 图例 / 动态重着色三处一致（2026-10-14 VOD 1.5 收口）。
         png_bytes, mercator_bounds = (
             raster_preview_service.render_cog_preview_reprojected(
                 cog_path=tif_path,
@@ -436,6 +439,8 @@ def _upsert_block_dir_timeseries_locked(
                 height=2048,
                 source_crs=str(extract_meta.get("crs") or source_crs),
                 target_crs="EPSG:3857",
+                min_value=vmin,
+                max_value=vmax,
                 crop_to_data=False,
             )
         )
