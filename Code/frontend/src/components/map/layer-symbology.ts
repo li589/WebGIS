@@ -26,6 +26,46 @@ export {
 export type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
 import type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
 
+/**
+ * 反演产物「变量角色 → 计量单位」（2026-10-15）。
+ *
+ * ## 为什么会有这个表（后端把变量标签当成了单位）
+ * 产物物化 / 懒加载两处都把 **label** 塞进了 overlay 的 unit 字段：
+ *   - `app/data_io/services/raster_timeseries.py`：`register_overlay(..., unit=label)`
+ *   - `app/services/overlay_registry.py`：`unit = str(meta.get("unit") or meta.get("label") or "")`
+ * ⇒ `/overlay-bounds` 返回的 `meta.unit` 实际是 `SM / VOD / OMEGA` 这类**角色码**，
+ * 前端若原样展示，色带右端就出现「0.5 SM」这种字样（用户 2026-10-15 报障）。
+ *
+ * ## 展示口径（用户口径）
+ * - **SM**（土壤体积含水量）＝ `m³/m³`，要显示；
+ * - **VOD**（植被光学厚度）、**ω**（等效散射反照率）为无量纲量 ⇒ **不显示单位**；
+ * - 角色码本身（SM / VOD / OMEGA）永远不当单位展示。
+ *
+ * 后端若日后改为真实单位，`meta.unit` 不是角色码时会原样透传（见各调用方优先级）。
+ */
+export const PRODUCT_ROLE_CODES = ['SM', 'VOD', 'OMEGA'] as const
+
+/** 角色 → 单位。**无量纲量（VOD / ω）不入表** ⇒ 查不到即「不显示单位」。 */
+const ROLE_UNITS: Record<string, string> = {
+  SM: 'm³/m³',
+}
+
+/** 该字符串是否就是变量角色码（用来识别「标签被当成单位」的后端返回值） */
+export function isProductRoleCode(value: string | null | undefined): boolean {
+  const key = String(value ?? '')
+    .trim()
+    .toUpperCase()
+  return (PRODUCT_ROLE_CODES as readonly string[]).includes(key)
+}
+
+/** 按变量角色取单位；未知 / 无量纲角色返回空串（约定为空串即不显示单位） */
+export function unitForRole(role: string | null | undefined): string {
+  const key = String(role ?? '')
+    .trim()
+    .toUpperCase()
+  return ROLE_UNITS[key] ?? ''
+}
+
 /** paletteOverride ?? renderHint ?? overlayMeta */
 export function resolveEffectivePalette(options: {
   paletteOverride?: string | null
@@ -82,7 +122,9 @@ export function buildLegendHintFromOverlayMeta(
     paint_mode: 'raster_legend',
     palette: meta.palette,
     primary_metric: primaryMetric,
-    unit_label: meta.unit ?? '',
+    // 2026-10-15：后端把变量标签写进了 unit（meta.unit = SM / VOD / OMEGA）⇒
+    // 角色码按口径换成真实单位（SM= m³/m³；无量纲 ⇒ 空串，不显示）
+    unit_label: isProductRoleCode(meta.unit) ? unitForRole(meta.unit) : (meta.unit ?? ''),
     opacity: typeof meta.opacity === 'number' ? meta.opacity : 0.7,
     legend_ticks: [vmin, mid, vmax],
     notes: ['有源图层可改配色；地图与图例同步重着色'],

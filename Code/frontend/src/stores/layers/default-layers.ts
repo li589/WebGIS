@@ -70,6 +70,17 @@ interface DefaultLayerEntry {
  *
  * 默认显隐：**只显示「土壤水分」**（VOD / ω 不显示）。
  */
+/**
+ * 默认图层成员显示名（**唯一权威来源**，每次打开由 `applyDefaultNames` 对齐）。
+ *
+ * 2026-10-15 用户报障「换电脑后侧栏变成『土壤水分（风云 平均）』，不要有」：
+ * 官方恢复路径（后端产物 title / 工作流定义 output_labels）给出的是
+ * 「土壤水分 / 植被光学厚度 / 等效散射 ω」，后缀「（风云 平均）」是兜底名单里
+ * 早期写死的冗余后缀；而图层名会随**工作区快照**持久化并跨设备同步 ⇒
+ * 光把名单里的后缀删掉，旧设备上存下来的旧名还会一直在（用户二次报障的原因）。
+ * 现做法：名单里不带后缀，且每次打开都按 `applyDefaultNames` 把成员名刷成这里的值。
+ * 数据集名由分组头（`风云 平均散射约束产品反演（本地）`）表达，成员无需再带。
+ */
 export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
   {
     catalogId: 'method-fy-omega-doy-avg',
@@ -79,19 +90,19 @@ export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
       {
         role: 'SM',
         overlayId: 'imported-55359b8ecd3d',
-        label: '土壤水分（风云 平均）',
+        label: '土壤水分',
         visible: true,
       },
       {
         role: 'VOD',
         overlayId: 'imported-a94205dad5f9',
-        label: '植被光学厚度（风云 平均）',
+        label: '植被光学厚度',
         visible: false,
       },
       {
         role: 'OMEGA',
         overlayId: 'imported-72aa577da95e',
-        label: '等效散射 ω（风云 平均）',
+        label: '等效散射 ω',
         visible: false,
       },
     ],
@@ -254,6 +265,31 @@ function applyVisibilityStrategy(workspace: WorkspaceApi, entry: DefaultLayerEnt
   if (changed) workspace.scheduleWorkspacePersist()
 }
 
+/**
+ * 按名单把成员**显示名**对齐（只对名单内的产物生效，不碰其它图层）。
+ *
+ * 2026-10-15 用户报障「另一台电脑侧栏仍显示『土壤水分（风云 平均）』」：
+ * 图层名是**随工作区快照持久化**的（还会跨设备同步），改代码不会改写已经存下来的
+ * 名字 ⇒ 旧设备（快照里存着带后缀的名字）怎么刷新都还是旧的。
+ *
+ * 处理方式比照 `applyVisibilityStrategy`：每次打开都把名单内成员的名字刷成权威值
+ * `member.label`（数据集名已由分组头表达，成员再带后缀属冗余）。名单不在其中的
+ * 图层一律不动。
+ */
+function applyDefaultNames(workspace: WorkspaceApi, entry: DefaultLayerEntry): void {
+  const desired = new Map(entry.members.map((m) => [m.overlayId, m.label]))
+  let changed = false
+  for (const layer of workspace.activeLayers.value) {
+    const overlayId = layer.importedRaster?.overlayLayerId
+    if (!overlayId) continue
+    const want = desired.get(overlayId)
+    if (!want || layer.name === want) continue
+    layer.name = want
+    changed = true
+  }
+  if (changed) workspace.scheduleWorkspacePersist()
+}
+
 /** 兜底路径：按稳定编号探测后直接用产物挂载（不依赖任何 run 记录）。 */
 async function attachByStableOverlayIds(
   workspace: WorkspaceApi,
@@ -397,6 +433,8 @@ export async function ensureDefaultLayers(): Promise<void> {
         }
         // 分组头：无论图层是刚挂的还是历史快照里已有的，都要保证有数据集名
         ensureDefaultGroup(workspace, workflowRun, entry)
+        // 显示名对齐（盖掉快照里遗留的旧名，如「土壤水分（风云 平均）」）
+        applyDefaultNames(workspace, entry)
         // 每次打开都对齐一次显隐（盖掉快照恢复 / 历史手动取消勾选留下的状态）
         applyVisibilityStrategy(workspace, entry)
         // 等「吸附最新切片」那批 watcher 跑完，再把时间轴定位到默认帧（十天合成）

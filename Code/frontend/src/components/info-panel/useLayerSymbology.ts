@@ -21,8 +21,10 @@ import {
   buildWeatherLegendStops,
   hasRenderableSymbology,
   isMapLinkedPalette,
+  isProductRoleCode,
   paletteIdsEqual,
   resolveCanonicalPaletteIdStrict,
+  unitForRole,
 } from '../map/layer-symbology'
 import {
   resolveEffectiveLayerSymbology,
@@ -43,6 +45,9 @@ const UNIT_NORMALIZE_MAP: Record<string, string> = {
 function normalizeUnit(raw: string | null | undefined): string {
   if (!raw) return ''
   const trimmed = raw.trim()
+  // 2026-10-15：后端把变量标签当单位写入（meta.unit = SM / VOD / OMEGA）⇒
+  // 角色码不是单位，按口径换成真实单位（SM = m³/m³；无量纲 VOD / ω ⇒ 空 = 不显示）
+  if (isProductRoleCode(trimmed)) return unitForRole(trimmed)
   return UNIT_NORMALIZE_MAP[trimmed] ?? trimmed
 }
 

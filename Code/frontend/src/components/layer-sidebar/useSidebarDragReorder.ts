@@ -63,7 +63,9 @@ export function useSidebarDragReorder(
       if (g.message) return g.message
       return LAYERS_COPY.computingGroupBusy
     }
-    if (g.status === 'ready') return LAYERS_COPY.computingGroupReady
+    // 2026-10-15 用户要求：组头不再显示「可拆分」（ready 态本身无需提示）——
+    // 返回空串，模板据此不渲染状态胶囊；computing / failed / cancelled 照旧。
+    if (g.status === 'ready') return ''
     if (g.status === 'failed') return '失败'
     if (g.status === 'cancelled') return '已取消'
     return g.status

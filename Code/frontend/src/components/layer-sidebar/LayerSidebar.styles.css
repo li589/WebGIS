@@ -1422,6 +1422,9 @@ h2 {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
+  /* 2026-10-15：单位紧跟在右侧刻度（max）后面，如「0.5 m³/m³」 */
+  margin-left: 0.22rem;
+  white-space: nowrap;
 }
 
 /* ── Layer row bottom (底行状态信息) ────────────────────────────────────── */

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { LAYERS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
+import { formatTimeKeyLabel } from '../../utils/time-key-format'
 import type { DataStatusBadge } from '../../utils/layer-data-status'
 import { CircleDot, Circle, X, Menu } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
@@ -122,6 +123,7 @@ const emit = defineEmits<{
               runGroupOf(row.groupId)?.title || LAYERS_COPY.computingGroup
             }}</strong>
             <span
+              v-if="groupStatusLabel(row.groupId)"
               class="group-status-chip"
               :class="`group-status-chip--${runGroupOf(row.groupId)?.status ?? 'computing'}`"
               >{{ groupStatusLabel(row.groupId) }}</span
@@ -232,7 +234,19 @@ const emit = defineEmits<{
               <div class="legend-ramp" :style="getColorRampStyle(row.layer)"></div>
               <div class="legend-labels">
                 <span class="legend-min">{{ getSymbologyVmin(row.layer) }}</span>
-                <span class="legend-max">{{ getSymbologyVmax(row.layer) }}</span>
+                <span class="legend-max">
+                  {{ getSymbologyVmax(row.layer) }}
+                  <!-- 2026-10-15 用户要求：colorbar 标注单位。SM（体积含水量）= m³/m³；
+                       VOD / ω 为无量纲量 ⇒ 不显示单位（空串即不渲染）。
+                       单位来源见 useSidebarSymbology.getSymbologyUnit（按产物角色判定，
+                       先排掉后端把变量标签写成 unit 的情况）。 -->
+                  <span
+                    v-if="getSymbologyVmax(row.layer) && getSymbologyUnit(row.layer)"
+                    class="legend-unit"
+                    :title="`单位：${getSymbologyUnit(row.layer)}`"
+                    >{{ getSymbologyUnit(row.layer) }}</span
+                  >
+                </span>
               </div>
             </div>
 
@@ -300,13 +314,14 @@ const emit = defineEmits<{
                 }}</span
               >
               -->
-              <!-- 2026-10-09 栅格图层的「生效时间」单独显示（如 20260201）；无日期时该分支不占位 -->
+              <!-- 2026-10-09 栅格图层的「生效时间」单独显示；2026-10-15 起统一格式化为
+                   `YYYY_MM_DD` / `YYYY_MM_DD~YYYY_MM_DD`（只改展示，不动时间键）。无日期时该分支不占位 -->
               <template v-else-if="row.layer.isImportedRaster">
                 <span
                   v-if="row.layer.importedRasterEffectiveTime"
                   class="admin-tip-inline"
-                  :title="`数据时间：${row.layer.importedRasterEffectiveTime}`"
-                  >{{ row.layer.importedRasterEffectiveTime }}</span
+                  :title="`数据时间：${formatTimeKeyLabel(row.layer.importedRasterEffectiveTime)}`"
+                  >{{ formatTimeKeyLabel(row.layer.importedRasterEffectiveTime) }}</span
                 >
               </template>
               <span

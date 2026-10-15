@@ -1,7 +1,12 @@
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import type { WeatherLayerRenderHint } from '../../stores/layers/types'
 import { resolveEffectiveLayerSymbology } from '../map/effective-layer-symbology'
-import { buildWeatherLegendGradient, resolveSymbologyColors } from '../map/layer-symbology'
+import {
+  buildWeatherLegendGradient,
+  isProductRoleCode,
+  resolveSymbologyColors,
+  unitForRole,
+} from '../map/layer-symbology'
 
 // 类型别名：对齐 WeatherLayerRenderHint 实际 schema（legend_ticks 而非 vmin/vmax）
 export type ActiveLayerDisplayLike = {
@@ -32,7 +37,16 @@ export type ActiveLayerDisplayLike = {
     /** 天气图层的图例刻度，首末项作为 vmin/vmax 展示 */
     legend_ticks?: (number | string)[]
   } | null
+  /**
+   * 产物角色（SM / VOD / OMEGA，见 run-layers 的 runGroupProductTag）。
+   * 2026-10-15：用于判定色带单位（SM = m³/m³；VOD / ω 无量纲 ⇒ 不显示单位）。
+   */
+  runGroupProductTag?: string | null
 }
+
+// 变量角色 → 物理单位的表与口径在 `components/map/layer-symbology.ts`
+// （`unitForRole` / `isProductRoleCode`）：SM（体积含水量）＝ m³/m³；
+// VOD（植被光学厚度）/ ω（等效散射反照率）为无量纲量 ⇒ 不显示单位。
 
 /**
  * Extracts symbology helper functions from LayerSidebar.vue.
@@ -76,12 +90,31 @@ export function useSidebarSymbology(
     return false
   }
 
+  /**
+   * 色带单位。
+   *
+   * 2026-10-15 用户口径：单位写在 colorbar 右端刻度后面（如「0.5 m³/m³」），
+   * **SM 要写单位，无量纲量（VOD / ω）完全不要写**——此前色带右端出现
+   * 「0.5 SM」「1.5 VOD」这种字样，根因是后端把变量标签写进了 overlay 的
+   * unit 字段（见 layer-symbology 的 PRODUCT_ROLE_CODES 注释）。
+   *
+   * 优先级：
+   *   1. 产物角色已知（SM / VOD / OMEGA）⇒ 以角色为准：SM = m³/m³，其余为空；
+   *   2. `renderHint.unit_label`（天气 / 静态叠加层自带单位）；
+   *   3. overlay `meta.unit`（同样先排掉「角色码冒充单位」）。
+   * 空串 = 不渲染单位。
+   */
   function getSymbologyUnit(layer: ActiveLayerDisplayLike): string {
-    if (layer.renderHint?.unit_label) return layer.renderHint.unit_label
+    const role = String(layer.runGroupProductTag ?? '')
+      .trim()
+      .toUpperCase()
+    if (isProductRoleCode(role)) return unitForRole(role)
+    const hintUnit = layer.renderHint?.unit_label
+    if (hintUnit && !isProductRoleCode(hintUnit)) return hintUnit
     void overlaySymbologyStore.version
-    const meta = overlaySymbologyStore.getMeta(resolveOverlayMetaId(layer))
-    if (meta?.unit) return meta.unit
-    return ''
+    const metaUnit = overlaySymbologyStore.getMeta(resolveOverlayMetaId(layer))?.unit
+    if (isProductRoleCode(metaUnit)) return unitForRole(metaUnit)
+    return metaUnit ?? ''
   }
 
   function getSymbologyVmin(layer: ActiveLayerDisplayLike): string {
