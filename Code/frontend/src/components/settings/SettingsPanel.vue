@@ -125,10 +125,28 @@ function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; i
   return filtered.length ? filtered : ALL_TABS
 }
 
+/**
+ * 受限登录态（demo 游客）能打开的分区：
+ * - `accounts` 账户（退出登录，只依赖登录态）；
+ * - `appearance` 外观（纯浏览器本地偏好，不走后端配置）；
+ * - `about` 系统与关于（后端公开接口）。
+ * 其余分区都建立在被 403 拦下的系统配置之上 ⇒ 直接不列出，免得点进去只看得到一片错误。
+ * **不改任何权限**，只是不给注定无效的入口。
+ */
+const RESTRICTED_ALLOWED_TABS: SettingsTab[] = ['accounts', 'appearance', 'about']
+
 const tabs = computed(() => {
   const visible = resolveVisibleSettingsTabs()
   if (!authStore.authRequired) {
     return visible.filter((t) => t.id !== 'accounts')
+  }
+  if (authStore.isRestrictedRole) {
+    const allowed = visible.filter((t) => RESTRICTED_ALLOWED_TABS.includes(t.id))
+    // 「账户」提到最前：受限身份最常见的诉求就是从这里退出登录
+    return [
+      ...allowed.filter((t) => t.id === 'accounts'),
+      ...allowed.filter((t) => t.id !== 'accounts'),
+    ]
   }
   return visible
 })
@@ -166,9 +184,17 @@ async function handleLogout() {
 function openAccountsTab() {
   activeTab.value = 'accounts'
 }
-if (!tabs.value.some((t) => t.id === activeTab.value)) {
-  activeTab.value = tabs.value[0]?.id ?? defaultTab()
-}
+
+// 可见分区变化（例如受限角色登录后被收缩为 账户/外观/关于）时，把落点拉回有效页签。
+// 用 watch 而非一次性判断：登录态、白名单配置都可能晚于首帧变化。
+watch(
+  tabs,
+  (list) => {
+    if (list.some((t) => t.id === activeTab.value)) return
+    activeTab.value = list[0]?.id ?? defaultTab()
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   window.addEventListener('resize', onWindowResize)
@@ -460,6 +486,14 @@ onUnmounted(() => {
             </div>
           </div>
           <template v-else>
+            <!-- 受限登录态（演示/游客）：系统配置对其不可读，与其显示一堆红色报错，
+                 不如一句话说清「能看到什么、为什么」。 -->
+            <div
+              v-if="authStore.isRestrictedRole && activeTab !== 'about'"
+              class="content-restricted-note"
+            >
+              当前账号为受限角色，系统配置不对其开放，仅显示「账户 / 外观 / 系统与关于」。
+            </div>
             <div
               v-if="settingsStore.partialError && !accountTabActive"
               class="content-partial-error"
@@ -758,6 +792,18 @@ onUnmounted(() => {
   border-radius: 0.45rem;
   background: var(--warning-surface);
   color: var(--accent-warm);
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+}
+
+/* 受限角色（演示/游客）说明条：中性色，不是报错 */
+.content-restricted-note {
+  margin-bottom: 0.55rem;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.45rem;
+  background: var(--surface-2);
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   line-height: 1.4;
 }

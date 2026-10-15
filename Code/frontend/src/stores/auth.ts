@@ -59,6 +59,23 @@ export const useAuthStore = defineStore('auth', () => {
     return config.value?.auth_required ?? true
   })
 
+  /**
+   * 受限登录态：已登录、但角色既不是 admin 也不是 standard（典型：demo 游客）。
+   *
+   * 用途只有一个 —— 让前端**提前跳过「必然失败」的请求**：后端对这类身份读取系统
+   * 配置一律返回 403，继续请求只会「失败 → 自动重试 → 每次失败再写一条日志」，
+   * 一开设置面板就刷出几十条报错。
+   *
+   * ⚠️ 这**不是权限判定**。真实权限永远由后端裁决，这里只是不去明知故问；
+   * 跳过请求不会让任何人「多看到」任何东西（界面反而更少）。
+   *
+   * ⚠️ 必须带上 `authRequired`：无鉴权部署（auth_required=false）下前端拿不到有效
+   * 角色，只按角色判断会把本应可读的配置一起跳过、弄坏正常部署。
+   */
+  const isRestrictedRole = computed(
+    () => authRequired.value && user.value !== null && !canWrite.value,
+  )
+
   const activeTheme = computed<ThemePublic | null>(() => {
     const fromUser = user.value?.theme
     if (fromUser) return fromUser
@@ -344,6 +361,7 @@ export const useAuthStore = defineStore('auth', () => {
     canWrite,
     canRunWorkflow,
     authRequired,
+    isRestrictedRole,
     bootstrap,
     retryBootstrap,
     login,

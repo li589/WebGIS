@@ -85,7 +85,19 @@ import {
   type RemoteSourceUpsertRequest,
 } from '../services/settings-api'
 import { hydrateMapDefaults } from '../services/map-defaults'
+import { ApiRequestError, SessionExpiredError } from '../services/http-errors'
 import { safeLog } from './log'
+import { useAuthStore } from './auth'
+
+/**
+ * 401 / 403 属「确定性拒绝」：同一身份重试必然还是失败。
+ * 识别出来只是为了不再重试（重试只会让日志多一条、并拖慢面板打开）。
+ */
+function isAuthDenied(err: unknown): boolean {
+  if (err instanceof ApiRequestError) return err.status === 401 || err.status === 403
+  if (err instanceof SessionExpiredError) return true
+  return false
+}
 
 type LoaderName =
   | 'general'
@@ -118,17 +130,22 @@ const LOADER_LABELS: Record<LoaderName, string> = {
   about: '关于',
 }
 
-async function settled<T>(
-  name: LoaderName,
-  fn: () => Promise<T>,
-): Promise<{ name: LoaderName; value?: T; error?: string }> {
+type SettledResult<T> = {
+  name: LoaderName
+  value?: T
+  error?: string
+  /** 401 / 403：确定性拒绝，调用方不应重试 */
+  authDenied?: boolean
+}
+
+async function settled<T>(name: LoaderName, fn: () => Promise<T>): Promise<SettledResult<T>> {
   try {
     return { name, value: await fn() }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn(`[settings] load ${name} failed:`, message)
     safeLog('client-error', `配置加载失败: ${name}`, message, 'warn')
-    return { name, error: message }
+    return { name, error: message, authDenied: isAuthDenied(err) }
   }
 }
 
@@ -156,6 +173,17 @@ export const useSettingsStore = defineStore('settings', () => {
   const failedLoaders = ref<LoaderName[]>([])
 
   async function loadAll(options?: { quiet?: boolean }) {
+    const authStore = useAuthStore()
+    /**
+     * 受限登录态（demo 游客，见 auth.isRestrictedRole）：后端对系统配置读取一律 403。
+     * 那就**干脆不发**这些必然失败的私有接口，只保留公开的「关于」—— 避免
+     * 「必然 403 → 自动重试 → 每次失败再写一条前端日志」把日志刷满。
+     *
+     * ⚠️ 权限没有任何变化：界面依旧读不到系统配置（只是不再明知故问）。
+     * 无鉴权部署下 isRestrictedRole 恒为 false，此分支不生效。
+     */
+    const restricted = authStore.isRestrictedRole
+
     // quiet：已有数据时后台刷新，不挡面板内容区（避免二次打开白等）
     const quiet = Boolean(options?.quiet && generalConfig.value)
     if (!quiet) {
@@ -167,26 +195,30 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 关键路径先返回：常规配置拿到即可解除整页 spinner。
     // 数据源扫描等慢接口放第二批，避免拖住整个设置面板。
-    const criticalBatch = () =>
-      Promise.all([
-        settled('general', fetchGeneralConfig),
-        settled('api-keys', fetchApiKeys),
-        settled('about', fetchAboutInfo),
-      ])
+    const criticalBatch = (): Promise<SettledResult<unknown>[]> =>
+      restricted
+        ? Promise.all([settled('about', fetchAboutInfo)])
+        : Promise.all([
+            settled('general', fetchGeneralConfig),
+            settled('api-keys', fetchApiKeys),
+            settled('about', fetchAboutInfo),
+          ])
 
-    const deferredBatch = () =>
-      Promise.all([
-        settled('gee-accounts', fetchGeeAccounts),
-        settled('gee-runtime', fetchGeeRuntimeConfig),
-        settled('weather', fetchWeatherConfig),
-        settled('weather-providers', fetchWeatherProviders),
-        settled('data-source', fetchDataSourceConfig),
-        settled('remote-storage', fetchRemoteStorageProfiles),
-        settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
-        settled('datasets', () => fetchAvailableDatasets(true)),
-        settled('remote-sources', fetchRemoteSources),
-        settled('online-tile-sources', fetchOnlineTileSources),
-      ])
+    const deferredBatch = (): Promise<SettledResult<unknown>[]> =>
+      restricted
+        ? Promise.resolve([])
+        : Promise.all([
+            settled('gee-accounts', fetchGeeAccounts),
+            settled('gee-runtime', fetchGeeRuntimeConfig),
+            settled('weather', fetchWeatherConfig),
+            settled('weather-providers', fetchWeatherProviders),
+            settled('data-source', fetchDataSourceConfig),
+            settled('remote-storage', fetchRemoteStorageProfiles),
+            settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
+            settled('datasets', () => fetchAvailableDatasets(true)),
+            settled('remote-sources', fetchRemoteSources),
+            settled('online-tile-sources', fetchOnlineTileSources),
+          ])
 
     const applyResult = (r: Awaited<ReturnType<typeof settled>>) => {
       if (r.value === undefined) return
@@ -244,8 +276,9 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     }
 
-    let critical = await criticalBatch()
-    const criticalFailed = critical.filter((r) => r.error)
+    let critical: SettledResult<unknown>[] = await criticalBatch()
+    // 401 / 403 不重试：同一身份再问一次还是 403，只会多留一条日志
+    const criticalFailed = critical.filter((r) => r.error && !r.authDenied)
     if (criticalFailed.length > 0) {
       await new Promise((resolve) => window.setTimeout(resolve, quiet ? 120 : 250))
       const retryMap = new Map<LoaderName, Awaited<ReturnType<typeof settled>>>()
@@ -268,8 +301,9 @@ export const useSettingsStore = defineStore('settings', () => {
       loading.value = false
     }
 
-    let deferred = await deferredBatch()
-    const deferredFailed = deferred.filter((r) => r.error)
+    let deferred: SettledResult<unknown>[] = await deferredBatch()
+    // 同上：401 / 403 不重试
+    const deferredFailed = deferred.filter((r) => r.error && !r.authDenied)
     if (deferredFailed.length > 0) {
       await new Promise((resolve) => window.setTimeout(resolve, quiet ? 120 : 250))
       const retryMap = new Map<LoaderName, Awaited<ReturnType<typeof settled>>>()
@@ -302,7 +336,9 @@ export const useSettingsStore = defineStore('settings', () => {
       partialError.value = `部分配置加载失败：${labels}。可重试或先查看其它分区。`
     }
 
-    if (!generalConfig.value) {
+    // 受限登录态下我们本就没请求 general（读了也必然 403），此时 generalConfig
+    // 为空是预期结果，不能据此判定「连不上配置服务」——否则会误报整页错误。
+    if (!restricted && !generalConfig.value) {
       error.value =
         failures.find((f) => f.name === 'general')?.error ??
         '无法连接配置服务（请确认后端已启动，且 Vite 已代理 /config）'

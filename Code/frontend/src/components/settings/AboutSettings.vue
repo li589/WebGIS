@@ -15,7 +15,7 @@ const dataSourceConfig = toRef(settingsStore, 'dataSourceConfig')
 
 const selectedLayerId = ref<string | null>(null)
 
-type NodeStatus = 'enabled' | 'disabled' | 'loading'
+type NodeStatus = 'enabled' | 'disabled' | 'loading' | 'hidden'
 type StatusKey = 'gee' | 'weather' | 'data'
 
 type ArchItem = {
@@ -86,20 +86,28 @@ const archLayers = computed((): ArchLayer[] => [
   },
 ])
 
-const nodeStatuses = computed<Record<StatusKey, NodeStatus>>(() => ({
-  gee: geeRuntimeConfig.value
-    ? geeRuntimeConfig.value.gee_enabled
-      ? 'enabled'
-      : 'disabled'
-    : 'loading',
-  weather: weatherConfig.value ? 'enabled' : 'loading',
-  data: dataSourceConfig.value ? 'enabled' : 'loading',
-}))
+const nodeStatuses = computed<Record<StatusKey, NodeStatus>>(() => {
+  // 受限角色读不到这几份配置（后端 403），若照常显示会永远停在「读取中」，
+  // 看起来像卡死。直接标注为「不可见」，与「读不到」的事实一致。
+  if (authStore.isRestrictedRole) {
+    return { gee: 'hidden', weather: 'hidden', data: 'hidden' }
+  }
+  return {
+    gee: geeRuntimeConfig.value
+      ? geeRuntimeConfig.value.gee_enabled
+        ? 'enabled'
+        : 'disabled'
+      : 'loading',
+    weather: weatherConfig.value ? 'enabled' : 'loading',
+    data: dataSourceConfig.value ? 'enabled' : 'loading',
+  }
+})
 
 const STATUS_LABEL: Record<NodeStatus, string> = {
   enabled: '已就绪',
   disabled: '已关闭',
   loading: '读取中',
+  hidden: '不可见',
 }
 
 function statusOfKey(key?: StatusKey): NodeStatus | null {
@@ -136,7 +144,10 @@ const browserEngine = detectBrowserEngine()
 
 <template>
   <div class="about-settings">
-    <SystemStatusSettings />
+    <!-- 系统运行状态走 /runtime/status，该接口声明了「配置读取」权限依赖
+         ⇒ 受限角色（演示/游客）请求必然 403。这里直接不渲染，避免无谓请求与报错。
+         权限本身未变：受限角色原本也拿不到这份数据。 -->
+    <SystemStatusSettings v-if="!authStore.isRestrictedRole" />
 
     <!-- 项目信息 -->
     <section class="settings-section">
