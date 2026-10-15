@@ -21,6 +21,8 @@ const showPassword = ref(false)
 const error = ref<string | null>(null)
 const submitting = ref(false)
 const retrying = ref(false)
+/** 游客一键进入的进行中状态（与普通登录分开，避免互相干扰按钮文案）。 */
+const guestEntering = ref(false)
 
 const devHint = computed(() => (import.meta.env.DEV ? auth.config?.dev_prefill : null))
 const brandAbbr = computed(() => auth.resolvedBrand.abbr || BRAND.abbr)
@@ -85,6 +87,22 @@ async function submit() {
     error.value = err instanceof Error ? err.message : '登录失败'
   } finally {
     submitting.value = false
+  }
+}
+
+/** 游客一键进入：复用与普通登录相同的跳转逻辑（支持 ?redirect=）。 */
+async function enterAsGuest() {
+  error.value = null
+  guestEntering.value = true
+  try {
+    await auth.enterAsGuest()
+    const redirect =
+      typeof route.query.redirect === 'string' ? safeRedirect(route.query.redirect) : '/'
+    await router.replace(redirect)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '游客登录失败'
+  } finally {
+    guestEntering.value = false
   }
 }
 </script>
@@ -302,6 +320,22 @@ async function submit() {
         >
           {{ submitting ? '登录中…' : '进入系统' }}
         </AppButton>
+
+        <!-- 游客一键进入：仅当构建期配置了访客账号时出现；不做自动登录，管理员路径不受影响 -->
+        <template v-if="auth.guestLoginEnabled">
+          <div class="guest-sep" aria-hidden="true"><span>或</span></div>
+          <AppButton
+            variant="secondary"
+            type="button"
+            :loading="guestEntering"
+            :disabled="submitting || guestEntering"
+            block
+            @click="enterAsGuest"
+          >
+            {{ guestEntering ? '正在进入…' : '以游客身份进入' }}
+          </AppButton>
+          <p class="guest-tip">游客可浏览产品、运行工作流；不能修改数据。</p>
+        </template>
       </form>
     </div>
   </div>
@@ -802,6 +836,31 @@ async function submit() {
   border: 1px solid var(--danger-border);
   background: var(--danger-surface);
   color: var(--danger);
+}
+
+/* 游客一键进入：与上方「进入系统」之间的分隔线与说明 */
+.guest-sep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
+}
+
+.guest-sep::before,
+.guest-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.guest-tip {
+  margin: 0;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
 }
 
 @keyframes spin {

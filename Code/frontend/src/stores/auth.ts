@@ -175,6 +175,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 访客（demo 角色）一键进入的凭据，来自构建期环境变量：
+   *   VITE_GUEST_USERNAME / VITE_GUEST_PASSWORD
+   * 两者都填才启用；任一为空 ⇒ 整条功能静默关闭，行为与改造前完全一致（必须先登录）。
+   * 注意：这里只提供「登录页上的一个按钮」，**不做任何自动登录**，管理员路径不受影响。
+   */
+  const guestCredentials = (() => {
+    const env = import.meta.env as Record<string, unknown>
+    const username = String(env.VITE_GUEST_USERNAME ?? '').trim()
+    const password = String(env.VITE_GUEST_PASSWORD ?? '').trim()
+    return username && password ? { username, password } : null
+  })()
+
+  /** 是否展示「以游客身份进入」入口（构建期凭据齐备时为 true）。 */
+  const guestLoginEnabled = computed(() => guestCredentials !== null)
+
+  /** 以访客身份直接进入系统（仅在登录页由用户主动点击时调用）。 */
+  async function enterAsGuest() {
+    if (!guestCredentials) {
+      throw new Error('未配置访客账号（VITE_GUEST_USERNAME / VITE_GUEST_PASSWORD）')
+    }
+    await login(guestCredentials.username, guestCredentials.password)
+  }
+
   async function bootstrap() {
     if (bootstrapped.value) return
     bootstrapError.value = null
@@ -325,6 +349,8 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     clearSession,
+    guestLoginEnabled,
+    enterAsGuest,
     loadUsers,
     loadThemes,
     loadPrimaryTheme,
