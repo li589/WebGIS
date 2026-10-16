@@ -137,7 +137,7 @@ const RETIRED_OVERLAY_IDS: readonly string[] = [
   'imported-9a7cf36832cd', // SMAP 等效散射 ω
 ]
 
-interface ProbedOverlay {
+export interface ProbedOverlay {
   bounds?: [number, number, number, number]
   timeList?: string[]
   defaultTime?: string
@@ -145,7 +145,7 @@ interface ProbedOverlay {
 }
 
 /** 探测某 overlay 是否已注册；无产物 / 网络异常一律返回 null（不写任何负缓存）。 */
-async function probeOverlay(overlayId: string): Promise<ProbedOverlay | null> {
+export async function probeOverlay(overlayId: string): Promise<ProbedOverlay | null> {
   try {
     const resp = await fetch(`/overlay-bounds/${encodeURIComponent(overlayId)}`)
     if (!resp.ok) return null

@@ -12,7 +12,7 @@ import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import { useAuthStore } from '../stores/auth'
-import type { ActiveLayerDisplay } from '../stores/layers/types'
+import type { ActiveLayer, ActiveLayerDisplay } from '../stores/layers/types'
 import { deriveDataStatus, normalizeRunGroupMemberStatus } from '../utils/layer-data-status'
 import { resolveCategoryDisplayName } from '../stores/layers/catalog'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
@@ -27,6 +27,11 @@ import { useWeatherEngineStore } from '../stores/weather-engine'
 import { LAYERS_COPY } from '../ui-copy'
 import { useOnlinePlanSessionStore } from '../stores/online-plan-session'
 import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
+import {
+  resolveInversionGroupMeta,
+  resolveStableInversionProducts,
+} from '../stores/layers/inversion-overlay-probe'
+import { timeListCoversTimeKey } from '../utils/time-key-coverage'
 
 // ── Composables ───────────────────────────────────────────────────────────
 import { useSidebarWeatherProviders } from './layer-sidebar/useSidebarWeatherProviders'
@@ -303,13 +308,31 @@ async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
   }
   // 添加后 snap / attach 会改时间轴——抑制确认卡，避免自触发
   useTimelineActionBannerStore().suppressConfirm(4_000)
+  const preferred = currentTimelineTimeKey()
+
+  // ── 第 0 步（2026-10-15）：按稳定编号直探盘上已有产物 ───────────────────
+  // 原「添加」只查 /workflow-runs（**按账号隔离 + 只认 succeeded**）：admin 跑过的
+  // 产物，游客/其他电脑点「添加」复用不到 → 判定"无数据" → 自动重跑工作流；而重跑
+  // 的时间窗＝时间轴当前帧（常停在无数据的日子）且需联网取原始数据 ⇒ 必然失败。
+  // 这里在查 run 之前先按 `sha1(catalogId|role|role)` 直接问后端「产物在不在」，
+  // 命中即挂载并把时间轴落到有数据的帧——与账号无关、与 run 成功与否无关、不联网。
+  // 探测不到（真·无产物）才回落到原来的「查 run / 重跑」路径。
+  try {
+    const stableAttached = await attachStableInversionProducts(catalogId, preferred)
+    if (stableAttached > 0) {
+      uiStore.rememberLayerTime(catalogId, { force: true })
+      return // 盘上已有产物：直接显示，绝不重跑
+    }
+  } catch {
+    // 探测失败不阻断自动运行（后端目录不可用 / 非安全上下文等）
+  }
+
   try {
     // 两段式复用（2026-10-13）：**已有产物优先于重跑工作流**。
     // 1) 先按当前时间轴时刻取产物——用户"把轴拖到某天 → 添加图层"应看到那天的
     //    数据，而不是被跳到产物最新帧；
     // 2) 该时刻取不到时退到"产物最新可用帧"，仍然复用、不重跑。
     // 只有两条都取不到才提交工作流（真·无数据）。
-    const preferred = currentTimelineTimeKey()
     let attached = 0
     if (preferred) {
       attached = await workflowRun.autoAttachProductsForNewLayer(catalogId, {
@@ -344,6 +367,130 @@ function currentTimelineTimeKey(): string | null {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/** 帧标签解析：`YYYYMMDD` 或 `YYYYMMDD_YYYYMMDD`（分隔符 `-` / `_` 均可）。 */
+const FRAME_TOKEN_PATTERN =
+  /^(\d{4})[-_]?(\d{2})[-_]?(\d{2})(?:[-_](\d{4})[-_]?(\d{2})[-_]?(\d{2}))?/
+
+/**
+ * 按稳定编号直探盘上产物并挂载（新增于 2026-10-15，编号规则见
+ * `stores/layers/inversion-overlay-probe.ts`）。
+ *
+ * 只对「反演目录」（`method-<平台>-omega-doy-<模式>`）生效：算出 SM / VOD / ω 三个
+ * 稳定编号 → 逐个问后端「有图吗」→ 命中的挂进同一个数据集分组，并只默认勾选
+ * 「土壤水分」（与默认图层名单同口径）。返回挂上的成员数；返回 0 表示盘上确实没有
+ * 该目录的产物，调用方应继续走原有「查 run / 重跑」路径。
+ *
+ * 为什么需要：原路径查的 `/workflow-runs` **按账号隔离且只认 succeeded**，admin 跑过
+ * 的产物游客复用不到 ⇒ 每次都退化成重跑（时间窗＝轴当前帧，常停在无数据日）⇒ 必失败。
+ *
+ * @returns 本次新挂载的成员数（0 = 无产物 / 已全部在工作区）
+ */
+async function attachStableInversionProducts(
+  catalogId: string,
+  preferredTimeKey: string | null,
+): Promise<number> {
+  const groupMeta = resolveInversionGroupMeta(catalogId)
+  if (!groupMeta) return 0
+  const products = await resolveStableInversionProducts(catalogId)
+  if (!products.length) return 0
+
+  // 幂等：已在工作区（快照恢复 / 重复添加）的产物不重复挂
+  const present = new Set(
+    activeLayers.value
+      .map((layer) => layer.importedRaster?.overlayLayerId)
+      .filter((id): id is string => Boolean(id)),
+  )
+  const fresh = products.filter((product) => !present.has(product.overlayId))
+  if (!fresh.length) return 0
+
+  const added: ActiveLayer[] = []
+  for (const product of fresh) {
+    const layer = workspace.addImportedRasterLayer(
+      product.label,
+      product.overlayId,
+      product.probed.bounds,
+      {
+        timeList: product.probed.timeList,
+        defaultTime: product.probed.defaultTime,
+        nativeStep: product.probed.nativeStep,
+      },
+    )
+    // 与默认图层同口径：只默认勾选「土壤水分」，VOD / ω 挂上但不显示
+    if (product.role !== 'SM') layer.visible = false
+    added.push(layer)
+  }
+
+  // 同一数据集的成员收进一个 ready 组，侧栏显示分组头（与官方恢复路径同构）
+  const groupId = `run-group-stable-${groupMeta.catalogId}`
+  const roleByOverlayId = new Map(products.map((product) => [product.overlayId, product.role]))
+  const existingGroup = runLayerGroups.value.find((group) => group.groupId === groupId)
+  if (existingGroup) {
+    existingGroup.memberInstanceIds.push(...added.map((layer) => layer.instanceId))
+  } else {
+    runLayerGroups.value.push({
+      groupId,
+      runId: '',
+      title: groupMeta.groupTitle,
+      status: 'ready',
+      memberInstanceIds: added.map((layer) => layer.instanceId),
+      dissolvable: true,
+      sourceLayerId: groupMeta.catalogId,
+      workflowId: groupMeta.workflowId,
+      message: '',
+    })
+  }
+  for (const layer of added) {
+    layer.runGroupId = groupId
+    layer.runGroupLocked = false
+    // 角色标记：左侧色带据此显示单位（SM = m³/m³；VOD / ω 无量纲不显示）
+    layer.runGroupProductTag =
+      roleByOverlayId.get(layer.importedRaster?.overlayLayerId ?? '') ?? undefined
+  }
+  workspace.scheduleWorkspacePersist()
+
+  alignTimelineToFrame(added.find((layer) => layer.visible) ?? added[0], preferredTimeKey)
+  return added.length
+}
+
+/**
+ * 把时间轴落到挂载产物的「有数据帧」。
+ *
+ * - 轴当前时刻被该产物 `time_list` 覆盖 ⇒ 停在该时刻（用户"拖到某天再添加"就该看到那天）；
+ * - 否则落到 `default_time`，再退到 `time_list` 最后一帧。
+ * - **区间帧取结束日**：`time_list` 按字典序排列时 `20251227_20251231` 会排在单日帧
+ *   `20251231` 之前，落在帧内部才能被 `resolveSliceForInstant` 解析回该帧
+ *   （与 `default-layers.ts` 的 `alignTimelineToDefaultFrame` 同口径）。
+ */
+function alignTimelineToFrame(
+  layer: ActiveLayer | undefined,
+  preferredTimeKey: string | null,
+): void {
+  const timeList = layer?.importedRaster?.timeList ?? []
+  const candidate =
+    preferredTimeKey && timeListCoversTimeKey(timeList, preferredTimeKey)
+      ? preferredTimeKey
+      : layer?.importedRaster?.defaultTime || timeList[timeList.length - 1] || ''
+  const matched = FRAME_TOKEN_PATTERN.exec(String(candidate).trim())
+  if (!matched) return
+  const end = matched[4]
+    ? `${matched[4]}${matched[5]}${matched[6]}`
+    : `${matched[1]}${matched[2]}${matched[3]}`
+  const date = new Date(
+    Number(end.slice(0, 4)),
+    Number(end.slice(4, 6)) - 1,
+    Number(end.slice(6, 8)),
+    0,
+    0,
+    0,
+    0,
+  )
+  if (Number.isNaN(date.getTime())) return
+  // 程序化改轴：抑制顶栏确认卡，避免与吸附逻辑互相触发
+  useTimelineActionBannerStore().suppressConfirm(3_500)
+  uiStore.applyDateHour(date, 0)
+  uiStore.applyTimelineFromLayerGranularity('day')
 }
 
 function getCatalogItem(catalogId: string) {

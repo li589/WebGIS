@@ -112,12 +112,25 @@ function toDateStr(d: Date): string {
 }
 
 /**
- * 格式化 ISO 日期为 YYYYMMDD
+ * 以 UTC 分量格式化 ISO 日期为 YYYY-MM-DD。
+ *
+ * 多日块的块边界由 Date.UTC 构造，用本地分量读取会在 UTC 负偏移区
+ * 偏早一天；块基准须与算法侧严格一致，故此处只用 UTC 分量。
  */
-function toCompactDateStr(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
+function toUtcDateStr(d: Date): string {
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * 以 UTC 分量格式化 ISO 日期为 YYYYMMDD（时间键，需与盘上产物对齐）。
+ */
+function toUtcCompactDateStr(d: Date): string {
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
   return `${y}${m}${day}`
 }
 
@@ -153,16 +166,27 @@ export function alignDateToTemporalRange(
 
   if (info.mode === 'range' && info.subtype === 'multi-day-block') {
     const step = info.stepDays || 8
-    const dayOfMonth = date.getDate() // 1-31
-    // 按 1 日为基准切块：例如 step=8，块为 1-8, 9-16, 17-24, 25-32
-    const blockIndex = Math.floor((dayOfMonth - 1) / step)
-    const blockStartDay = blockIndex * step + 1
-    const start = new Date(Date.UTC(y, m, blockStartDay, 0, 0, 0))
-    const end = new Date(Date.UTC(y, m, blockStartDay + step, 0, 0, 0))
-    const sStr = toDateStr(start)
-    const eDay = new Date(Date.UTC(y, m, blockStartDay + step - 1, 0, 0, 0))
-    const eStr = toDateStr(eDay)
-    const timeKey = `${toCompactDateStr(start)}_${toCompactDateStr(eDay)}`
+    // 块基准必须与算法侧一致：omega_sf_fenkuai / make_viirs8_blocks 以
+    // 「每年 1 月 1 日」为起点、每 step 天一块，跨年重置（年末不足 step 天
+    // 的尾块截断到 12/31）。此前按「月内 1/9/17/25」切，非 step 整数倍的
+    // 月份会与算法块错位——如 12/25 归入前端块 12/25~1/1，而算法块是
+    // 12/19~12/26；下载窗只覆盖算法块的一部分，块内有效观测不足 2 天，
+    // 反演即报 coverage_gap「无有效像元」。
+    const startOfYearMs = Date.UTC(y, 0, 1, 0, 0, 0)
+    const dayOfYear =
+      Math.floor((Date.UTC(y, m, date.getDate(), 0, 0, 0) - startOfYearMs) / 86_400_000) + 1
+    const blockStartOffset = step * Math.floor((dayOfYear - 1) / step)
+    const start = new Date(Date.UTC(y, 0, 1 + blockStartOffset, 0, 0, 0))
+    // 含端点末日：块起点 + (step-1) 天，且不越过当年 12/31（跨年不合并）
+    const lastDayMs = Math.min(
+      start.getTime() + (step - 1) * 86_400_000,
+      Date.UTC(y, 11, 31, 0, 0, 0),
+    )
+    const lastDay = new Date(lastDayMs)
+    const end = new Date(lastDayMs + 86_400_000) // 半开终点，与 job payload 一致
+    const sStr = toUtcDateStr(start)
+    const eStr = toUtcDateStr(lastDay)
+    const timeKey = `${toUtcCompactDateStr(start)}_${toUtcCompactDateStr(lastDay)}`
     return {
       start_at: start.toISOString(),
       end_at: end.toISOString(),

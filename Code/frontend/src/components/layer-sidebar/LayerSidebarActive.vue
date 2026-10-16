@@ -238,13 +238,14 @@ const emit = defineEmits<{
                   {{ getSymbologyVmax(row.layer) }}
                   <!-- 2026-10-15 用户要求：colorbar 标注单位。SM（体积含水量）= m³/m³；
                        VOD / ω 为无量纲量 ⇒ 不显示单位（空串即不渲染）。
+                      2026-10-16 用户要求：单位用括号括起来（如「0.5（m³/m³）」）。
                        单位来源见 useSidebarSymbology.getSymbologyUnit（按产物角色判定，
                        先排掉后端把变量标签写成 unit 的情况）。 -->
                   <span
                     v-if="getSymbologyVmax(row.layer) && getSymbologyUnit(row.layer)"
                     class="legend-unit"
                     :title="`单位：${getSymbologyUnit(row.layer)}`"
-                    >{{ getSymbologyUnit(row.layer) }}</span
+                    >（{{ getSymbologyUnit(row.layer) }}）</span
                   >
                 </span>
               </div>

@@ -139,7 +139,7 @@ class PythonProviderRequestBuilder:
                     _compile_workflow_seed,
                     _expand_data_root_placeholders,
                     _expand_date_placeholders,
-                    _get_ref_date_from_payload,
+                    _get_time_range_dates_from_payload,
                 )
 
                 compiled = _compile_workflow_seed(wf_name)
@@ -147,10 +147,13 @@ class PythonProviderRequestBuilder:
                     # 种子模板含 {YYYYMMDD}/{DATA_ROOT} 字面占位符（种子同步仅展开
                     # DATA_ROOT，日期占位符保留至提交边界）：在此按提交时间窗展开，
                     # 与画布 workflow_definition 路径的展开行为对齐（AD11）。
-                    ref_date = _get_ref_date_from_payload(payload)
+                    # 必须区分起止参考日：下载/算法节点的 start_date 与 end_date
+                    # 常为同形占位符 {YYYYMMDD}，单一参考日会把 N 天窗塌成 1 天
+                    # （SMAP/风云动态散射 coverage_gap 无有效像元的根因）。
+                    ref_start, ref_end = _get_time_range_dates_from_payload(payload)
                     request_payload["workflow_definition"] = (
                         _expand_data_root_placeholders(
-                            _expand_date_placeholders(compiled, ref_date)
+                            _expand_date_placeholders(compiled, ref_start, ref_end)
                         )
                     )
             except Exception:  # noqa: BLE001

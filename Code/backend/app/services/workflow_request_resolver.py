@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, suppress
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 import importlib
 import logging
@@ -35,6 +35,67 @@ _WEATHER_ENTRY_KEYS: tuple[str, ...] = ("workflow",)
 
 _DATE_PLACEHOLDER_RE = re.compile(r"\{((?:YYYY|yyyy|MM|mm|DD|dd)[^{}]*?)\}")
 
+# 日期字段名 → 参考日期角色（列表键精确匹配）。
+# 种子下载/算法节点常以「同名占位符」成对声明起止，例如
+# ``"start_date": "{YYYYMMDD}", "end_date": "{YYYYMMDD}"``。若统一用提交
+# 起始日展开，8 天窗会塌缩成同一天：SMAP/风云动态散射块内只剩 1 天样本，
+# 算法 kmin=2（每像元至少 2 个有效观测）无法满足 →
+# ``coverage_gap``「SF 反演无有效像元（0/N succeeded）」。
+_START_DATE_ROLE_KEYS = frozenset(
+    {
+        "start",
+        "start_at",
+        "start_date",
+        "start_time",
+        "starttime",
+        "begin",
+        "begin_at",
+        "begin_date",
+        "begin_time",
+        "date_start",
+        "date_from",
+        "from",
+        "from_date",
+        "since",
+    }
+)
+_END_DATE_ROLE_KEYS = frozenset(
+    {
+        "end",
+        "end_at",
+        "end_date",
+        "end_time",
+        "endtime",
+        "stop",
+        "stop_at",
+        "stop_date",
+        "stop_time",
+        "date_end",
+        "date_to",
+        "to",
+        "to_date",
+        "until",
+        "till",
+    }
+)
+
+
+def _date_field_role(key: Any) -> str | None:
+    """按键名判定日期占位符的角色：``"start"`` / ``"end"`` / ``None``。
+
+    只做整键精确匹配（去空白、忽略大小写），避免 ``to`` 误命中
+    ``today`` / ``total`` 这类含相同子串的字段。无法判定时返回 None，
+    调用方回退到起始参考日（保持历史行为）。
+    """
+    if not isinstance(key, str):
+        return None
+    normalized = key.strip().lower()
+    if normalized in _END_DATE_ROLE_KEYS:
+        return "end"
+    if normalized in _START_DATE_ROLE_KEYS:
+        return "start"
+    return None
+
 
 def _format_date_token(fmt: str, ref_date: date) -> str:
     result = fmt
@@ -47,17 +108,43 @@ def _format_date_token(fmt: str, ref_date: date) -> str:
     return result
 
 
-def _expand_date_placeholders(value: Any, ref_date: date) -> Any:
+def _expand_date_placeholders(
+    value: Any,
+    ref_date: date,
+    end_ref_date: date | None = None,
+) -> Any:
+    """展开 ``{YYYYMMDD}`` / ``{YYYY-MM-DD}`` 等日期占位符。
+
+    ``end_ref_date`` 提供时启用「字段角色感知」：键名属结束类
+    （``end`` / ``end_date`` / ``to`` / ``stop`` …）的字符串用 ``end_ref_date``
+    展开，其余用 ``ref_date``。种子下载/反演节点常写成
+    ``start_date: {YYYYMMDD}`` + ``end_date: {YYYYMMDD}`` 两个同形占位符，
+    单一参考日会把整段窗口塌缩成同一天（SMAP/风云动态散射 8 天块
+    ``coverage_gap`` 无有效像元的根因）。
+
+    不传 ``end_ref_date``（或它不晚于 ``ref_date``）时行为与旧版完全一致，
+    因此仅需在确实携带起止语义的调用点传入即可。
+    """
     if isinstance(value, str):
         if "{" not in value:
             return value
         return _DATE_PLACEHOLDER_RE.sub(
             lambda m: _format_date_token(m.group(1), ref_date), value
         )
+    effective_end = end_ref_date
+    if effective_end is not None and effective_end <= ref_date:
+        # 单日窗 / 异常窗：避免把 end 展开到 start 之前，退化为历史行为。
+        effective_end = None
     if isinstance(value, dict):
-        return {k: _expand_date_placeholders(v, ref_date) for k, v in value.items()}
+        expanded: dict[Any, Any] = {}
+        for key, item in value.items():
+            item_ref = ref_date
+            if effective_end is not None and _date_field_role(key) == "end":
+                item_ref = effective_end
+            expanded[key] = _expand_date_placeholders(item, item_ref, effective_end)
+        return expanded
     if isinstance(value, list):
-        return [_expand_date_placeholders(v, ref_date) for v in value]
+        return [_expand_date_placeholders(v, ref_date, effective_end) for v in value]
     return value
 
 
@@ -100,6 +187,46 @@ def _get_ref_date_from_payload(payload: WorkflowSubmitRequest) -> date:
         except (ValueError, TypeError):
             pass
     return date.today()
+
+
+def _get_time_range_dates_from_payload(
+    payload: WorkflowSubmitRequest,
+) -> tuple[date, date | None]:
+    """返回提交时间窗的 ``(起始日, 结束日)``，结束日不可用时为 None。
+
+    ``payload.time_range`` 是**半开区间** ``[start_at, end_at)``：前端按
+    「结束日次日 00:00」构造 ``end_at``（见 ``workflow-pipeline-params.ts``
+    的 ``toExclusiveEndIso``、``online-temporal-orchestrator.ts`` 的
+    ``buildTimeRangeFromKey``）。而种子 ``start_date`` / ``end_date`` 是
+    **含端点**的日期对，故结束日需回退一天，使展开结果与前端 timeKey、
+    算法 ``make_viirs8_blocks`` 的块边界一致。
+
+    单日窗（回退后不晚于起始日）返回 None，调用方回退到历史「起止同日」
+    行为。
+    """
+    start = _get_ref_date_from_payload(payload)
+    tr = payload.time_range
+    if tr is None:
+        return start, None
+
+    end: date | None = None
+    end_at = getattr(tr, "end_at", None)
+    if end_at is not None:
+        end = end_at.date() if isinstance(end_at, datetime) else None
+    if end is None:
+        raw_end = getattr(tr, "end", None)
+        if raw_end:
+            try:
+                end = datetime.fromisoformat(str(raw_end)).date()
+            except (ValueError, TypeError):
+                end = None
+    if end is None:
+        return start, None
+
+    end = end - timedelta(days=1)
+    if end <= start:
+        return start, None
+    return start, end
 
 
 def normalize_workflow_submit_request(
@@ -795,8 +922,16 @@ def _flatten_ui_workflow_definition(
     spatial = _extract_bbox_from_nodes(nodes)
 
     ref_date = date.today()
+    ref_end_date: date | None = None
     if time_range and getattr(time_range, "start_at", None):
         ref_date = time_range.start_at.date()
+        # time_range 为半开区间 [start_at, end_at)，种子 start_date/end_date
+        # 为含端点日期对：结束参考日 = end_at 当日回退一天。
+        canvas_end_at = getattr(time_range, "end_at", None)
+        if isinstance(canvas_end_at, datetime):
+            candidate_end = canvas_end_at.date() - timedelta(days=1)
+            if candidate_end > ref_date:
+                ref_end_date = candidate_end
 
     existing_ds = algorithm_request.get("datasource_selection")
     if not isinstance(existing_ds, dict):
@@ -808,7 +943,7 @@ def _flatten_ui_workflow_definition(
         if key.startswith("_") or not isinstance(value, str) or not value.strip():
             continue
         expanded = _expand_data_root_placeholders(
-            _expand_date_placeholders(value, ref_date)
+            _expand_date_placeholders(value, ref_date, ref_end_date)
         )
         if expanded != value:
             existing_ds[key] = expanded
@@ -894,7 +1029,9 @@ def _flatten_ui_workflow_definition(
         enriched.setdefault("output_spec", {})
         if "workflow_definition" in enriched:
             enriched["workflow_definition"] = _expand_data_root_placeholders(
-                _expand_date_placeholders(enriched["workflow_definition"], ref_date)
+                _expand_date_placeholders(
+                    enriched["workflow_definition"], ref_date, ref_end_date
+                )
             )
         # Bridge rejects workflow_definition + module_name together; keep graph only.
         enriched.pop("module_name", None)
@@ -1180,8 +1317,10 @@ def _populate_python_provider_request(
         )
         if resolved_tr is not None:
             payload = payload.model_copy(update={"time_range": resolved_tr})
-        ref_date = _get_ref_date_from_payload(payload)
-        algorithm_request = _expand_date_placeholders(algorithm_request, ref_date)
+        ref_date, ref_end_date = _get_time_range_dates_from_payload(payload)
+        algorithm_request = _expand_date_placeholders(
+            algorithm_request, ref_date, ref_end_date
+        )
         _enrich_datasource_selection_aliases(
             algorithm_request,
             descriptor=descriptor,
@@ -1263,10 +1402,10 @@ def _populate_python_provider_request(
             algorithm_request.setdefault("workflow_entry_name", effective_module)
 
     # 展开种子 algorithm_params 中的日期占位符
-    _ref_date = _get_ref_date_from_payload(payload)
+    _ref_date, _ref_end_date = _get_time_range_dates_from_payload(payload)
     if isinstance(algorithm_request.get("algorithm_params"), dict):
         algorithm_request["algorithm_params"] = _expand_date_placeholders(
-            algorithm_request["algorithm_params"], _ref_date
+            algorithm_request["algorithm_params"], _ref_date, _ref_end_date
         )
 
     # 策略 allow_silent：自动注入 relax_flags（用户确认路径由 FE 显式传入）
@@ -1315,7 +1454,7 @@ def _populate_python_provider_request(
     if isinstance(algorithm_request.get("workflow_definition"), dict):
         algorithm_request["workflow_definition"] = _expand_data_root_placeholders(
             _expand_date_placeholders(
-                algorithm_request["workflow_definition"], ref_date
+                algorithm_request["workflow_definition"], ref_date, _ref_end_date
             )
         )
     _enrich_datasource_selection_aliases(

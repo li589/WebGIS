@@ -109,6 +109,26 @@ function resolveSubmitWorkflowDisplayName(
 }
 
 /**
+ * 8 天块型反演（动态散射）提交时的原料回看天数。2026-10-16 新增。
+ *
+ * 背景：omega_sf.py 要求同一像元在窗口内至少有 2 次有效低-τ 观测（kmin=2），
+ * 而 SMAP 是 8 天重访轨道——单个 8 天块内绝大多数像元只被扫到 0~1 次，判定
+ * 直接淘汰，整块报 coverage_gap「无有效像元」。实测同一块：只喂 8 天原料出
+ * 385 个像元，喂 31 天原料出 6875 个像元（约 18 倍）。
+ *
+ * 因此提交时把时间窗的起点前推本值；算法内部仍按 8 天切块落盘，帧名与
+ * 时间轴完全不变，只是每帧的有效像元数大幅提升。
+ */
+const BLOCK_LOOKBACK_DAYS = 30
+
+/** ISO 字符串按天平移（纯 UTC 毫秒运算，不做本地时区换算）。 */
+function shiftIsoDateByDays(iso: string, days: number): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return iso
+  return new Date(t + days * 86_400_000).toISOString()
+}
+
+/**
  * 分析提交缺省 time_range 时，从主界面时间轴补齐（避免 fy_daily 等模块
  * 收到 time_range=None 后炸成 NoneType.start）。
  */
@@ -134,8 +154,15 @@ async function resolveDefaultTimeRangeFromTimeline(options: {
     const tempMode = resolveLayerTemporalMode(options.descriptor)
     if (tempMode.mode === 'range') {
       const aligned = alignDateToTemporalRange(ui.currentDate, tempMode)
+      // 动态散射（temporal:8d-block）专用：提交时向前多看 BLOCK_LOOKBACK_DAYS 天
+      // 原料，让算法凑够每像元 ≥2 次观测；产物仍按原 8 天块切分，时间轴与帧名
+      // 不变。这里用**显式标签**判定而非 subtype——ω 平均（*-omega-doy-avg）同样
+      // 声明 native_step=8d、会被隐式推断为 multi-day-block，但它走 target_year
+      // 出整年产品，回看只会白多下 30 天数据，故必须排除。
+      const tags = (options.descriptor?.tags || []).map((t) => String(t).trim().toLowerCase())
+      const lookback = tags.includes('temporal:8d-block') ? BLOCK_LOOKBACK_DAYS : 0
       return {
-        start_at: aligned.start_at,
+        start_at: lookback > 0 ? shiftIsoDateByDays(aligned.start_at, -lookback) : aligned.start_at,
         end_at: aligned.end_at,
         granularity: aligned.granularity,
       }
