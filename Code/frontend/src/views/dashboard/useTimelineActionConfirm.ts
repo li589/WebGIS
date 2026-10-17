@@ -19,6 +19,7 @@ import {
   resolveAlignPolicyMode,
 } from '../../services/data-input-policies-api'
 import { isCoverageGapFailure } from '../../utils/workflow-error-messages'
+import { toLayerDisplayName } from '../../utils/layer-display-name'
 import {
   shouldConfirmSwitchOnlineOnCoverageGap,
   shouldSilentSwitchOnlineOnCoverageGap,
@@ -117,20 +118,51 @@ export function useTimelineActionConfirm(deps: {
     return ids
   }
 
+  /**
+   * catalogId → 人类可读名（2026-10-17 修）。
+   *
+   * 原实现只按 `item.catalogId === id` 精确匹配，命中不了就**直接拿内部 id 当名字**，
+   * 于是确认卡上出现「独立·method-sm…」＋tooltip 里一长串 `method-smap-omega-doy-dynamic`。
+   * 两个漏点：
+   *   ① 合并卡把各数据源放在 `item.sources[]` 里，主 id 是合集 id ⇒ 精确匹配必然落空；
+   *   ② 结果没走 `toLayerDisplayName`，和侧栏口径（去「（本地）」/ 反演产品 / 卫星全称）不一致。
+   */
+  function catalogDisplayName(logicalId: string): string {
+    const lib = deps.workspace.layerLibrary.value
+    const direct = lib.find((item) => item.catalogId === logicalId)
+    if (direct?.name) return toLayerDisplayName(direct.name)
+
+    // 合并卡：成员数据源比合集名更具体（如「SMAP 动态散射约束产品」）
+    for (const item of lib) {
+      const source = item.sources?.find((s) => s.id === logicalId)
+      if (source) return toLayerDisplayName(source.name || item.name)
+    }
+
+    const active = deps.workspace.activeLayers.value.find((l) => l.catalogId === logicalId)
+    if (active?.name) return toLayerDisplayName(active.name)
+
+    // 实在查不到：仍退回 id，但套一遍改写避免漏网的技术后缀
+    return toLayerDisplayName(logicalId)
+  }
+
+  /**
+   * 确认卡上的紧凑名：中文名比英文 id 长，原 9 字截断后只剩「SMAP卫星 动…」，
+   * 放宽到 12 字（完整名仍在 tooltip `layerHint` 里）。
+   */
+  function shortenName(name: string | undefined): string | undefined {
+    if (!name) return name
+    return name.length > 13 ? `${name.slice(0, 12)}…` : name
+  }
+
   function resolveScopeMeta(catalogIds: string[]): { scopeLabel: string; layerHint: string } {
-    const names = catalogIds.map((id) => {
-      const lib = deps.workspace.layerLibrary.value.find((x) => x.catalogId === id)
-      const active = deps.workspace.activeLayers.value.find((l) => l.catalogId === id)
-      // 合并组成员：优先库卡名（具体数据源），便于「一图层多源」辨认
-      return lib?.name || active?.name || id
-    })
+    const names = catalogIds.map((id) => catalogDisplayName(id))
     const hint = names.join('、')
     if (!deps.uiStore.unifiedTimeLock) {
-      const short = names[0] && names[0].length > 10 ? `${names[0].slice(0, 9)}…` : names[0]
+      const short = shortenName(names[0])
       return { scopeLabel: `独立·${short || '当前源'}`, layerHint: hint || '当前选中数据源' }
     }
     if (catalogIds.length <= 1) {
-      const short = names[0] && names[0].length > 10 ? `${names[0].slice(0, 9)}…` : names[0]
+      const short = shortenName(names[0])
       return { scopeLabel: `统一·${short || '1层'}`, layerHint: hint }
     }
     return {
@@ -345,9 +377,7 @@ export function useTimelineActionConfirm(deps: {
   }
 
   function layerDisplayName(catalogId: string): string {
-    const lib = deps.workspace.layerLibrary.value.find((x) => x.catalogId === catalogId)
-    const active = deps.workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
-    return lib?.name || active?.name || catalogId
+    return catalogDisplayName(catalogId)
   }
 
   async function handleCoverageGapEscalation(

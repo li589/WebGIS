@@ -23,6 +23,7 @@ import { nextTick } from 'vue'
 import { resolveInversionCatalogId } from './inversion-catalog'
 import { useLayerWorkspace, useWorkflowRun } from './selectors'
 import { useUiStore } from '../ui'
+import { useTimelineActionBannerStore } from '../timeline-action-banner'
 import { forgetDismissedLayer } from './workspace-persist'
 import type { ActiveLayer } from './types'
 
@@ -375,6 +376,8 @@ async function alignTimelineToDefaultFrame(
     0,
   )
   const uiStore = useUiStore()
+  // 默认图层对齐是程序化改轴：抑制顶栏「改轴确认卡」，避免一进页面就问「要不要重跑」
+  useTimelineActionBannerStore().suppressConfirm(4_000)
   uiStore.applyDateHour(date, 0)
   uiStore.applyTimelineFromLayerGranularity('day')
   uiStore.rememberLayerTime(entry.catalogId, { force: true })

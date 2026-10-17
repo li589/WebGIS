@@ -139,6 +139,8 @@ export function useTimelineSync(
     )
     const scienceSnap = snapTargetFromLayer(selected)
     if (scienceSnap) {
+      // 程序化 snap（加图层 / 切层）抑制顶栏「改轴确认卡」，见 useTimelineActionConfirm
+      useTimelineActionBannerStore().suppressConfirm(3_500)
       uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
       uiStore.applyTimelineFromLayerGranularity(scienceSnap.granularity)
       if (selectedCatalogId.value) {
@@ -228,6 +230,15 @@ export function useTimelineSync(
         if (!ids.includes(id)) knownActiveInstanceIds.delete(id)
       }
       if (added.length === 0) return
+      /**
+       * 添加图层是一次「程序化改轴」的起点：snap / 记忆恢复 / 产物对齐会在随后几秒里
+       * 反复挪时间轴。确认卡（「重跑 / 取消」）只在**用户自己拖时间轴**时才该出现，
+       * 否则每次添加都弹一次，既打断操作又暴露内部 id 文案。
+       *
+       * 这里给一个比 debounce(2s) + 挂载探测都长的抑制窗，把整条添加流程盖住；
+       * 用户真要按新时间重跑，可拖一下时间轴（那时抑制早已过期）或走「重算」按钮。
+       */
+      useTimelineActionBannerStore().suppressConfirm(8_000)
       // 产品约定：添加图层强制独立记忆，再 snap 到最新有数据时刻
       if (unifiedTimeLock.value) {
         uiStore.setUnifiedTimeLock(false)
@@ -428,6 +439,8 @@ export function useTimelineSync(
       refreshImportedRasterEffectiveTimes()
       return
     }
+    // 切层恢复记忆时刻同样是程序化改轴：抑制确认卡（否则切一下图层就问「要不要重跑」）
+    useTimelineActionBannerStore().suppressConfirm(3_500)
     const restored = uiStore.restoreLayerTime(catalogId)
     if (restored) {
       const times = layer?.importedRaster?.timeList ?? []
