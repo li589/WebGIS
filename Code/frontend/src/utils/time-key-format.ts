@@ -7,7 +7,9 @@
  *
  * 2026-10-16 用户要求：左侧图层面板统一显示为斜杠分隔
  *   - 单日：`YYYY/MM/DD`（2026/02/01）
- *   - 区间：`YYYY/MM/DD~YYYY/MM/DD`（2025/12/03~2025/12/12）
+ *   - 区间：`YYYY/MM/DD ~ YYYY/MM/DD`（2025/12/03 ~ 2025/12/12）
+ *
+ * 2026-10-17 用户要求：区间分隔符 `~` 前后各留一个空格，所有图层统一。
  *
  * 输入可能已经是带分隔符的形态（如 `2025_12_03-2025_12_12`，由上游
  * effectiveTimeLabel 提供），因此除紧凑键外还要吃下这类串，统一转斜杠。
@@ -30,13 +32,13 @@ function slashed(match: RegExpExecArray, offset: number): string {
   return `${match[offset]}/${match[offset + 1]}/${match[offset + 2]}`
 }
 
-/** `20251203_20251212` → `2025/12/03~2025/12/12`；`20260201` → `2026/02/01` */
+/** `20251203_20251212` → `2025/12/03 ~ 2025/12/12`；`20260201` → `2026/02/01` */
 export function formatTimeKeyLabel(raw: string | null | undefined): string {
   const key = String(raw ?? '').trim()
   if (!key) return ''
 
   const range = DAY_RANGE.exec(key) ?? SEPARATED_RANGE.exec(key)
-  if (range) return `${slashed(range, 1)}~${slashed(range, 4)}`
+  if (range) return `${slashed(range, 1)} ~ ${slashed(range, 4)}`
 
   const single = SINGLE_DAY.exec(key) ?? SEPARATED_DAY.exec(key)
   if (single) return slashed(single, 1)

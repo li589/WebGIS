@@ -139,3 +139,59 @@ export async function resolveStableInversionProducts(
   )
   return probed.filter((item): item is StableInversionProduct => Boolean(item))
 }
+
+/** 盘上产物覆盖的时间跨度（`YYYYMMDD` 闭区间 + 帧数）。 */
+export interface StableInversionTimeSpan {
+  /** 最早一帧的起始日 */
+  start: string
+  /** 最晚一帧的结束日 */
+  end: string
+  /** 帧数（多角色取最多者，不累加） */
+  frames: number
+}
+
+/**
+ * 解析单帧名为起止日（`YYYYMMDD`）。
+ *
+ * - 8 天块帧：`20251101_20251108` ⇒ start=20251101 / end=20251108
+ * - 单日帧：`20260101` ⇒ start=end=20260101
+ */
+export function parseFrameSpan(raw: string): { start: string; end: string } | null {
+  const s = String(raw || '').trim()
+  const m = /^(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})(?:[-_](\d{4})[-_/]?(\d{2})[-_/]?(\d{2}))?/.exec(s)
+  if (!m) return null
+  const start = `${m[1]}${m[2]}${m[3]}`
+  const end = m[4] ? `${m[4]}${m[5]}${m[6]}` : start
+  return { start, end }
+}
+
+/**
+ * 探测某反演目录盘上产物的**时间覆盖区间**（多角色取并集）。
+ *
+ * 供「添加图层」时间范围对话框显示「盘上已有数据 2025/11/01 ~ 2026/01/01 · 9 帧」，
+ * 并把默认日期预填成这段范围，使用户点一次确认即可直接挂图。
+ * 无产物 / 目录不在支持范围 / 探测失败一律返回 `null`。
+ */
+export async function resolveStableInversionTimeSpan(
+  catalogId: string,
+): Promise<StableInversionTimeSpan | null> {
+  const products = await resolveStableInversionProducts(catalogId)
+  if (!products.length) return null
+  let start = ''
+  let end = ''
+  let frames = 0
+  for (const product of products) {
+    const list = product.probed.timeList ?? []
+    let count = 0
+    for (const frame of list) {
+      const span = parseFrameSpan(frame)
+      if (!span) continue
+      count += 1
+      if (!start || span.start < start) start = span.start
+      if (!end || span.end > end) end = span.end
+    }
+    if (count > frames) frames = count
+  }
+  if (!start || !end || frames === 0) return null
+  return { start, end, frames }
+}

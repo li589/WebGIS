@@ -971,6 +971,35 @@ h2 {
   font-weight: 600;
 }
 
+/* 已添加 + 重算按钮（2026-10-17）：保持右侧成组，不被 card-actions 的 space-between 拆开 */
+.added-group {
+  display: inline-flex;
+  gap: 0.28rem;
+  align-items: center;
+}
+
+.recompute-btn {
+  padding: 0.06rem 0.32rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
+}
+
+.recompute-btn:hover {
+  color: var(--text-strong);
+  border-color: rgba(91, 157, 245, 0.68);
+}
+
+:global([data-theme='light']) .recompute-btn:hover {
+  border-color: rgba(0, 102, 204, 0.5);
+}
+
 /* ── 工作流状态徽标（library 卡片自动运行反馈） ──────────────────────────── */
 .job-status-chip {
   display: inline-flex;

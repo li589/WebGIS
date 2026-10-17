@@ -39,6 +39,8 @@ const emit = defineEmits<{
   onWeatherSourceChange: [catalogId: string, value: string]
   addAllInCategory: [items: RuntimeLayerLibraryItem[]]
   addCatalogItem: [catalogId: string]
+  /** 已添加的图层：按新时间范围重新计算（2026-10-17） */
+  recomputeCatalogItem: [catalogId: string]
   toggleCategory: [categoryId: string]
 }>()
 
@@ -321,7 +323,18 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             >
               运行失败
             </span>
-            <span v-else class="added-label">已添加 <Check :size="14" aria-hidden="true" /></span>
+            <span v-else class="added-group">
+              <span class="added-label">已添加 <Check :size="14" aria-hidden="true" /></span>
+              <!-- 2026-10-17：已添加的图层也要能按新时间范围重算（不重复添加图层） -->
+              <button
+                class="recompute-btn"
+                type="button"
+                title="按时间范围重新计算"
+                @click="emit('recomputeCatalogItem', effectiveSourceId(item))"
+              >
+                ↺ 重算
+              </button>
+            </span>
           </div>
           <div
             v-if="getCatalogSemanticNote(effectiveSourceId(item))"

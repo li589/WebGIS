@@ -27,9 +27,11 @@ import { useWeatherEngineStore } from '../stores/weather-engine'
 import { LAYERS_COPY } from '../ui-copy'
 import { useOnlinePlanSessionStore } from '../stores/online-plan-session'
 import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
+import { yyyymmddPairToTimeRange } from '../composables/workflow-pipeline-params'
 import {
   resolveInversionGroupMeta,
   resolveStableInversionProducts,
+  resolveStableInversionTimeSpan,
 } from '../stores/layers/inversion-overlay-probe'
 import { timeListCoversTimeKey } from '../utils/time-key-coverage'
 
@@ -44,6 +46,7 @@ import { useSidebarContextMenu } from './layer-sidebar/useSidebarContextMenu'
 import LayerSidebarHeader from './layer-sidebar/LayerSidebarHeader.vue'
 import LayerSidebarLibrary from './layer-sidebar/LayerSidebarLibrary.vue'
 import LayerGroupManagerDialog from './layer-sidebar/LayerGroupManagerDialog.vue'
+import AddLayerComputeDialog from './layer-sidebar/AddLayerComputeDialog.vue'
 import LayerSidebarActive from './layer-sidebar/LayerSidebarActive.vue'
 import LayerSidebarContextMenu from './layer-sidebar/LayerSidebarContextMenu.vue'
 import { onOpenLayerGroupManager } from '../utils/layer-group-manager-bridge'
@@ -121,6 +124,8 @@ const sidebarLayersDeps: SidebarLayersDeps = {
   dissolveRunGroup: workflowRun.dissolveRunGroup,
   findRunGroupById: workflowRun.findRunGroupById,
   runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
+  // 右键「运行工作流」→ 先弹时间范围框再执行（2026-10-17）
+  promptAndRunCatalog: promptRecomputeForExisting,
 }
 
 const sidebarDragDeps: SidebarDragDeps = {
@@ -300,39 +305,26 @@ function getUnifiedDataStatus(layer: ActiveLayerDisplay): ReturnType<typeof deri
 //    python_provider→分析运行；weather→瓦片视口按需加载），
 //    轮询持续到产出或报错，终态由 poller 物化/呈现
 // 3. 时间轴按需加载由 online-temporal-orchestrator 承担
-async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
-  // 添加即切到图层独立记忆，再挂产物 / 按轴时刻开跑
-  uiStore.setUnifiedTimeLock(false)
-  if (uiStore.isLayerTimeLocked(catalogId)) {
-    uiStore.toggleLayerTimeLock(catalogId)
-  }
-  // 添加后 snap / attach 会改时间轴——抑制确认卡，避免自触发
-  useTimelineActionBannerStore().suppressConfirm(4_000)
-  const preferred = currentTimelineTimeKey()
-
-  // ── 第 0 步（2026-10-15）：按稳定编号直探盘上已有产物 ───────────────────
-  // 原「添加」只查 /workflow-runs（**按账号隔离 + 只认 succeeded**）：admin 跑过的
-  // 产物，游客/其他电脑点「添加」复用不到 → 判定"无数据" → 自动重跑工作流；而重跑
-  // 的时间窗＝时间轴当前帧（常停在无数据的日子）且需联网取原始数据 ⇒ 必然失败。
-  // 这里在查 run 之前先按 `sha1(catalogId|role|role)` 直接问后端「产物在不在」，
-  // 命中即挂载并把时间轴落到有数据的帧——与账号无关、与 run 成功与否无关、不联网。
-  // 探测不到（真·无产物）才回落到原来的「查 run / 重跑」路径。
+/**
+ * 复用盘上已有产物，返回挂上的成员数（0＝确实没有可用产物）。
+ *
+ * 两段式（2026-10-13 / 10-15）：
+ * 1) **稳定编号直探**——按 `sha1(catalogId|role|role)` 直接问后端「产物在不在」，
+ *    与账号无关、与 run 成功与否无关、不联网（原路径只查 /workflow-runs，按账号隔离
+ *    且只认 succeeded，导致 admin 跑过的产物别人复用不到）；
+ * 2) 直探没命中时退回 `/workflow-runs` 两段式：先按时间轴时刻、再退到最新可用帧。
+ */
+async function attachExistingProducts(
+  catalogId: string,
+  preferred: string | null,
+): Promise<number> {
   try {
     const stableAttached = await attachStableInversionProducts(catalogId, preferred)
-    if (stableAttached > 0) {
-      uiStore.rememberLayerTime(catalogId, { force: true })
-      return // 盘上已有产物：直接显示，绝不重跑
-    }
+    if (stableAttached > 0) return stableAttached
   } catch {
-    // 探测失败不阻断自动运行（后端目录不可用 / 非安全上下文等）
+    // 探测失败不阻断（后端目录不可用 / 非安全上下文等）
   }
-
   try {
-    // 两段式复用（2026-10-13）：**已有产物优先于重跑工作流**。
-    // 1) 先按当前时间轴时刻取产物——用户"把轴拖到某天 → 添加图层"应看到那天的
-    //    数据，而不是被跳到产物最新帧；
-    // 2) 该时刻取不到时退到"产物最新可用帧"，仍然复用、不重跑。
-    // 只有两条都取不到才提交工作流（真·无数据）。
     let attached = 0
     if (preferred) {
       attached = await workflowRun.autoAttachProductsForNewLayer(catalogId, {
@@ -342,21 +334,92 @@ async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
     if (attached <= 0) {
       attached = await workflowRun.autoAttachProductsForNewLayer(catalogId)
     }
-    if (attached > 0) {
-      uiStore.rememberLayerTime(catalogId, { force: true })
-      return // 已有缓存/数据，直接显示
-    }
+    return attached
   } catch {
-    // 附加失败不阻断自动运行（后端目录不可用等）
+    return 0
   }
+}
+
+/** 提交一次工作流；失败只记日志（真实失败态由 jobLayer + 顶栏 notice 呈现）。 */
+async function submitCatalogWorkflow(
+  catalogId: string,
+  start?: string,
+  end?: string,
+): Promise<void> {
   try {
-    await workflowRun.runWorkflowForCatalog(catalogId, {})
+    const timeRange = start && end ? yyyymmddPairToTimeRange(start, end) : undefined
+    await workflowRun.runWorkflowForCatalog(catalogId, timeRange ? { timeRange } : {})
   } catch (err) {
-    // 预期内的提示性错误静默（天气瓦片提示/无引擎等）；
-    // 真实运行失败由 jobLayer 失败态 + 顶栏 notice 呈现
+    // 预期内的提示性错误静默（天气瓦片提示/无引擎等）
     const message = err instanceof Error ? err.message : String(err)
     logStore.logOperation('layer-add', `图层「${catalogId}」自动运行未启动：${message}`)
   }
+}
+
+/**
+ * 已添加的图层：弹时间范围框，确认后按所选范围重算。
+ * 不重复添加图层，只提交计算（避免侧栏出现重复条目）。
+ */
+async function promptRecomputeForExisting(catalogId: string): Promise<void> {
+  const choice = await promptComputeTimeRange(catalogId, { alreadyAdded: true })
+  if (choice?.kind !== 'compute') return
+  logStore.logOperation('layer-add', `图层「${catalogId}」按新时间范围重算`)
+  await submitCatalogWorkflow(catalogId, choice.start, choice.end)
+}
+
+async function ensureLayerDataOrRun(
+  catalogId: string,
+  opts: { skipDialog?: boolean } = {},
+): Promise<void> {
+  // 添加即切到图层独立记忆，再挂产物 / 按轴时刻开跑
+  uiStore.setUnifiedTimeLock(false)
+  if (uiStore.isLayerTimeLocked(catalogId)) {
+    uiStore.toggleLayerTimeLock(catalogId)
+  }
+  // 添加后 snap / attach 会改时间轴——抑制确认卡，避免自触发
+  useTimelineActionBannerStore().suppressConfirm(4_000)
+  const preferred = currentTimelineTimeKey()
+
+  // ── 第 0 步（2026-10-17 用户要求）：不管盘上有没有数据，先弹时间范围框 ──
+  // 有产物 ⇒ 默认日期＝产物覆盖区间，按钮「直接添加」；
+  // 无产物 ⇒ 默认最近 30 天，按钮「开始计算」；单次计算最长 31 天。
+  // skipDialog：批量「添加到分类」时不再逐个弹窗，保持原有"先挂后算"行为。
+  const choice = opts.skipDialog
+    ? ({ kind: 'auto' } as const)
+    : await promptComputeTimeRange(catalogId)
+
+  if (choice === null) {
+    logStore.logOperation('layer-add', `图层「${catalogId}」已取消`)
+    return
+  }
+
+  // 所选范围落在已有数据内 ⇒ 挂载后直接显示，不跑工作流
+  if (choice?.kind === 'attach') {
+    const attached = await attachExistingProducts(catalogId, preferred)
+    if (attached > 0) {
+      uiStore.rememberLayerTime(catalogId, { force: true })
+      return
+    }
+    // 探测与挂载结果不一致（如产物刚被移走）：退回不带窗口的提交
+    logStore.logOperation('layer-add', `图层「${catalogId}」未找到匹配产物，改走计算`)
+    await submitCatalogWorkflow(catalogId)
+    return
+  }
+
+  // 用户选了需要计算的范围 ⇒ 直接按该窗口提交
+  if (choice?.kind === 'compute') {
+    await submitCatalogWorkflow(catalogId, choice.start, choice.end)
+    return
+  }
+
+  // 其余情况：choice === undefined（不支持时间）或 kind === 'auto'（非反演目录）
+  // ⇒ 保持原有行为：先复用产物，复用不到才提交（不带时间窗）
+  const attached = await attachExistingProducts(catalogId, preferred)
+  if (attached > 0) {
+    uiStore.rememberLayerTime(catalogId, { force: true })
+    return
+  }
+  await submitCatalogWorkflow(catalogId)
 }
 
 /** 当前时间轴时刻（YYYY-MM-DD）；非法/不可用时返回 null（退化为"取最新产物"）。 */
@@ -497,6 +560,137 @@ function getCatalogItem(catalogId: string) {
   return layerLibrary.value.find((item) => item.catalogId === catalogId)
 }
 
+// ── 「添加图层」时间范围弹窗（2026-10-16 建，2026-10-17 按用户要求改版） ──────
+// 改版要点：**不管盘上有没有产物，点「添加」都弹**，让用户自己决定要哪一段时间。
+// - 有产物 ⇒ 默认日期＝产物覆盖区间，按钮「直接添加」⇒ 一次确认即挂图；
+// - 改到范围外 ⇒ 按钮「开始计算」，按新窗口提交；
+// - 单次计算最长 31 天（直接加载已有数据不受限，因为不消耗算力）。
+const computeDialogOpen = ref(false)
+const computeDialogBusy = ref(false)
+const computeDialogLayerName = ref('')
+const computeDialogDefaultStart = ref('')
+const computeDialogDefaultEnd = ref('')
+const computeDialogBlockMode = ref(false)
+const computeDialogAvailableStart = ref('')
+const computeDialogAvailableEnd = ref('')
+const computeDialogAvailableFrames = ref(0)
+const computeDialogAlreadyAdded = ref(false)
+/** 该目录是否为反演目录（决定「无法判断覆盖」时是否可回落到原有路径） */
+const computeDialogIsInversion = ref(false)
+
+/** 弹窗确认后的分流结果。 */
+type ComputeDialogChoice =
+  /** 所选范围落在盘上已有数据内 ⇒ 直接挂载 */
+  | { kind: 'attach' }
+  /** 需要真正计算 ⇒ 用这个 YYYYMMDD 窗口提交 */
+  | { kind: 'compute'; start: string; end: string }
+  /** 无法判断覆盖（非反演目录）⇒ 交回原有「先挂产物、再跑」路径 */
+  | { kind: 'auto' }
+  /** 用户取消 */
+  | null
+  /** 该图层不支持时间 ⇒ 不弹窗 */
+  | undefined
+
+let computeDialogResolve: ((result: ComputeDialogChoice) => void) | null = null
+
+/** Date → YYYYMMDD（本地分量，与 DateInputField 的取值口径一致）。 */
+function toCompactDate(value: Date): string {
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  const d = String(value.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
+/** 该目录是否为 8 天块型动态散射（决定提示文案与最短天数校验）。 */
+function isBlockInversionCatalog(catalogId: string): boolean {
+  return /^method-(smap|fy)-omega-doy-dynamic$/.test(catalogId)
+}
+
+/**
+ * 弹出时间范围选择框（**无条件弹**，除非该图层本身没有时间维度）。
+ *
+ * 打开前先探一次盘上产物的时间覆盖区间：命中则把默认日期预填成这段范围，
+ * 用户点一次「直接添加」即可挂图；探测不到／非反演目录则默认最近 30 天。
+ */
+async function promptComputeTimeRange(
+  catalogId: string,
+  opts: { alreadyAdded?: boolean } = {},
+): Promise<ComputeDialogChoice> {
+  if (computeDialogOpen.value) return null
+  const item = getCatalogItem(catalogId)
+  // 静态图层（无时间维度）：弹窗没有意义，交回原行为
+  if (item && item.supportsTime === false) return undefined
+
+  const isInversion = Boolean(resolveInversionGroupMeta(catalogId))
+  // 探测产物覆盖区间：只对反演目录支持；失败按「无产物」处理，不阻断添加
+  let span: { start: string; end: string; frames: number } | null = null
+  if (isInversion) {
+    try {
+      span = await resolveStableInversionTimeSpan(catalogId)
+    } catch {
+      span = null
+    }
+  }
+
+  const anchor =
+    uiStore.currentDate instanceof Date && !Number.isNaN(uiStore.currentDate.getTime())
+      ? uiStore.currentDate
+      : new Date()
+  const fallbackEnd = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate())
+  const fallbackStart = new Date(fallbackEnd)
+  fallbackStart.setDate(fallbackStart.getDate() - 29) // 无产物时默认 30 天窗
+
+  computeDialogLayerName.value = item?.name ?? catalogId
+  computeDialogAvailableStart.value = span?.start ?? ''
+  computeDialogAvailableEnd.value = span?.end ?? ''
+  computeDialogAvailableFrames.value = span?.frames ?? 0
+  computeDialogAlreadyAdded.value = Boolean(opts.alreadyAdded)
+  computeDialogIsInversion.value = isInversion
+  // 有产物 ⇒ 默认就是产物覆盖区间（点确认即"直接添加"）；无产物 ⇒ 最近 30 天
+  computeDialogDefaultStart.value = span ? span.start : toCompactDate(fallbackStart)
+  computeDialogDefaultEnd.value = span ? span.end : toCompactDate(fallbackEnd)
+  computeDialogBlockMode.value = isBlockInversionCatalog(catalogId)
+  computeDialogBusy.value = false
+  computeDialogOpen.value = true
+  return new Promise((resolve) => {
+    computeDialogResolve = resolve
+  })
+}
+
+function closeComputeDialog(result: ComputeDialogChoice): void {
+  computeDialogOpen.value = false
+  computeDialogBusy.value = false
+  const resolve = computeDialogResolve
+  computeDialogResolve = null
+  resolve?.(result)
+}
+
+/**
+ * 用户确认后的分流：
+ * - 已添加的图层 ⇒ 一律按所选范围重算（不重复添加）；
+ * - 非反演目录 ⇒ 无法判断覆盖，交回原有「先挂产物、再跑」路径；
+ * - 反演目录 ⇒ 落在已有范围内挂载、否则提交计算。
+ */
+function onComputeDialogConfirm(payload: { start: string; end: string; within: boolean }): void {
+  if (computeDialogAlreadyAdded.value) {
+    closeComputeDialog({ kind: 'compute', start: payload.start, end: payload.end })
+    return
+  }
+  if (!computeDialogIsInversion.value) {
+    closeComputeDialog({ kind: 'auto' })
+    return
+  }
+  if (payload.within) {
+    closeComputeDialog({ kind: 'attach' })
+    return
+  }
+  closeComputeDialog({ kind: 'compute', start: payload.start, end: payload.end })
+}
+
+function onComputeDialogCancel(): void {
+  closeComputeDialog(null)
+}
+
 function getCatalogSemanticNote(catalogId: string): string | null {
   // overlay 静态/时间序列图层：天然有 PNG 缓存，添加/显示路径不阻断
   if (isOverlayDisplayOnlyLayer(catalogId)) {
@@ -575,8 +769,17 @@ function openActive() {
   void nextTick(() => scrollSidebarChromeIntoView())
 }
 
-function addCatalogItem(catalogId: string, isAdminBoundary = false) {
-  if (!isAdminBoundary && isAdded(catalogId)) return
+function addCatalogItem(
+  catalogId: string,
+  isAdminBoundary = false,
+  opts: { skipDialog?: boolean } = {},
+) {
+  // 2026-10-17 用户要求：已在列表中的图层点「添加」也要弹时间范围框，
+  // 用于按新范围重算（确认后只提交计算，不会重复添加图层）。
+  if (!isAdminBoundary && isAdded(catalogId)) {
+    if (!opts.skipDialog) void promptRecomputeForExisting(catalogId)
+    return
+  }
   // skipAutoRun：由下方 ensureLayerDataOrRun 统一「先复用产物 / 再提交」，
   // 避免 addLayer 内置 setTimeout 再跑一遍造成双提交与游离层泄漏
   workspace.addLayer(catalogId, isAdminBoundary, undefined, { skipAutoRun: true })
@@ -587,7 +790,7 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   )
   // 2026-08-25 添加即运行：有缓存/产物直接附加；无则自动提交工作流
   if (catalogId !== 'gebco-dem-cn') {
-    void ensureLayerDataOrRun(catalogId)
+    void ensureLayerDataOrRun(catalogId, { skipDialog: opts.skipDialog })
   }
 }
 
@@ -601,7 +804,8 @@ function addAllInCategory(
       item.sources && item.sources.length > 1 ? item.sources[0].id : item.catalogId
     if (alreadyAdded.has(effectiveId)) continue
     alreadyAdded.add(effectiveId)
-    addCatalogItem(effectiveId, false)
+    // 批量添加不逐个弹时间范围框（否则会连弹 N 个），保持原有"先挂后算"
+    addCatalogItem(effectiveId, false, { skipDialog: true })
   }
 }
 
@@ -764,6 +968,7 @@ onMounted(() => {
       @on-weather-source-change="weatherProviders.onWeatherSourceChange"
       @add-all-in-category="addAllInCategory"
       @add-catalog-item="addCatalogItem"
+      @recompute-catalog-item="promptRecomputeForExisting"
       @toggle-category="toggleCategory"
     />
 
@@ -818,6 +1023,21 @@ onMounted(() => {
       :context-menu="ctxMenu.contextMenu.value"
       :context-menu-groups="ctxMenu.contextMenuGroups.value"
       @handle-context-action="ctxMenu.handleContextAction"
+    />
+    <!-- ── 「添加图层」时间范围对话框 ──────────────────────────────────── -->
+    <AddLayerComputeDialog
+      :open="computeDialogOpen"
+      :layer-name="computeDialogLayerName"
+      :default-start="computeDialogDefaultStart"
+      :default-end="computeDialogDefaultEnd"
+      :block-mode="computeDialogBlockMode"
+      :busy="computeDialogBusy"
+      :available-start="computeDialogAvailableStart"
+      :available-end="computeDialogAvailableEnd"
+      :available-frames="computeDialogAvailableFrames"
+      :already-added="computeDialogAlreadyAdded"
+      @confirm="onComputeDialogConfirm"
+      @cancel="onComputeDialogCancel"
     />
     <!-- ── 图层平台 P1：分组管理对话框（仅管理员） ─────────────────────── -->
     <LayerGroupManagerDialog

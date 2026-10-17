@@ -28,6 +28,11 @@ export interface SidebarLayersDeps {
   dissolveRunGroup: WorkflowRun['dissolveRunGroup']
   findRunGroupById: WorkflowRun['findRunGroupById']
   runWorkflowForCatalog: WorkflowRun['runWorkflowForCatalog']
+  /**
+   * 右键「运行工作流」：先弹时间范围框、再按其结果挂载/提交（2026-10-17）。
+   * 未注入时回落为直接 `runWorkflowForCatalog`（沿用时间轴当前帧）。
+   */
+  promptAndRunCatalog?: (catalogId: string) => void | Promise<void>
 }
 
 /** 拖拽排序所需 layers 依赖（2 成员）。 */

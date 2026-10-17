@@ -397,10 +397,14 @@ export function useSidebarContextMenu(
         return
       case 'runWorkflow': {
         const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
-        if (layer) {
-          void layersDeps.runWorkflowForCatalog(layer.catalogId)
-        }
         closeContextMenu()
+        if (!layer) return
+        // 2026-10-17：改为先弹时间范围框（原行为＝取时间轴当前帧，8 天块产品常失败）
+        if (layersDeps.promptAndRunCatalog) {
+          void layersDeps.promptAndRunCatalog(layer.catalogId)
+          return
+        }
+        void layersDeps.runWorkflowForCatalog(layer.catalogId)
         return
       }
       case 'runWorkflowNoCache': {
