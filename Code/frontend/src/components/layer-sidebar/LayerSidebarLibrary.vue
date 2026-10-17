@@ -4,6 +4,7 @@ import { LAYERS_COPY, INSPECT_COPY } from '../../ui-copy'
 import { Info, Lock, Settings, Check } from '../ui/icons'
 import type { LayerCategory, RuntimeLayerLibraryItem } from '../../stores/layers/types'
 import type { WeatherProviderForLayer } from '../../services/runtime-api'
+import { toLayerDisplayName } from '../../utils/layer-display-name'
 import AppSelect from '../ui/AppSelect.vue'
 
 const props = defineProps<{
@@ -174,7 +175,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
         >
           <div class="card-top">
             <div class="card-title-row">
-              <strong>{{ item.name }}</strong>
+              <strong>{{ toLayerDisplayName(item.name) }}</strong>
               <div class="chips-group">
                 <!-- 按需求隐藏卡片上的「研发数据」小标签（保留代码，需要时去掉注释标记即可恢复）。
                      注意：仅隐藏本标签，下方 subCategory 标签（模型输入/模型输出/辅助数据）保持显示。

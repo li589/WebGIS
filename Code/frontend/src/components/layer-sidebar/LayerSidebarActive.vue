@@ -2,6 +2,7 @@
 import { LAYERS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
 import { formatTimeKeyLabel } from '../../utils/time-key-format'
+import { toLayerDisplayName } from '../../utils/layer-display-name'
 import type { DataStatusBadge } from '../../utils/layer-data-status'
 import { CircleDot, Circle, X, Menu } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
@@ -120,7 +121,7 @@ const emit = defineEmits<{
             </span>
             <span class="group-accent" aria-hidden="true"></span>
             <strong class="group-title">{{
-              runGroupOf(row.groupId)?.title || LAYERS_COPY.computingGroup
+              toLayerDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
             }}</strong>
             <span
               v-if="groupStatusLabel(row.groupId)"
@@ -202,7 +203,7 @@ const emit = defineEmits<{
                     ? productTagDescription(row.layer.runGroupProductTag)
                     : undefined
                 "
-                >{{ row.layer.name }}</strong
+                >{{ toLayerDisplayName(row.layer.name) }}</strong
               >
               <!-- 2026-10-09 按要求隐藏「本地导入」分类胶囊（未删除，取消注释即可恢复）
               <span
@@ -333,7 +334,9 @@ const emit = defineEmits<{
                 "
                 class="admin-tip-inline"
                 >计算占位{{
-                  row.layer.runGroupProductTag ? ` · ${row.layer.runGroupProductTag}` : ''
+                  row.layer.runGroupProductTag
+                    ? ` · ${toLayerDisplayName(row.layer.runGroupProductTag)}`
+                    : ''
                 }}</span
               >
               <template v-if="row.layer.jobLayer">
