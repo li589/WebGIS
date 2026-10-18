@@ -11,6 +11,7 @@ avg_omega_doy_dir / omega_block_mat）。
 
 from __future__ import annotations
 
+import calendar
 from pathlib import Path
 
 from contracts.product import ProductManifest, ProductRef
@@ -174,9 +175,7 @@ def _redirect_omega_block_for_tb_source(
     return omega_block_dir, omega_block_mat_path
 
 
-def _doy_cache_stale(
-    omega_block_dir: Path, avg_omega_doy_dir: Path
-) -> bool:
+def _doy_cache_stale(omega_block_dir: Path, avg_omega_doy_dir: Path) -> bool:
     """daily_omega 比已缓存 DOY 气候态新 → 需要增量重建（2026-10-07）。
 
     持久缓存（Fix：DOY 气候态不再放 run workspace）引入的新语义：缓存命中后
@@ -207,6 +206,147 @@ def _doy_cache_stale(
     if oldest_doy is None:
         return False
     return newest_daily > oldest_doy + 1.0  # 1s 容差，抗拷贝时间戳抖动
+
+
+# ── 自然月合成（2026-10-18）────────────────────────────────────────────────
+# 产品口径：评估侧要求「半月或整月」，最终定自然月（1 日～月末）。
+# 逐日 DDCA 结果按自然月做像元级平均，另存 ``YYYYMM01_YYYYMM末.mat``；
+# 日帧保留不动。物化侧检测到整月块时优先登记月块（见
+# ``backend/app/services/python_provider_result_builder.py``）。
+_MONTHLY_COMPOSITE_VARIABLES = ("SM", "VOD", "OMEGA")
+
+#: 允许触发月合成的 ``composite_period`` 取值
+_MONTHLY_COMPOSITE_ALIASES = {"month", "monthly", "1m", "calendar-month"}
+
+
+def monthly_composite_label(year: int, month: int) -> str:
+    """自然月块标签：``20251201_20251231``。"""
+    last_day = calendar.monthrange(year, month)[1]
+    return f"{year:04d}{month:02d}01_{year:04d}{month:02d}{last_day:02d}"
+
+
+def build_monthly_composites(
+    output_dir: Path,
+    *,
+    logger_adapter: object | None = None,
+    force: bool = False,
+    min_coverage: float = 0.8,
+) -> list[str]:
+    """把 ``output_dir`` 下的日帧 ``YYYYMMDD.mat`` 按自然月聚合成整月块。
+
+    聚合规则：同一自然月内所有日帧，逐像元取**有效值**（有限值）平均；
+    整月全 NaN 的像元保持 NaN。只读日帧、只增月块，不删除任何原文件。
+
+    完整性门槛：某月日帧数不足 ``min_coverage × 当月天数`` 时不产出月块
+    （避免「跑了 5 天就发布成月产品」这种误导）。已存在的月块不受门槛影响，
+    也不会被不足月的重跑覆盖。
+
+    Args:
+        output_dir: D2 产物目录（含 ``YYYYMMDD.mat``）。
+        logger_adapter: 可选，用于 ``emit_progress`` 上报。
+        force: 已存在的月块是否重算覆盖。
+        min_coverage: 月内日帧覆盖率下限（0~1）。
+
+    Returns:
+        产出的月块标签列表，例如 ``["20251201_20251231"]``。
+    """
+    import math
+
+    import numpy as np
+    from scipy.io import loadmat, savemat
+
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir():
+        return []
+
+    buckets: dict[tuple[int, int], list[Path]] = {}
+    for path in sorted(output_dir.iterdir()):
+        # 只认 8 位纯日期日帧，跳过月块/半截临时文件
+        if not path.is_file() or path.suffix.lower() != ".mat":
+            continue
+        stem = path.stem
+        if len(stem) != 8 or not stem.isdigit():
+            continue
+        try:
+            year, month = int(stem[:4]), int(stem[4:6])
+        except ValueError:
+            continue
+        if not 1 <= month <= 12:
+            continue
+        buckets.setdefault((year, month), []).append(path)
+
+    labels: list[str] = []
+    for (year, month), paths in sorted(buckets.items()):
+        label = monthly_composite_label(year, month)
+        target = output_dir / f"{label}.mat"
+        if target.exists() and not force:
+            labels.append(label)
+            continue
+        # 完整性门槛：日帧不足当月 80% 不发布，避免「几天数据冒充月产品」
+        required = max(
+            1, math.ceil(calendar.monthrange(year, month)[1] * float(min_coverage))
+        )
+        if len(paths) < required:
+            if logger_adapter is not None:
+                try:
+                    logger_adapter.emit_progress(
+                        "monthly-composite",
+                        100.0,
+                        f"skip {label}: {len(paths)}/{required} daily frames "
+                        "(below coverage threshold)",
+                    )
+                except Exception:
+                    pass
+            continue
+
+        stacks: dict[str, list[np.ndarray]] = {}
+        for path in paths:
+            try:
+                mat = loadmat(str(path))
+            except Exception:  # 单个坏帧不阻断整月合成
+                continue
+            for variable in _MONTHLY_COMPOSITE_VARIABLES:
+                value = mat.get(variable)
+                if value is None:
+                    continue
+                stacks.setdefault(variable, []).append(
+                    np.asarray(value, dtype=np.float32)
+                )
+        if not stacks:
+            continue
+
+        payload: dict[str, np.ndarray] = {}
+        for variable, arrays in stacks.items():
+            shape = arrays[0].shape
+            usable = [item for item in arrays if item.shape == shape]
+            if not usable:
+                continue
+            cube = np.stack(usable, axis=0)
+            finite = np.isfinite(cube)
+            count = finite.sum(axis=0)
+            total = np.where(finite, cube, 0.0).sum(axis=0, dtype=np.float64)
+            merged = np.full(shape, np.nan, dtype=np.float32)
+            has_value = count > 0
+            merged[has_value] = (total[has_value] / count[has_value]).astype(np.float32)
+            payload[variable] = merged
+        if not payload:
+            continue
+
+        tmp = target.with_name(f".{target.name}.tmp")
+        savemat(str(tmp), payload, do_compression=True)
+        tmp.replace(target)
+        labels.append(label)
+        if logger_adapter is not None:
+            try:
+                logger_adapter.emit_progress(
+                    "monthly-composite",
+                    100.0,
+                    f"natural month composite {label} from {len(paths)} daily frames",
+                )
+            except Exception:
+                pass
+
+    return labels
 
 
 @register_module_decorator(
@@ -453,6 +593,29 @@ class OmegaAvgDailyModule(BaseModule):
             cancel_flag_path=cancel_flag_path,
         )
 
+        # 自然月合成（默认关闭，仅 algorithm_params.composite_period=month 时启用；
+        # SMAP 链路不传该参数，行为保持逐日，完全不受影响）
+        composite_period = (
+            str(algorithm_params.get("composite_period") or "").strip().lower()
+        )
+        monthly_labels: list[str] = []
+        if composite_period in _MONTHLY_COMPOSITE_ALIASES:
+            try:
+                monthly_labels = build_monthly_composites(
+                    Path(output_dir),
+                    logger_adapter=ctx.logger_adapter,
+                    force=bool(algorithm_params.get("composite_force")),
+                )
+            except Exception:  # 月合成失败不拖垮日产品发布
+                monthly_labels = []
+                if ctx.logger_adapter is not None:
+                    try:
+                        ctx.logger_adapter.emit_progress(
+                            "monthly-composite", 100.0, "monthly composite failed"
+                        )
+                    except Exception:
+                        pass
+
         # 构建 manifest
         days_processed = int(stage_d_result.get("days_processed", 0))
         days_resumed = int(stage_d_result.get("days_resumed", 0))
@@ -512,6 +675,8 @@ class OmegaAvgDailyModule(BaseModule):
                 "stage_d_start_date": config.stage_d_start_date,
                 "stage_d_end_date": config.stage_d_end_date,
                 "stage_d_max_days": int(config.stage_d_max_days),
+                "composite_period": composite_period or "none",
+                "monthly_composites": monthly_labels,
             },
         )
         return _store_manifest(

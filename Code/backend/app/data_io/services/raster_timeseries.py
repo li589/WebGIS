@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import logging
@@ -146,6 +147,34 @@ def _count_valid_geotiff_pixels(tif_path: Path) -> int:
         return 0
 
 
+def _is_calendar_month_block(block_start: str, block_end: str) -> bool:
+    """整月块判定：起于 1 日、止于该月最后一天（如 ``20251201_20251231``）。
+
+    2026-10-18：评估侧产品口径改为自然月，风云 D2 逐日产物会额外合成整月块；
+    物化时据此把清单切到月粒度（日帧文件保留在盘上，只是不进 time_list）。
+    """
+    try:
+        from datetime import datetime
+
+        start = datetime.strptime(block_start, "%Y%m%d")
+        end = datetime.strptime(block_end, "%Y%m%d")
+    except ValueError:
+        return False
+    if start.day != 1:
+        return False
+    if end.year != start.year or end.month != start.month:
+        return False
+    return end.day == calendar.monthrange(start.year, start.month)[1]
+
+
+def _is_calendar_month_label(label: str) -> bool:
+    """``20251201_20251231`` → True；日帧 ``20251203`` 与 8 日块 → False。"""
+    match = _BLOCK_MAT_RE.match(f"{label}.mat")
+    if not match or not match.group(2):
+        return False
+    return _is_calendar_month_block(match.group(1), match.group(2))
+
+
 def _is_canonical_viirs8_block(block_start: str, block_end: str) -> bool:
     """Return whether a label is a canonical Jan-1 anchored VIIRS 8-day block.
 
@@ -173,6 +202,7 @@ def list_block_mats(
     time_start: str | None = None,
     time_end: str | None = None,
     canonical_viirs8_only: bool = False,
+    calendar_month_only: bool = False,
 ) -> list[tuple[str, Path]]:
     """Return sorted (time_label, path) for YYYYMMDD[_YYYYMMDD].mat files.
 
@@ -198,6 +228,8 @@ def list_block_mats(
         if canonical_viirs8_only and not _is_canonical_viirs8_block(
             block_start, block_end
         ):
+            continue
+        if calendar_month_only and not _is_calendar_month_block(block_start, block_end):
             continue
         if start and block_end < start:
             continue
@@ -244,6 +276,7 @@ def upsert_block_dir_timeseries(
     time_start: str | None = None,
     time_end: str | None = None,
     canonical_viirs8_only: bool = False,
+    calendar_month_only: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
     """Commit block mats under ``block_dir`` as one time-series overlay.
@@ -259,6 +292,7 @@ def upsert_block_dir_timeseries(
         time_start=time_start,
         time_end=time_end,
         canonical_viirs8_only=canonical_viirs8_only,
+        calendar_month_only=calendar_month_only,
     )
     if not mats and (time_start or time_end):
         # 运行时间窗与块目录无交集（典型：按时间轴跑了一个本地没有数据的日期，
@@ -272,6 +306,7 @@ def upsert_block_dir_timeseries(
             time_start=None,
             time_end=None,
             canonical_viirs8_only=canonical_viirs8_only,
+            calendar_month_only=calendar_month_only,
         )
         if fallback:
             logger.warning(
@@ -315,6 +350,7 @@ def upsert_block_dir_timeseries(
             vmin=vmin,
             vmax=vmax,
             native_step=native_step,
+            calendar_month_only=calendar_month_only,
             force=force,
         )
 
@@ -323,6 +359,7 @@ def _preserve_existing_time_slices(
     dest_dir: Path,
     time_list: list[str],
     bounds_by_time: dict[str, list[float]],
+    calendar_month_only: bool = False,
 ) -> int:
     """把旧 meta 里仍齐全的历史切片并回 ``time_list``（清单只增不减）。
 
@@ -346,6 +383,9 @@ def _preserve_existing_time_slices(
     kept: list[str] = []
     for old_label in (str(x) for x in raw_old if x):
         if old_label in known:
+            continue
+        if calendar_month_only and not _is_calendar_month_label(old_label):
+            # 月口径下不把历史日帧并回清单（文件仍留在盘上，可随时切回日粒度）
             continue
         png_old = dest_dir / f"preview_{old_label}.png"
         tif_old = dest_dir / f"source_{old_label}.tif"
@@ -387,6 +427,7 @@ def _upsert_block_dir_timeseries_locked(
     vmax: float | None,
     native_step: str,
     force: bool,
+    calendar_month_only: bool = False,
 ) -> dict[str, Any]:
     time_list: list[str] = []
     bounds_by_time: dict[str, list[float]] = {}
@@ -470,7 +511,12 @@ def _upsert_block_dir_timeseries_locked(
             },
         )
 
-    _preserve_existing_time_slices(dest_dir, time_list, bounds_by_time)
+    _preserve_existing_time_slices(
+        dest_dir,
+        time_list,
+        bounds_by_time,
+        calendar_month_only=calendar_month_only,
+    )
 
     if not time_list:
         raise RuntimeError("未能物化任何时间切片")

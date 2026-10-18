@@ -110,6 +110,8 @@ def _legend_ticks_from_range(vmin: object | None, vmax: object | None) -> list[f
 
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
+# 整月合成块 YYYYMM01_YYYYMM(月末).mat（D2 composite_period=month 产出）
+_CALENDAR_MONTH_MAT_RE = re.compile(r"^(\d{6})01_\1(\d{2})\.mat$", re.IGNORECASE)
 _FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
 _DISPLAYABLE_RASTER_SUFFIXES = {".tif", ".tiff", ".geotiff", ".cog"}
 _SCIENCE_RASTER_SUFFIXES = {".hdf", ".h5", ".he5", ".nc", ".mat"}
@@ -991,10 +993,19 @@ class PythonProviderResultBuilder:
         if config.get("from_block_dir"):
             if not local_path.is_dir():
                 return None
+            # 2026-10-18：风云 D2 在 composite_period=month 时额外产出整月块
+            # （如 20251201_20251231.mat）。存在整月块即切月口径：native_step=1M，
+            # 且清单只登记月块（日帧文件保留在盘上，可随时切回日粒度）。
+            has_monthly_block = any(
+                path.is_file() and _CALENDAR_MONTH_MAT_RE.match(path.name)
+                for path in local_path.iterdir()
+            )
             # 目录含单日 YYYYMMDD.mat（omega_avg_daily 逐日产品）→ 步长 1d，
             # 否则 8 日块（Omega-SF 动态链）→ 8d。
             native_step = (
-                "1d"
+                "1M"
+                if has_monthly_block
+                else "1d"
                 if any(
                     path.is_file() and _SINGLE_DAY_MAT_RE.match(path.name)
                     for path in local_path.iterdir()
@@ -1020,6 +1031,7 @@ class PythonProviderResultBuilder:
                     time_start=time_start,
                     time_end=time_end,
                     canonical_viirs8_only=canonical_viirs8_only,
+                    calendar_month_only=has_monthly_block,
                 )
             except Exception:
                 logger.exception(
@@ -1818,6 +1830,16 @@ class PythonProviderResultBuilder:
                         ):
                             block_dirs.append(sub)
                 for block_dir in block_dirs:
+                    # 渐进物化（run 还在 running）也要认月口径：目录里出现整月块
+                    # 就按 1M 发布，否则保持原 8d/日帧行为（2026-10-18）。
+                    try:
+                        has_monthly_block = any(
+                            item.is_file() and _CALENDAR_MONTH_MAT_RE.match(item.name)
+                            for item in block_dir.iterdir()
+                        )
+                    except OSError:
+                        has_monthly_block = False
+                    block_native_step = "1M" if has_monthly_block else "8d"
                     # vmin/vmax 必须与 _MAPPABLE_PRODUCTS 主注册路径一致，否则
                     # 兜底扫描会用空范围覆盖已落盘的色阶（VOD 会被冲回自适应，
                     # 2026-10-14 定位）。VOD 上限 1.5 见 _MAPPABLE_PRODUCTS 注释。
@@ -1836,7 +1858,7 @@ class PythonProviderResultBuilder:
                                 palette=palette,
                                 vmin=vmin,
                                 vmax=vmax,
-                                native_step="8d",
+                                native_step=block_native_step,
                                 time_start=time_start,
                                 time_end=time_end,
                                 canonical_viirs8_only=(
@@ -1844,6 +1866,7 @@ class PythonProviderResultBuilder:
                                     and "omega-doy-dynamic"
                                     in str(run_status.layer_id or "")
                                 ),
+                                calendar_month_only=has_monthly_block,
                             )
                         except Exception:
                             logger.warning(

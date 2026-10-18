@@ -3017,6 +3017,16 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "number",
                 description="气候态构建结束年。",
             ),
+            _param(
+                "composite_period",
+                "string",
+                default="none",
+                options=["none", "month"],
+                description=(
+                    "时间合成粒度：month=按自然月聚合逐日结果为整月块"
+                    "（如 20251201_20251231.mat），日帧保留在盘上；none=仅逐日。"
+                ),
+            ),
         ],
         "node_class": "omega_avg_daily",
     },

@@ -211,7 +211,8 @@
           "freq_ghz": 1.4,
           "lambda_tau": 20.0,
           "pixel_chunk_size": 200000,
-          "enable_parallel": true
+          "enable_parallel": true,
+          "composite_period": "month"
         }
       }
     },
