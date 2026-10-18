@@ -1265,6 +1265,40 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     })
   }
 
+  /**
+   * 找出「同一工作流 + 同一源图层」的可复用运行组（后建者优先）。
+   *
+   * 此前每次保存/运行都无条件新建组，侧栏会并排堆出多个同名
+   * 「风云卫星 平均散射约束反演产品」，用户误判为出了多份产物
+   * （盘上其实只有一份，只是被多组图层同时引用）。
+   */
+  function findReusableRunGroup(options: {
+    title: string
+    sourceLayerId: string
+    workflowId: string
+  }): ActiveRunLayerGroup | undefined {
+    const expectedTitle = resolveRunGroupTitle({
+      configuredTitle: options.title,
+      workflowId: options.workflowId,
+      summaries: tryWorkflowSummaries(),
+      fallback: '反演产物',
+    })
+    const source = resolveInversionCatalogId(String(options.sourceLayerId || ''))
+    for (let i = runLayerGroups.value.length - 1; i >= 0; i -= 1) {
+      const g = runLayerGroups.value[i]!
+      const gSource = resolveInversionCatalogId(String(g.sourceLayerId || ''))
+      // 两侧都能解析出源 id 且不一致 ⇒ 是同一工作流的另一个数据源，不复用
+      if (source && gSource && gSource !== source) continue
+      // 同工作流，或同标题（「添加图层」与工作流页可能用不同 workflow id，
+      // 但产出的组名一致，用户眼里就是同一组）
+      const sameWorkflow = Boolean(options.workflowId) && g.workflowId === options.workflowId
+      const sameTitle = Boolean(expectedTitle) && g.title === expectedTitle
+      if (!sameWorkflow && !sameTitle) continue
+      return g
+    }
+    return undefined
+  }
+
   function createRunLayerGroup(options: {
     title: string
     targets: Array<{ name: string; productTag: string }>
@@ -1272,7 +1306,29 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     workflowId: string
     memberCatalogIds?: string[]
   }): { groupId: string; memberInstanceIds: string[]; memberCatalogIds: string[] } {
-    const groupId = `run-group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    let groupId = `run-group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    // 只在「上一组已跑完」时复用：computing 组属于正在投递的那次 run，
+    // 此刻任务往往已提交到后端，改绑会串组，故保持原建组行为。
+    const candidate = findReusableRunGroup({
+      title: options.title,
+      sourceLayerId: options.sourceLayerId,
+      workflowId: options.workflowId,
+    })
+    const reusable = candidate && candidate.status !== 'computing' ? candidate : undefined
+    if (reusable) {
+      // 复用同一 groupId：先摘掉上一轮成员（仅 UI，不删后端 overlay），
+      // 否则每重跑一次侧栏就多叠一组同名图层。
+      groupId = reusable.groupId
+      const layers = deps.getActiveLayers()
+      for (const instanceId of [...reusable.memberInstanceIds]) {
+        const idx = layers.findIndex((l) => l.instanceId === instanceId)
+        if (idx < 0) continue
+        layers[idx]!.importedRaster = undefined
+        layers.splice(idx, 1)
+      }
+      reusable.memberInstanceIds = []
+    }
+
     const memberInstanceIds: string[] = []
     const memberCatalogIds: string[] = []
     const maxOrder = deps.getActiveLayers().reduce((max, l) => Math.max(max, l.order), -1)
@@ -1306,23 +1362,38 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       memberCatalogIds.push(catalogId)
     })
 
-    runLayerGroups.value.push({
-      groupId,
-      runId: '',
-      title: resolveRunGroupTitle({
-        configuredTitle: options.title,
-        workflowId: options.workflowId,
-        summaries: tryWorkflowSummaries(),
-        fallback: '反演产物',
-      }),
-      status: 'computing',
-      memberInstanceIds,
-      dissolvable: false,
-      sourceLayerId: options.sourceLayerId,
+    const resolvedTitle = resolveRunGroupTitle({
+      configuredTitle: options.title,
       workflowId: options.workflowId,
-      progress: 0,
-      message: '等待计算…',
+      summaries: tryWorkflowSummaries(),
+      fallback: '反演产物',
     })
+    if (reusable) {
+      // 复用旧组：留在原位置刷新，避免侧栏出现第二组同名任务
+      reusable.runId = ''
+      reusable.title = resolvedTitle
+      reusable.status = 'computing'
+      reusable.dissolvable = false
+      reusable.progress = 0
+      reusable.message = '等待计算…'
+      reusable.memberInstanceIds = memberInstanceIds
+      reusable.sourceLayerId = options.sourceLayerId
+      reusable.workflowId = options.workflowId
+      deps.scheduleWorkspacePersist()
+    } else {
+      runLayerGroups.value.push({
+        groupId,
+        runId: '',
+        title: resolvedTitle,
+        status: 'computing',
+        memberInstanceIds,
+        dissolvable: false,
+        sourceLayerId: options.sourceLayerId,
+        workflowId: options.workflowId,
+        progress: 0,
+        message: '等待计算…',
+      })
+    }
 
     if (deps.getSidebarView() === 'empty' || deps.getSidebarView() === 'library') {
       deps.setSidebarView('active')
