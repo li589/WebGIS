@@ -4,7 +4,7 @@ import { productTagDescription } from '../../utils/workflow-expected-outputs'
 import { formatTimeKeyLabel } from '../../utils/time-key-format'
 import { toLayerDisplayName } from '../../utils/layer-display-name'
 import type { DataStatusBadge } from '../../utils/layer-data-status'
-import { CircleDot, Circle, X, Menu } from '../ui/icons'
+import { Check, ChevronDown, X } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { ActiveTocRow } from './useSidebarDragReorder'
 import type { ActiveLayerDisplayLike } from './useSidebarSymbology'
@@ -65,6 +65,7 @@ const emit = defineEmits<{
   onDragEnd: []
   onLayerContextMenu: [instanceId: string, event: MouseEvent]
   onGroupContextMenu: [groupId: string, event: MouseEvent]
+  toggleGroup: [groupId: string]
 }>()
 </script>
 
@@ -82,10 +83,14 @@ const emit = defineEmits<{
       <!-- 批量操作工具栏 -->
       <div class="batch-toolbar">
         <button class="batch-btn" title="显示所有图层" @click="emit('showAllLayers')">
-          <CircleDot :size="14" aria-hidden="true" /> 全部显示
+          <span class="vis-check-box vis-check-box--sm is-on" aria-hidden="true">
+            <Check :size="9" :stroke-width="3.5" />
+          </span>
+          全部显示
         </button>
         <button class="batch-btn" title="隐藏所有图层" @click="emit('hideAllLayers')">
-          <Circle :size="14" aria-hidden="true" /> 全部隐藏
+          <span class="vis-check-box vis-check-box--sm" aria-hidden="true"></span>
+          全部隐藏
         </button>
         <button
           class="batch-btn batch-btn-danger"
@@ -105,20 +110,25 @@ const emit = defineEmits<{
             :class="{
               'drag-over': row.groupId === dragOverGroupId,
               computing: runGroupOf(row.groupId)?.status === 'computing',
+              collapsed: row.collapsed,
             }"
             :style="{ '--stagger-i': index }"
+            @click="emit('toggleGroup', row.groupId)"
             @dragover="emit('onGroupDragOver', row.groupId, $event)"
             @drop="emit('onGroupDrop', row.groupId)"
             @dragend="emit('onDragEnd')"
             @contextmenu.prevent="emit('onGroupContextMenu', row.groupId, $event)"
           >
-            <span
-              class="drag-handle-wrap"
-              draggable="true"
-              @dragstart="emit('onGroupDragStart', row.groupId, $event)"
+            <button
+              type="button"
+              class="group-collapse-btn"
+              :aria-expanded="!row.collapsed"
+              :aria-label="row.collapsed ? '展开分组' : '收起分组'"
+              :title="row.collapsed ? '展开分组' : '收起分组'"
+              @click.stop="emit('toggleGroup', row.groupId)"
             >
-              <Menu :size="14" class="drag-handle" title="拖动整组" />
-            </span>
+              <ChevronDown :size="16" aria-hidden="true" />
+            </button>
             <span class="group-accent" aria-hidden="true"></span>
             <strong class="group-title">{{
               toLayerDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
@@ -170,32 +180,23 @@ const emit = defineEmits<{
             @dragend="emit('onDragEnd')"
           >
             <div class="layer-row-top">
-              <span
-                class="drag-handle-wrap"
-                draggable="true"
-                @dragstart="emit('onDragStart', row.layer.instanceId)"
-              >
-                <Menu
-                  :size="14"
-                  class="drag-handle"
-                  :title="row.layer.runGroupLocked ? '仅可在组内排序' : '拖动排序'"
-                />
-              </span>
               <button
                 class="vis-btn"
+                type="button"
+                role="checkbox"
+                :aria-checked="row.layer.visible"
                 :title="row.layer.visible ? '隐藏图层' : '显示图层'"
-                :aria-label="row.layer.visible ? '隐藏图层' : '显示图层'"
+                :aria-label="row.layer.name"
                 @click="emit('toggleVisibility', row.layer.instanceId, $event)"
               >
-                <CircleDot v-if="row.layer.visible" :size="14" aria-hidden="true" />
-                <Circle v-else :size="14" aria-hidden="true" />
+                <span
+                  class="vis-check-box"
+                  :class="{ 'is-on': row.layer.visible }"
+                  aria-hidden="true"
+                >
+                  <Check v-if="row.layer.visible" :size="10" :stroke-width="3.5" />
+                </span>
               </button>
-              <span
-                class="layer-color-dot"
-                :class="{ 'cgda-readiness-wave': row.layer.availabilityState === 'ready' }"
-                :style="{ background: row.layer.accentColor }"
-                aria-hidden="true"
-              ></span>
               <strong
                 class="layer-name"
                 :title="

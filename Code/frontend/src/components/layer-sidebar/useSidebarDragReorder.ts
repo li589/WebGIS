@@ -4,13 +4,33 @@ import type { SidebarDragDeps } from './sidebar-layers-deps'
 import { LAYERS_COPY } from '../../ui-copy'
 
 export type ActiveTocRow =
-  | { kind: 'group'; groupId: string; key: string }
+  | { kind: 'group'; groupId: string; key: string; collapsed: boolean }
   | {
       kind: 'layer'
       layer: ActiveLayerDisplay
       key: string
       indented: boolean
     }
+
+const EXPANDED_GROUPS_KEY = 'cgda.sidebar.expandedGroups'
+
+/**
+ * 组展开记忆（2026-10-19）：默认折叠，只记住用户手动展开过的组。
+ * 存「展开集合」而非「折叠集合」，这样从没见过的组（新跑完的工作流）天然是收起的。
+ * 写入时剔除已消失的 groupId，避免 localStorage 无限增长。
+ */
+function loadExpandedGroups(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_GROUPS_KEY)
+    if (!raw) return new Set()
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((v): v is string => typeof v === 'string'))
+  } catch {
+    // localStorage 不可用（隐私模式等）⇒ 退化为仅当前会话有效
+    return new Set()
+  }
+}
 
 /**
  * Extracts drag/drop reordering logic from LayerSidebar.vue.
@@ -33,14 +53,47 @@ export function useSidebarDragReorder(
   const dragOverInstanceId = ref<string | null>(null)
   const dragOverGroupId = ref<string | null>(null)
 
+  /** 用户手动展开过的组（未命中的组一律按折叠渲染） */
+  const expandedGroups = ref<Set<string>>(loadExpandedGroups())
+
+  function isGroupExpanded(groupId: string): boolean {
+    return expandedGroups.value.has(groupId)
+  }
+
+  function toggleGroupCollapsed(groupId: string) {
+    const next = new Set(expandedGroups.value)
+    if (next.has(groupId)) next.delete(groupId)
+    else next.add(groupId)
+    expandedGroups.value = next
+    try {
+      const alive = new Set(runLayerGroups.value.map((g) => g.groupId))
+      window.localStorage.setItem(
+        EXPANDED_GROUPS_KEY,
+        JSON.stringify([...next].filter((id) => alive.has(id))),
+      )
+    } catch {
+      // 写入失败不影响本次会话的展开状态
+    }
+  }
+
   /** 组头 + 缩进成员的 Active TOC 行 */
   const activeTocRows = computed<ActiveTocRow[]>(() => {
     const rows: ActiveTocRow[] = []
     const seen = new Set<string>()
     for (const layer of activeLayersDisplay.value) {
-      if (layer.runGroupId && !seen.has(layer.runGroupId)) {
-        seen.add(layer.runGroupId)
-        rows.push({ kind: 'group', groupId: layer.runGroupId, key: `g-${layer.runGroupId}` })
+      if (layer.runGroupId) {
+        const collapsed = !isGroupExpanded(layer.runGroupId)
+        if (!seen.has(layer.runGroupId)) {
+          seen.add(layer.runGroupId)
+          rows.push({
+            kind: 'group',
+            groupId: layer.runGroupId,
+            key: `g-${layer.runGroupId}`,
+            collapsed,
+          })
+        }
+        // 折叠组的成员行不渲染；activeLayersDisplay 本身不动，拖拽落点仍按完整列表计算
+        if (collapsed) continue
       }
       rows.push({
         kind: 'layer',
@@ -153,6 +206,9 @@ export function useSidebarDragReorder(
     dragOverInstanceId,
     dragOverGroupId,
     activeTocRows,
+    expandedGroups,
+    isGroupExpanded,
+    toggleGroupCollapsed,
     runGroupOf,
     groupStatusLabel,
     onDragStart,

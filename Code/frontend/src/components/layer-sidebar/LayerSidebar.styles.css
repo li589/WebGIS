@@ -1199,7 +1199,37 @@ h2 {
   border-radius: var(--sidebar-soft-radius);
   background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-1) 100%);
   box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.65);
-  cursor: default;
+  /* 2026-10-19：整行可点即折叠/展开 */
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 折叠箭头（2026-10-19）：与 AppSelect 下拉同一条路径 m6 9 6 6 6-6，
+   尺寸 16px、描边 2、圆角端点；折叠时同一图标旋转 -90°。 */
+.group-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    transform var(--motion-fast) var(--ease-soft);
+}
+
+.group-collapse-btn:hover {
+  color: var(--text-primary);
+}
+
+.layer-group-header.collapsed .group-collapse-btn {
+  transform: rotate(-90deg);
 }
 
 .layer-group-header.computing {
@@ -1229,8 +1259,9 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  user-select: text;
-  cursor: text;
+  /* 2026-10-19：整行点击即折叠，标题不再允许文本选择，避免拖选误触 */
+  user-select: none;
+  cursor: pointer;
 }
 
 .group-status-chip {
@@ -1365,12 +1396,38 @@ h2 {
   color: var(--text-primary);
 }
 
-.layer-color-dot {
-  width: 0.36rem;
-  height: 0.36rem;
-  border-radius: 50%;
+/* 图显隐勾选框（2026-10-19）：替代原来的圆点图标。
+   选中＝主题蓝底（--accent-blue-deep）+ 白色对勾；未选中＝空心框。
+   其余颜色全部沿用既有 token，不新增色值。 */
+.vis-check-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.94rem;
+  height: 0.94rem;
+  box-sizing: border-box;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 0.26rem;
+  color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 0 4px currentColor;
+  transition:
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
+}
+
+.vis-check-box.is-on {
+  background: var(--accent-blue-deep);
+  border-color: var(--accent-blue-deep);
+}
+
+.vis-btn:hover .vis-check-box:not(.is-on) {
+  border-color: var(--text-muted);
+}
+
+.vis-check-box--sm {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 0.22rem;
 }
 
 .layer-name {
@@ -1607,6 +1664,7 @@ h2 {
 .add-btn:focus-visible,
 .layer-item:focus-visible,
 .layer-group-header:focus-visible,
+.group-collapse-btn:focus-visible,
 .drag-handle:focus-visible,
 .vis-btn:focus-visible,
 .del-btn:focus-visible,
@@ -1622,6 +1680,11 @@ h2 {
   .empty-icon,
   .spin-dot {
     animation: none !important;
+  }
+
+  .group-collapse-btn,
+  .vis-check-box {
+    transition: none;
   }
 }
 

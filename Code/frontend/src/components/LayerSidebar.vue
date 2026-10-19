@@ -1013,6 +1013,7 @@ onMounted(() => {
       @on-drag-end="drag.onDragEnd"
       @on-layer-context-menu="ctxMenu.onLayerContextMenu"
       @on-group-context-menu="ctxMenu.onGroupContextMenu"
+      @toggle-group="drag.toggleGroupCollapsed"
     />
 
     <!-- ── Footer ─────────────────────────────────────────────────────── -->
