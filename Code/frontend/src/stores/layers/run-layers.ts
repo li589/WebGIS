@@ -1266,11 +1266,18 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   }
 
   /**
-   * 找出「同一工作流 + 同一源图层」的可复用运行组（后建者优先）。
+   * 找出「同一产物目录」的可复用运行组（后建者优先）。
    *
-   * 此前每次保存/运行都无条件新建组，侧栏会并排堆出多个同名
-   * 「风云卫星 平均散射约束反演产品」，用户误判为出了多份产物
-   * （盘上其实只有一份，只是被多组图层同时引用）。
+   * 判据以**产物目录**为准：后端 `resolve_block_timeseries_layer_id(layer_key=layer_id)`
+   * 用 layer_id 哈希出 `imported-*` 目录，而前端的 `sourceLayerId` 就是同一个
+   * layer_id ⇒ sourceLayerId 相同即「写进同一批产物目录」。
+   *
+   * 典型场景：「风云 … 反演」与「风云 … 反演（在线）」是两个工作流、标题也差
+   * 一个「（在线）」，但 layer_id 同为 `method-fy-omega-doy-avg`、产物落在同一批
+   * 目录。此前按「同工作流或同标题」判断，两者都不满足 ⇒ 并排建两组，
+   * 侧栏把同一份数据（同一批 imported-*）显示成两遍，用户误以为出了两份产物。
+   *
+   * sourceLayerId 缺失的历史组仍走「同工作流或同标题」兜底。
    */
   function findReusableRunGroup(options: {
     title: string
@@ -1287,10 +1294,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     for (let i = runLayerGroups.value.length - 1; i >= 0; i -= 1) {
       const g = runLayerGroups.value[i]!
       const gSource = resolveInversionCatalogId(String(g.sourceLayerId || ''))
-      // 两侧都能解析出源 id 且不一致 ⇒ 是同一工作流的另一个数据源，不复用
-      if (source && gSource && gSource !== source) continue
-      // 同工作流，或同标题（「添加图层」与工作流页可能用不同 workflow id，
-      // 但产出的组名一致，用户眼里就是同一组）
+      if (source && gSource) {
+        // 两侧都能解析出产物图层 id：相同 ⇒ 同一批产物目录，直接复用；
+        // 不同 ⇒ 同一工作流的另一个数据源，不复用。
+        if (gSource !== source) continue
+        return g
+      }
+      // 源 id 缺失（历史组）：退回同工作流 / 同标题判断
       const sameWorkflow = Boolean(options.workflowId) && g.workflowId === options.workflowId
       const sameTitle = Boolean(expectedTitle) && g.title === expectedTitle
       if (!sameWorkflow && !sameTitle) continue
@@ -1320,12 +1330,31 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       // 否则每重跑一次侧栏就多叠一组同名图层。
       groupId = reusable.groupId
       const layers = deps.getActiveLayers()
-      for (const instanceId of [...reusable.memberInstanceIds]) {
-        const idx = layers.findIndex((l) => l.instanceId === instanceId)
-        if (idx < 0) continue
-        layers[idx]!.importedRaster = undefined
-        layers.splice(idx, 1)
+      const pruneInstances = (instanceIds: string[]) => {
+        for (const instanceId of instanceIds) {
+          const idx = layers.findIndex((l) => l.instanceId === instanceId)
+          if (idx < 0) continue
+          layers[idx]!.importedRaster = undefined
+          layers.splice(idx, 1)
+        }
       }
+      // 同一产物目录的其它组（「…（本地）」与「…（在线）」曾各建一组）指向同一批
+      // imported-*，属于同一份数据显示两遍 ⇒ 连成员一起摘掉并解散该组。
+      // 只动 UI 引用，后端 overlay 与盘上产物均不受影响。
+      const sourceKey = resolveInversionCatalogId(String(options.sourceLayerId || ''))
+      if (sourceKey) {
+        const duplicated = runLayerGroups.value.filter(
+          (g) =>
+            g.groupId !== groupId &&
+            resolveInversionCatalogId(String(g.sourceLayerId || '')) === sourceKey,
+        )
+        if (duplicated.length) {
+          for (const dup of duplicated) pruneInstances(dup.memberInstanceIds)
+          const dropIds = new Set(duplicated.map((g) => g.groupId))
+          runLayerGroups.value = runLayerGroups.value.filter((g) => !dropIds.has(g.groupId))
+        }
+      }
+      pruneInstances([...reusable.memberInstanceIds])
       reusable.memberInstanceIds = []
     }
 

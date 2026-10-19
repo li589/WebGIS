@@ -21,6 +21,7 @@ import {
   type PersistedVectorLayer,
 } from './workspace-persist'
 import { scheduleWorkspaceSyncPush, suppressWorkspaceSyncPush } from './workspace-sync'
+import { resolveInversionCatalogId } from './inversion-catalog'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -217,6 +218,31 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
   ) {
     const activeLayers = deps.getActiveLayers()
     const runLayerGroups = deps.getRunLayerGroups()
+
+    const catalogOf = (instanceId: string) =>
+      activeLayers.find((l) => l.instanceId === instanceId)?.catalogId || ''
+
+    /** 同产物目录的组优先级：真实数据层多的优先（占位层不算），再看运行状态 */
+    const groupRank = (status: string | undefined): number => {
+      if (status === 'computing') return 3
+      if (status === 'ready' || status === 'succeeded') return 2
+      return 1
+    }
+    /** 已挂上真实栅格的成员数：占位成员（排队/运行中）不计入 */
+    const realMemberCount = (ids: string[]) =>
+      ids.filter((id) => {
+        const layer = activeLayers.find((l) => l.instanceId === id)
+        return Boolean(layer?.importedRaster?.overlayLayerId)
+      }).length
+
+    type RestoredGroup = {
+      savedGroup: NonNullable<typeof snap.groups>[number]
+      memberInstanceIds: string[]
+      computing: boolean
+      sourceKey: string
+    }
+
+    const pending: RestoredGroup[] = []
     for (const savedGroup of snap.groups || []) {
       if (savedGroup.runId && isRunDismissed(savedGroup.runId)) continue
       if (
@@ -235,7 +261,86 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         }
       }
       if (!memberInstanceIds.length) continue
-      const computing = savedGroup.status === 'computing'
+      pending.push({
+        savedGroup,
+        memberInstanceIds,
+        computing: savedGroup.status === 'computing',
+        sourceKey: resolveInversionCatalogId(String(savedGroup.sourceLayerId || '')),
+      })
+    }
+
+    // 同一产物目录（sourceLayerId 归一化后相同）只恢复一组：
+    // 「…（本地）」与「…（在线）」是两个工作流、标题也不同，但后端用同一个
+    // layer_id 哈希出同一批 imported-* 目录 ⇒ 本质是同一份数据显示两遍。
+    // 保留优先级：computing（有任务在跑）> ready/succeeded > failed/cancelled，
+    // 同优先级取成员多的；落败组的成员按 catalogId 并入保留组，
+    // 重复项只摘侧栏引用（后端 overlay 与盘上产物均不动）。
+    const keepers = new Map<string, RestoredGroup>()
+    const restored: RestoredGroup[] = []
+    const droppedInstanceIds: string[] = []
+    for (const item of pending) {
+      if (!item.sourceKey) {
+        restored.push(item)
+        continue
+      }
+      const keeper = keepers.get(item.sourceKey)
+      if (!keeper) {
+        keepers.set(item.sourceKey, item)
+        restored.push(item)
+        continue
+      }
+      const itemWins =
+        realMemberCount(item.memberInstanceIds) > realMemberCount(keeper.memberInstanceIds) ||
+        (realMemberCount(item.memberInstanceIds) === realMemberCount(keeper.memberInstanceIds) &&
+          (groupRank(item.savedGroup.status) > groupRank(keeper.savedGroup.status) ||
+            (groupRank(item.savedGroup.status) === groupRank(keeper.savedGroup.status) &&
+              item.memberInstanceIds.length > keeper.memberInstanceIds.length)))
+      const winner = itemWins ? item : keeper
+      const loser = itemWins ? keeper : item
+      if (itemWins) {
+        keepers.set(item.sourceKey, item)
+        const slot = restored.indexOf(keeper)
+        if (slot >= 0) restored[slot] = item
+        else restored.push(item)
+      }
+      const seen = new Map<string, string>()
+      for (const id of winner.memberInstanceIds) {
+        const cid = catalogOf(id)
+        if (cid) seen.set(cid, id)
+      }
+      const hasReal = (id: string) =>
+        Boolean(activeLayers.find((l) => l.instanceId === id)?.importedRaster?.overlayLayerId)
+      for (const id of loser.memberInstanceIds) {
+        const cid = catalogOf(id)
+        if (!cid) {
+          droppedInstanceIds.push(id)
+          continue
+        }
+        const existing = seen.get(cid)
+        if (!existing) {
+          seen.set(cid, id)
+          winner.memberInstanceIds.push(id)
+          continue
+        }
+        // 同一 catalogId：占位 vs 真实数据时保留有数据的那一个
+        if (hasReal(id) && !hasReal(existing)) {
+          const pos = winner.memberInstanceIds.indexOf(existing)
+          if (pos >= 0) winner.memberInstanceIds[pos] = id
+          seen.set(cid, id)
+          droppedInstanceIds.push(existing)
+        } else {
+          droppedInstanceIds.push(id)
+        }
+      }
+    }
+
+    for (const id of droppedInstanceIds) {
+      const idx = activeLayers.findIndex((l) => l.instanceId === id)
+      if (idx >= 0) activeLayers.splice(idx, 1)
+    }
+
+    for (const item of restored) {
+      const { savedGroup, memberInstanceIds, computing } = item
       runLayerGroups.push({
         groupId: savedGroup.groupId,
         runId: savedGroup.runId || '',
