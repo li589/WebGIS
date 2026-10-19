@@ -128,7 +128,7 @@
           "ndvi_mode": "DOY_CLIM",
           "sf_mode": "STATIC",
           "avg_build_start_year": 2025,
-          "avg_build_end_year": 2025,
+          "avg_build_end_year": 2026,
           "freq_ghz": 1.4,
           "lambda_tau": 20.0,
           "pixel_chunk_size": 200000,

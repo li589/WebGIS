@@ -7,14 +7,22 @@
 - 登录链路（跨三个子域）::
 
     GET  https://satellite.nsmc.org.cn/DataPortal/v1/data/user/login?newurl=<home>
-      → 302 http://fy4.nsmc.org.cn/center/v1/user/login?lk=<loginKey>&rd=<sourceURL>
+      → 302 http://data.nsmc.org.cn/authcenter/v1/user/login
+            ?lk=<loginKey>&rd=<sourceURL>
     页面隐藏字段: keyCN（base64url RSA-2048 公钥）/ inputLoginKeyCN / inputSourceURLCN
-    验证码:      http://fy4.nsmc.org.cn/center/v1/user/validateCode?data=<rand>（GIF）
-    提交:        POST http://fy4.nsmc.org.cn/center/v1/user/commit
+                 / captchaIdCN（空值，由页面 JS 生成；本客户端自行生成）
+    验证码:      http://data.nsmc.org.cn/authcenter/v1/user/validateCode
+                 ?captchaId=<id>&data=<rand>（GIF）
+    提交:        POST http://data.nsmc.org.cn/authcenter/v1/user/commit
                  JSON {userName, thePassword: RSA(PKCS#1 v1.5), validateCode,
-                       loginKey, sourceURL}
+                       loginKey, sourceURL, captchaId}
     令牌同步:    GET https://data.nsmc.org.cn/portalsite/sup/user/tokensync.aspx?token=…
                  （同步后 SHIRO cookie 跨 satellite/data 子域生效）
+
+  说明：门户已把登录网关从 ``fy4.nsmc.org.cn/center`` 迁到
+  ``data.nsmc.org.cn/authcenter``；继续向旧网关提交会返回
+  ``status=-9 页面停留时间过长``（在校验密码之前就被拒）。网关地址由
+  ``CGDA_NSMC_CENTER_BASE`` 覆盖（见 :mod:`ingest.endpoints`）。
 
 - 会话检查: ``GET /v1/data/selection/file/<任意名>/download/status`` → ``status==1``
   即有效（``resource`` 是否为直链与文件 DMZ 状态相关，可为 null）。
@@ -352,8 +360,13 @@ class NsmcPortalClient:
             raise NsmcDownloadError("NSMC 登录页隐藏字段缺失（keyCN/loginKey）")
 
         # ② 验证码（与登录页同一 center 会话）
+        #    门户改版后验证码按 captchaId 隔离：图片地址要带它，提交体也要回传同一个值。
+        #    登录页的 #captchaIdCN 是空值、由页面 JS 生成，故这里自行生成（十六进制，
+        #    与前端风格一致；服务端只当作命名空间键，不校验格式）。
+        captcha_id = hidden("captchaIdCN") or os.urandom(16).hex()
         _, image, _ = self._request(
-            f"{_CENTER_BASE}/validateCode?data={random.randint(0, 1 << 20)}"
+            f"{_CENTER_BASE}/validateCode?captchaId={captcha_id}"
+            f"&data={random.randint(0, 1 << 20)}"
         )
         if len(image) < 100:
             raise NsmcDownloadError("NSMC 验证码获取失败")
@@ -367,6 +380,7 @@ class NsmcPortalClient:
                 "validateCode": code,
                 "loginKey": login_key,
                 "sourceURL": source_url,
+                "captchaId": captcha_id,
             }
         ).encode("utf-8")
         result = self._get_json(
