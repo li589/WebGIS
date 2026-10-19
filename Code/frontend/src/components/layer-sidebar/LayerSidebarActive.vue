@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { LAYERS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
-import { productTagDescription } from '../../utils/workflow-expected-outputs'
+import { PRODUCT_TAG_LABELS, productTagDescription } from '../../utils/workflow-expected-outputs'
 import { formatTimeKeyLabel } from '../../utils/time-key-format'
 import { toLayerDisplayName } from '../../utils/layer-display-name'
 import type { DataStatusBadge } from '../../utils/layer-data-status'
-import { Check, ChevronDown, X } from '../ui/icons'
+import { Check, ChevronDown, Info, Layers, MoreHorizontal, X } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { ActiveTocRow } from './useSidebarDragReorder'
 import type { ActiveLayerDisplayLike } from './useSidebarSymbology'
@@ -46,12 +46,28 @@ function isComputingRunMember(layer: ActiveLayerDisplay): boolean {
   return props.runGroupOf(layer.runGroupId)?.status === 'computing'
 }
 
+/**
+ * 名称后的变量短码（2026-10-19）：对齐「土壤水分 SM / 植被光学厚度 VOD / ω」的读法。
+ * 只对已知产物角色（PRODUCT_TAG_LABELS）显示，未知 tag 不猜；
+ * 名称本身已含该短码时跳过，避免出现「VOD VOD」。
+ */
+function layerTagOf(layer: ActiveLayerDisplay): string {
+  const tag = String(layer.runGroupProductTag ?? '')
+    .trim()
+    .toUpperCase()
+  const short = PRODUCT_TAG_LABELS[tag]
+  if (!short) return ''
+  return toLayerDisplayName(layer.name).includes(short) ? '' : short
+}
+
 const emit = defineEmits<{
   selectItem: [instanceId: string]
   zoomToItem: [instanceId: string]
   toggleVisibility: [instanceId: string, event: MouseEvent]
   removeItem: [instanceId: string, event: MouseEvent]
   openJobReport: [instanceId: string]
+  /** 2026-10-19：行尾 ⓘ（查看图层信息）——选中该层并打开右侧信息面板 */
+  openLayerDetails: [instanceId: string]
   showAllLayers: []
   hideAllLayers: []
   removeAllLayers: []
@@ -130,6 +146,9 @@ const emit = defineEmits<{
               <ChevronDown :size="16" aria-hidden="true" />
             </button>
             <span class="group-accent" aria-hidden="true"></span>
+            <span class="group-icon" aria-hidden="true">
+              <Layers :size="13" :stroke-width="2" />
+            </span>
             <strong class="group-title">{{
               toLayerDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
             }}</strong>
@@ -206,6 +225,9 @@ const emit = defineEmits<{
                 "
                 >{{ toLayerDisplayName(row.layer.name) }}</strong
               >
+              <span v-if="layerTagOf(row.layer)" class="layer-tag" aria-hidden="true">{{
+                layerTagOf(row.layer)
+              }}</span>
               <!-- 2026-10-09 按要求隐藏「本地导入」分类胶囊（未删除，取消注释即可恢复）
               <span
                 v-if="!isComputingRunMember(row.layer)"
@@ -214,14 +236,29 @@ const emit = defineEmits<{
                 >{{ getCategoryName(row.layer.category) }}</span
               >
               -->
-              <button
-                class="del-btn"
-                title="移除图层"
-                aria-label="移除图层"
-                @click="emit('removeItem', row.layer.instanceId, $event)"
-              >
-                <X :size="14" aria-hidden="true" />
-              </button>
+              <!-- 行尾操作（2026-10-19）：ⓘ 查看图层信息、⋯ 打开完整操作菜单。
+                   移除图层收进 ⋯ 菜单（danger 分组已有「移除图层」），
+                   行尾不再单独摆红叉，避免一行里出现两个同义入口。 -->
+              <span class="layer-row-actions">
+                <button
+                  class="row-action-btn"
+                  type="button"
+                  title="查看图层信息"
+                  aria-label="查看图层信息"
+                  @click.stop="emit('openLayerDetails', row.layer.instanceId)"
+                >
+                  <Info :size="13" aria-hidden="true" />
+                </button>
+                <button
+                  class="row-action-btn"
+                  type="button"
+                  title="更多操作"
+                  aria-label="更多操作"
+                  @click.stop="emit('onLayerContextMenu', row.layer.instanceId, $event)"
+                >
+                  <MoreHorizontal :size="14" aria-hidden="true" />
+                </button>
+              </span>
             </div>
 
             <!-- 图例行（2026-08-25 UX 简化）：单位已挪入状态行；仅当有

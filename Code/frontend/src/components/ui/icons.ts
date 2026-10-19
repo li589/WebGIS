@@ -30,6 +30,7 @@ export {
   ChevronDown,
   ChevronUp,
   Menu,
+  MoreHorizontal,
   Maximize2,
   Minimize2,
   // ── 信息 / 状态 ──
@@ -45,6 +46,7 @@ export {
   LoaderCircle,
   // ── 图层 / 地图 ──
   Map,
+  Layers,
   Satellite,
   Globe,
   Moon,

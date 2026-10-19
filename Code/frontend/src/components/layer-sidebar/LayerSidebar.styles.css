@@ -1097,7 +1097,9 @@ h2 {
    - 列表项较多时仍可滚动 */
 .layer-list {
   display: grid;
-  gap: 0.16rem;
+  /* 2026-10-19：卡片间隙 0.16 → 0.26rem，让成员卡更像独立卡片
+     （参考版是卡间留白），同时保持组内紧凑、不改变整体排布 */
+  gap: 0.26rem;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -1250,6 +1252,15 @@ h2 {
   flex-shrink: 0;
 }
 
+/* 组头图标（2026-10-19）：对齐参考版的「叠层」标识。
+   与左侧竖条同色系（--text-muted），不引入新色值。 */
+.group-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .group-title {
   font-size: var(--font-size-caption);
   font-weight: 650;
@@ -1321,6 +1332,11 @@ h2 {
   font-size: var(--font-size-caption);
   color: var(--text-muted);
   flex-shrink: 0;
+  /* 2026-10-19：层数做成胶囊（参考版「3 层」），只用既有边框/文字 token */
+  padding: 0.02rem 0.38rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  line-height: 1.35;
 }
 
 .layer-item.in-run-group {
@@ -1431,7 +1447,10 @@ h2 {
 }
 
 .layer-name {
-  flex: 1;
+  /* 2026-10-19：不再独占剩余宽度，让名称与变量短码靠左成组，
+     右侧操作按钮用 margin-left:auto 顶到行尾（参考版读法） */
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
@@ -1440,6 +1459,48 @@ h2 {
   text-overflow: ellipsis;
   user-select: text;
   cursor: text;
+}
+
+/* 变量短码（2026-10-19）：SM / VOD / ω，紧跟图层名，弱化处理不抢主名 */
+.layer-tag {
+  flex-shrink: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  user-select: none;
+  margin-left: -0.06rem;
+}
+
+/* 行尾操作组（2026-10-19）：ⓘ 与 ⋯ 并列，尺寸与删除叉一致保持行高不变 */
+.layer-row-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.row-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.32rem;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft);
+}
+
+.row-action-btn:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 
 .layer-chip {

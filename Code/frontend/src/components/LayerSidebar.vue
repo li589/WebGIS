@@ -769,6 +769,16 @@ function openActive() {
   void nextTick(() => scrollSidebarChromeIntoView())
 }
 
+/**
+ * 行尾 ⓘ：选中该图层并打开右侧信息面板（2026-10-19）。
+ * 复用既有 analysisFocusRequest 机制：`#layer-<instanceId>` 是信息面板
+ * 「选中图层」区块的 id；找不到时回退到顶部总览，保证面板一定会展开。
+ */
+function openLayerDetails(instanceId: string) {
+  selectItem(instanceId)
+  uiStore.requestAnalysisFocus([`layer-${instanceId}`, 'global-overview'])
+}
+
 function addCatalogItem(
   catalogId: string,
   isAdminBoundary = false,
@@ -1000,6 +1010,7 @@ onMounted(() => {
       @toggle-visibility="toggleVisibility"
       @remove-item="removeItem"
       @open-job-report="ctxMenu.openJobReport"
+      @open-layer-details="openLayerDetails"
       @show-all-layers="showAllLayers"
       @hide-all-layers="hideAllLayers"
       @remove-all-layers="removeAllLayers"
