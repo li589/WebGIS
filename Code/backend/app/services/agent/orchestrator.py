@@ -73,6 +73,62 @@ def _max_tool_hops() -> int:
         return 4
 
 
+def _prompt_token_budget() -> int:
+    """单次请求的提示词 token 上限。
+
+    Env: ``BACKEND_AGENT_MAX_PROMPT_TOKENS``（默认 20000；<=0 表示不限制）。
+    用途：面向公众开放时，拦下超长提问/超长上下文，避免消耗项目额度。
+    """
+    raw = os.getenv("BACKEND_AGENT_MAX_PROMPT_TOKENS", "20000")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 20000
+    return 0 if value <= 0 else max(1000, value)
+
+
+def _estimate_prompt_tokens(
+    *,
+    system: str,
+    history: list[dict[str, Any]],
+    message: str,
+    tools: list[dict[str, Any]] | None,
+) -> int:
+    """估算一次请求的输入 token（系统提示 + 历史 + 本次提问 + 工具定义）。
+
+    工具 schema 占了每问约 2100~2300 token，必须算进来，否则拦截会失准。
+    """
+    total = estimate_tokens(system or "")
+    total += estimate_tokens(message or "")
+    for item in history or []:
+        if isinstance(item, dict):
+            total += estimate_tokens(str(item.get("content") or ""))
+    if tools:
+        try:
+            total += estimate_tokens(json.dumps(tools, ensure_ascii=False))
+        except (TypeError, ValueError):
+            pass
+    return total
+
+
+def _estimate_messages_tokens(
+    *, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
+) -> int:
+    """估算多轮 messages（含工具结果）的总输入 token，用于工具跳二次守卫。"""
+    total = estimate_tokens(system or "")
+    for item in messages or []:
+        try:
+            total += estimate_tokens(json.dumps(item, ensure_ascii=False, default=str))
+        except (TypeError, ValueError):
+            continue
+    if tools:
+        try:
+            total += estimate_tokens(json.dumps(tools, ensure_ascii=False))
+        except (TypeError, ValueError):
+            pass
+    return total
+
+
 class _EventSteps(list):
     """Step list that emits SSE ``step`` events on append (Phase D)."""
 
@@ -951,6 +1007,63 @@ def run_chat(
 
     system = _build_system(client_context, cred=cred)
     max_out = min(4096, int(profile.get("context_window_output") or 2048))
+
+    # 输入预算守卫：超限直接中止，绝不外呼（防公众乱问消耗项目额度）
+    budget = _prompt_token_budget()
+    budget_tools = (
+        _all_tools_anthropic() if protocol == "anthropic" else _all_tools_openai()
+    )
+    est_in = _estimate_prompt_tokens(
+        system=system,
+        history=history,
+        message=message,
+        tools=budget_tools,
+    )
+    if budget and est_in > budget:
+        reply = (
+            f"这次提问预估需要约 {est_in} token，超过单次上限 {budget} token，"
+            "已中止，没有发送给模型。\n\n"
+            "可以这样绕过：\n"
+            "1. 把问题拆小，一次只问一件事；\n"
+            "2. 新建一个会话（历史越长，输入越大）；\n"
+            "3. 少粘贴大段文本。"
+        )
+        steps.append(
+            {
+                "type": "thought",
+                "summary": "输入超出预算，已中止",
+                "detail": f"estimate≈{est_in} budget={budget}",
+            }
+        )
+        usage = {
+            "prompt_tokens": est_in,
+            "completion_tokens": 0,
+            "total_tokens": est_in,
+            "estimated": True,
+        }
+        # 历史里只存截断版：否则超长提问会污染上下文，导致后续每问都超预算
+        stored_message = (
+            message if len(message) <= 200 else message[:200] + "…（原文过长，已截断）"
+        )
+        append_turn(
+            user_id=user_id,
+            session_id=sid,
+            user_message=stored_message,
+            assistant_message=reply,
+        )
+        out = {
+            "session_id": sid,
+            "reply": reply,
+            "ui_intents": [],
+            "provider": "guard",
+            "profile_id": profile_id,
+            "usage": usage,
+            "steps": list(steps),
+            "confirmations": [],
+        }
+        _emit_stream_tail(on_event, reply=reply, ui_intents=[])
+        return out
+
     steps.append(
         {
             "type": "thought",
@@ -1030,6 +1143,17 @@ def run_chat(
                     )
                 messages.append({"role": "assistant", "content": data.get("content")})
                 messages.append({"role": "user", "content": tool_result_blocks})
+                if budget:
+                    hop_est = _estimate_messages_tokens(
+                        system=system,
+                        messages=messages,
+                        tools=_all_tools_anthropic(),
+                    )
+                    if hop_est > budget:
+                        raise ValueError(
+                            f"工具多轮累计输入预估约 {hop_est} token，"
+                            f"超过单次上限 {budget} token，已中止。"
+                        )
                 data = anthropic_compat.messages_create(
                     base_url=base_url,
                     api_key=api_key,
@@ -1163,6 +1287,17 @@ def run_chat(
                         "content": json.dumps(tres, ensure_ascii=False),
                     }
                 )
+            if budget:
+                hop_est = _estimate_messages_tokens(
+                    system=system,
+                    messages=messages_oai,
+                    tools=_all_tools_openai(),
+                )
+                if hop_est > budget:
+                    raise ValueError(
+                        f"工具多轮累计输入预估约 {hop_est} token，"
+                        f"超过单次上限 {budget} token，已中止。"
+                    )
             data = openai_compat.chat_completions(
                 base_url=base_url,
                 api_key=oai_key,
