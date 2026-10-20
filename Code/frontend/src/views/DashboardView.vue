@@ -434,8 +434,15 @@ const sidePanelDimensions = computed(() => ({
   minWidth: 280,
   maxWidth: 420,
 }))
-// 图层容器默认宽度：292 → 312（略加宽，避免图层名 /「模型输出」等标签换行）
-const layerPanelDimensions = computed(() => ({ ...sidePanelDimensions.value, defaultWidth: 312 }))
+// 默认高度（2026-10-20）：372 → 450——展开默认加载的风云卫星组（组头 + 3 个图层）时
+// 能整组完整显示，不再把第三个图层切掉。只改图层面板，分析/时间轴面板维持 372。
+// 图层容器默认宽度：292 → 312 → 326（用户第 2 轮：再宽一点点，让组名
+// 「风云卫星微波反演产品」与「3 层」胶囊同排不挤）
+const layerPanelDimensions = computed(() => ({
+  ...sidePanelDimensions.value,
+  defaultWidth: 326,
+  defaultHeight: 450,
+}))
 const analysisPanelDimensions = computed(() => ({
   ...sidePanelDimensions.value,
   defaultWidth: 304,

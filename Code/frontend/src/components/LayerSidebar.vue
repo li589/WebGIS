@@ -827,7 +827,14 @@ function hideAllLayers() {
   workspace.setAllLayerVisibility(false)
 }
 
+/**
+ * 清空全部图层（2026-10-20）：原批量栏「全部移除」与头部垃圾桶共用。
+ * 二次确认放在这里——这是不可撤销操作，且头部按钮紧邻「+」，误点代价高。
+ */
 function removeAllLayers() {
+  const count = activeLayersDisplay.value.length
+  if (count === 0) return
+  if (!window.confirm(`确定清空全部 ${count} 个图层？此操作不可撤销。`)) return
   workspace.removeAllLayers()
 }
 
@@ -933,6 +940,7 @@ onMounted(() => {
       @open-library="openLibrary"
       @open-active="openActive"
       @open-group-manager="groupManagerOpen = true"
+      @clear-layers="removeAllLayers"
     />
 
     <!-- ── EMPTY STATE ────────────────────────────────────────────────── -->

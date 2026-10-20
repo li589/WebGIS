@@ -212,6 +212,37 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
     }
   }
 
+  /**
+   * 清掉「与产物组同源的独立占位层」（2026-10-20）。
+   *
+   * 旧版本提交工作流时会额外 `addLayer(源目录 id, …, jobLayer)`，而组内成员的
+   * catalogId 是 `wf-run-*`，两者永远对不上 ⇒ 侧栏出现「一个产物组 + 一条同名
+   * 独立行（排队中）」的重复。根因已在 `run-layers.ts` 的
+   * `syncJobLayerToActiveLayer` 堵住，这里负责清掉此前已经存进快照的残留。
+   *
+   * 判定条件收紧到「三缺一不可」：不在任何组内、没有真实栅格、catalogId 归一化后
+   * 与某个组的 sourceLayerId 相同。只摘侧栏引用，后端 overlay 与盘上产物一概不动。
+   */
+  function pruneStandaloneDuplicatesOfRunGroups() {
+    const layers = deps.getActiveLayers()
+    const groupSourceKeys = new Set(
+      deps
+        .getRunLayerGroups()
+        .map((g) => resolveInversionCatalogId(String(g.sourceLayerId || '')))
+        .filter(Boolean),
+    )
+    if (!groupSourceKeys.size) return
+    for (let i = layers.length - 1; i >= 0; i -= 1) {
+      const layer = layers[i]
+      if (!layer) continue
+      if (layer.runGroupId) continue
+      if (layer.importedRaster?.overlayLayerId) continue
+      const key = resolveInversionCatalogId(String(layer.catalogId || ''))
+      if (!key || !groupSourceKeys.has(key)) continue
+      layers.splice(i, 1)
+    }
+  }
+
   function restoreRunGroupsFromSnapshot(
     snap: NonNullable<ReturnType<typeof loadWorkspaceSnapshot>>,
     instanceIdMap: Map<string, string>,
@@ -429,6 +460,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
     }
 
     restoreRunGroupsFromSnapshot(snap, instanceIdMap)
+    pruneStandaloneDuplicatesOfRunGroups()
 
     if (activeLayers.length && deps.getSidebarView() === 'empty') {
       deps.setSidebarView('active')

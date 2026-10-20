@@ -12,7 +12,48 @@
  *   3. 平台名补全：`风云` → `风云卫星`、`SMAP` → `SMAP卫星`。
  *      只在后面紧跟空格或已到结尾时替换，避免把「风云卫星」「SMAP卫星」
  *      或「风云三号」这类已完整/带型号的名字改坏。
+ *
+ * 另有一条**只给分组标题用**的规则（`toRunGroupDisplayName`），见下。
  */
+
+/**
+ * 反演产品图层组的统一显示名（2026-10-20 用户要求）。
+ *
+ * 为什么要在显示层做：同一个图层组的标题有**四个来源**，文案各不相同——
+ *   ① 图层库「添加」→ `DEFAULT_LAYERS[].groupTitle`
+ *   ② 稳定编号兜底探测 → `resolveInversionGroupMeta()` 现拼的模板串
+ *   ③ 工作流跑完回挂 → 工作流定义 JSON 的 `extra.group_title`（在 Data 目录里，
+ *      后端同步维护，改前端代码管不到）
+ *   ④ 工作区快照恢复 → 存的是旧标题，换设备还会把旧名带回来
+ * 逐个改必然漏一处（用户原话：「从图层容器添加是对的，从工作流添加又是旧的」），
+ * 所以在渲染前统一归一，任何入口进来都显示新名字。
+ *
+ * 只按平台归一，不区分「平均/动态」「单源/双源」——用户明确要求统一。
+ * GLDAS 那条保持原样：名字里带着第三套数据源，归并会丢信息。
+ */
+function canonicalInversionGroupTitle(raw: string): string {
+  if (!/散射约束/.test(raw)) return ''
+  if (/GLDAS/i.test(raw)) return ''
+  if (/SMAP/i.test(raw)) return 'SMAP卫星反演产品'
+  if (/风云|FY/i.test(raw)) return '风云卫星微波反演产品'
+  return ''
+}
+
+/**
+ * 图层组标题专用改写（侧栏「数据名称」分组头）。
+ *
+ * 与 `toLayerDisplayName` 分开的原因：目录条目（图层库列表）里
+ * 「风云 平均反演（本地）/（在线）/动态（本地）…」是**不同数据集**，
+ * 若一并归一会变成四个同名条目，反而分不清。分组头只表示「这一堆产物
+ * 属于同一个反演产品」，归一才安全。
+ */
+export function toRunGroupDisplayName(raw: string | null | undefined): string {
+  const name = String(raw ?? '').trim()
+  const canonical = canonicalInversionGroupTitle(name)
+  if (canonical) return canonical
+  return toLayerDisplayName(name)
+}
+
 export function toLayerDisplayName(raw: string | null | undefined): string {
   let name = String(raw ?? '').trim()
   if (!name) return ''

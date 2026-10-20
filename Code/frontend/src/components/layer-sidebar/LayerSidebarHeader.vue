@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LayoutGrid } from '../ui/icons'
+import { LayoutGrid, Trash2 } from '../ui/icons'
 import Tooltip from '../ui/Tooltip.vue'
 import AnimatedNumber from '../ui/AnimatedNumber.vue'
 
@@ -14,6 +14,8 @@ const emit = defineEmits<{
   openLibrary: []
   openActive: []
   openGroupManager: []
+  /** 2026-10-20：头部垃圾桶——清空全部图层（二次确认在父组件做） */
+  clearLayers: []
 }>()
 </script>
 
@@ -77,6 +79,18 @@ const emit = defineEmits<{
             </button>
           </Tooltip>
         </div>
+        <!-- 2026-10-20 用户要求：头部最右侧加垃圾桶＝清空全部图层。
+             只在有图层时出现；点击后由父组件弹二次确认。 -->
+        <Tooltip v-if="activeLayerCount > 0" text="清空图层">
+          <button
+            class="header-clear-btn"
+            type="button"
+            aria-label="清空全部图层"
+            @click="emit('clearLayers')"
+          >
+            <Trash2 :size="14" :stroke-width="2" aria-hidden="true" />
+          </button>
+        </Tooltip>
       </div>
     </div>
   </div>

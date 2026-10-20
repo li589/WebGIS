@@ -1,7 +1,9 @@
 /* ── Base panel ──────────────────────────────────────────────────────────── */
 .panel {
-  --sidebar-card-radius: 0.72rem;
-  --sidebar-soft-radius: 0.6rem;
+  --sidebar-card-radius: 0.6rem;
+  /* 2026-10-20（用户第 2 轮）：圆角统一收小一档——0.6 → 0.42rem（约 9.6px → 6.7px）。
+     只动侧栏自己的变量，不影响其他面板。 */
+  --sidebar-soft-radius: 0.42rem;
   --sidebar-section-padding: 0.46rem;
   --sidebar-inner-padding: 0.32rem;
   display: flex;
@@ -9,7 +11,8 @@
   gap: 0.42rem;
   padding: 0.46rem;
   border: 1px solid var(--border-default);
-  border-radius: 0.88rem;
+  /* 2026-10-20（用户第 2 轮）：面板外圆角同步收小 0.88 → 0.72rem */
+  border-radius: 0.72rem;
   background: linear-gradient(180deg, var(--panel-bg-top), var(--panel-bg-bottom));
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -60,6 +63,33 @@
   flex: 0 0 auto;
   flex-wrap: nowrap;
   justify-content: flex-end;
+}
+
+/* 头部清空按钮（2026-10-20）：常态低强调，悬停才转危险色——
+   它紧邻「+」，不能做成一眼就想点的样子。 */
+.header-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.42rem;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
+}
+
+.header-clear-btn:hover {
+  color: var(--danger);
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
 }
 
 h2 {
@@ -879,32 +909,42 @@ h2 {
   white-space: nowrap;
 }
 
+/* 2026-10-20（用户第 2 轮）：这枚「自动 / 本地 / 在线」徽标原先带蓝底 + 蓝框，
+   看着像个被选中的方块，点一下还会出现焦点框。改为纯文字小标签：
+   无底色、无边框、无焦点框，状态只靠文字本身表达，悬停才给底色提示可点。
+   功能不变——点击仍在 自动 → 本地 → 在线 之间循环。 */
 .source-route-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.1rem 0.36rem;
-  border-radius: 0.24rem;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-2, var(--surface-sunken));
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
+  padding: 0.06rem 0.22rem;
+  border-radius: 0.2rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  font: inherit;
 }
 .source-route-badge:hover {
   background: var(--surface-hover, var(--surface-2));
+  color: var(--text-primary);
 }
-.source-route-auto {
-  border-color: var(--accent-border, var(--border-strong));
-  background: var(--accent-surface, var(--surface-2));
-  color: var(--accent-strong, var(--text-strong));
+/* 焦点不画蓝框（用户明确要求），改用文字提亮 + 极淡底色 */
+.source-route-badge:focus,
+.source-route-badge:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: var(--surface-hover, var(--surface-2));
+  color: var(--text-primary);
 }
+.source-route-auto,
 .source-route-online {
-  background: var(--category-weather-surface);
-  border-color: var(--category-weather-border);
-  color: var(--category-weather);
+  /* 保留类的语义钩子，但不再上蓝底蓝框 */
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
 }
 
 .plan-pending-badge {
@@ -1097,9 +1137,9 @@ h2 {
    - 列表项较多时仍可滚动 */
 .layer-list {
   display: grid;
-  /* 2026-10-19：卡片间隙 0.16 → 0.26rem，让成员卡更像独立卡片
-     （参考版是卡间留白），同时保持组内紧凑、不改变整体排布 */
-  gap: 0.26rem;
+  /* 2026-10-20：组块与独立图层需要不同间距（组块之间要大、组内成员要紧贴成一张卡），
+     统一 gap 做不到，故归零后改由各元素的 margin-top 精确定距。 */
+  gap: 0;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -1111,19 +1151,29 @@ h2 {
   padding-right: 0.08rem;
 }
 
+/* 首行不顶出上间距 */
+.layer-list > :first-child {
+  margin-top: 0;
+}
+
 /* ── Layer item ────────────────────────────────────────────────────────── */
 .layer-item {
   display: grid;
   /* 始终展示三行：主行 + 图例 + 底行，统一间距 */
   gap: 0.18rem;
   padding: 0.3rem 0.42rem;
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--accent);
+  /* 2026-10-20（用户第 2 轮）：独立图层卡片外框由 border-strong（浅色主题下是蓝色）
+     换成中性 border-default，避免整栏到处是蓝框。 */
+  border: 1px solid var(--border-default);
+  /* 2026-10-20 用户要求：去掉每条图层左侧的彩色竖条（图层容器的装饰，
+     组内成员尤其要干净），选中/悬停改由整行底色表达。 */
   border-radius: var(--sidebar-soft-radius);
   background: var(--surface-1);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
+  /* 独立卡与上方元素的间距（组内成员会被 .in-run-group 归零） */
+  margin-top: 0.26rem;
   animation: layer-item-fade-in var(--motion-base) var(--ease-standard) both;
   transition:
     border-color var(--motion-base) var(--ease-standard),
@@ -1166,26 +1216,27 @@ h2 {
   }
 }
 
+/* 2026-10-20：容器不再有独立边框可换色，交互态一律用整行底色表达。
+   半透明色叠在 surface-1 上（否则会透出面板底，组内成员看着不像一张卡）。 */
 .layer-item:hover {
-  border-color: rgba(90, 162, 255, 0.55);
-  box-shadow: 0 4px 12px -8px rgba(90, 162, 255, 0.35);
+  background: linear-gradient(var(--surface-hover), var(--surface-hover)), var(--surface-1);
 }
 
 .layer-item.active {
-  background: var(--surface-3);
-  border-color: rgba(90, 162, 255, 0.65);
-  box-shadow:
-    inset 0 0 0 1px var(--surface-hover),
-    0 12px 22px -18px rgba(90, 162, 255, 0.4);
+  background: linear-gradient(var(--accent-surface), var(--accent-surface)), var(--surface-1);
+  /* 2026-10-20（用户第 2 轮）：去掉那圈 1px 蓝色内描边——用户说点一下就冒出一个
+     "蓝色方框"。选中态只用浅蓝底色表达；组内成员的左侧蓝条另见 .in-run-group.active。 */
 }
 
 .layer-item.hidden {
-  opacity: 0.55;
+  /* 2026-10-20（用户第 2 轮）：0.55 → 0.78。0.55 把图层名压成灰字，
+     用户误以为"颜色变了"；这里只做轻微降权，名称仍可读。 */
+  opacity: 0.78;
 }
 
 .layer-item.drag-over {
-  border-color: var(--border-strong);
-  background: var(--accent-surface);
+  background: linear-gradient(var(--accent-surface), var(--accent-surface)), var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
   transition:
     border-color var(--motion-fast) var(--ease-soft),
     background-color var(--motion-fast) var(--ease-soft);
@@ -1195,15 +1246,30 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin: 0.35rem 0 0.15rem;
-  padding: 0.42rem 0.5rem;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--sidebar-soft-radius);
+  /* 2026-10-20：组块之间留大间距（0.55rem），组头与成员之间贴合成一张卡 */
+  margin: 0.55rem 0 0;
+  padding: 0.5rem 0.62rem;
+  /* 2026-10-20（用户第 2 轮）：组块**不要整圈蓝框**，只保留左侧一条蓝竖条。
+     做法：外框换成极淡中性发丝线（--border-subtle，6% 透明度，几乎看不见），
+     左侧用 3px 内阴影画蓝条；组头与每个成员都画同一条 ⇒ 纵向连成一整条。
+     ⚠ 原先是 border: 1px solid var(--border-strong)，浅色主题下 --border-strong
+     是蓝色（rgba(0,113,227,.38)），这就是"外面那圈蓝框"的来源。 */
+  border: 1px solid var(--border-subtle);
+  /* 组块卡片：组头只画上圆角，成员沿左右边框往下拼，最后一个成员补下圆角 */
+  border-radius: var(--sidebar-soft-radius) var(--sidebar-soft-radius) 0 0;
+  border-bottom: none;
   background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-1) 100%);
-  box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.65);
+  box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.55);
   /* 2026-10-19：整行可点即折叠/展开 */
   cursor: pointer;
   user-select: none;
+}
+
+/* 折叠时组头自己就是一个完整卡片，下边要收口 */
+.layer-group-header.collapsed {
+  border-radius: var(--sidebar-soft-radius);
+  /* 折叠时组头自己就是完整卡片，底边补回来（外框是中性发丝线） */
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* 折叠箭头（2026-10-19）：与 AppSelect 下拉同一条路径 m6 9 6 6 6-6，
@@ -1234,8 +1300,8 @@ h2 {
   transform: rotate(-90deg);
 }
 
+/* 运行中：不再靠边框（外框已改中性发丝线），改把左侧蓝条点亮成琥珀色 */
 .layer-group-header.computing {
-  border-color: rgba(255, 196, 86, 0.35);
   box-shadow: inset 3px 0 0 rgba(255, 196, 86, 0.75);
 }
 
@@ -1244,13 +1310,7 @@ h2 {
   background: var(--accent-surface);
 }
 
-.group-accent {
-  width: 0.28rem;
-  height: 1.1rem;
-  border-radius: 999px;
-  background: var(--border-strong);
-  flex-shrink: 0;
-}
+/* 2026-10-20：原 .group-accent（折角箭头右侧那条灰色短竖条）已随模板 span 一并删除 */
 
 /* 组头图标（2026-10-19）：对齐参考版的「叠层」标识。
    与左侧竖条同色系（--text-muted），不引入新色值。 */
@@ -1262,7 +1322,9 @@ h2 {
 }
 
 .group-title {
-  font-size: var(--font-size-caption);
+  /* 2026-10-20 字号层级（用户要求「图层字号比日期大」）：
+     组标题 14px > 图层名 13px > 色带刻度 / 日期 10.5px */
+  font-size: var(--font-size-title);
   font-weight: 650;
   color: var(--text-strong);
   flex: 1;
@@ -1339,10 +1401,34 @@ h2 {
   line-height: 1.35;
 }
 
+/* 组内成员（2026-10-20）：不再是独立小卡，而是组块卡片内部的一行——
+   无独立背景、无独立圆角、去掉左侧彩条与缩进，左右边框与组头拼成一整张卡。
+   成员之间不加分隔线（用户要求），靠上下 0.46rem、左右 0.62rem 的留白区分。 */
 .layer-item.in-run-group {
-  margin-left: 0.55rem;
-  border-left-width: 2px;
+  margin-top: 0;
+  margin-left: 0;
+  padding: 0.46rem 0.62rem;
+  /* 左右用中性发丝线（与组头同色），不画上下边 ⇒ 成员之间不会出现横向接缝 */
+  border: none;
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  border-radius: 0;
+  /* 与组头渐变末端同色，整卡底色连续；不能用 transparent，
+     否则会透出面板底色，组内成员看着仍像独立小块 */
   background: var(--surface-1);
+  /* 左侧蓝条：与组头同宽同色，纵向连成一条 */
+  box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.55);
+}
+
+/* 组内最后一个成员：补底边 + 下圆角，把整张卡收口 */
+.layer-item.in-run-group.group-last-row {
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--sidebar-soft-radius) var(--sidebar-soft-radius);
+}
+
+/* 选中时把左侧蓝条提亮（外框已取消，选中靠底色 + 这条蓝条表达） */
+.layer-item.in-run-group.active {
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .layer-item.group-locked {
@@ -1452,8 +1538,9 @@ h2 {
   flex: 0 1 auto;
   min-width: 0;
   color: var(--text-strong);
-  font-size: var(--font-size-caption);
-  font-weight: 600;
+  /* 2026-10-20：12px → 13px 并加重，与日期（10.5px / 常规 / 暗色）拉开层级 */
+  font-size: var(--font-size-body);
+  font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1464,7 +1551,8 @@ h2 {
 /* 变量短码（2026-10-19）：SM / VOD / ω，紧跟图层名，弱化处理不抢主名 */
 .layer-tag {
   flex-shrink: 0;
-  font-size: var(--font-size-caption);
+  /* 2026-10-20：12px → 11px，作为主名的附属标记 */
+  font-size: 0.68rem;
   color: var(--text-faint);
   letter-spacing: 0.02em;
   user-select: none;
@@ -1539,13 +1627,18 @@ h2 {
 .layer-legend {
   display: grid;
   gap: 0.1rem;
-  padding: 0 0.12rem;
+  /* 2026-10-20 用户要求：色带不顶容器边，左右两端各有对齐基准——
+     左 = 图层名称文字左端（勾选框 1.05 + 行内间距 0.24 = 1.29rem）；
+     右 = 行尾「ⓘ」右边缘（「⋯」1.05 + 间距 0.1 = 1.15rem），不再压到「⋯」下面。
+     ⚠ 配色（background 由 getColorRampStyle 内联注入）一律不动。 */
+  padding: 0 1.15rem 0 1.29rem;
 }
 
 .legend-ramp {
   width: 100%;
-  height: 0.46rem;
-  border-radius: 0.18rem;
+  /* 2026-10-20：略调厚 + 加大圆角，更接近参考版那条圆润色带（配色不变） */
+  height: 0.5rem;
+  border-radius: 0.26rem;
   border: 1px solid var(--border-subtle);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16);
 }
@@ -1560,14 +1653,15 @@ h2 {
 .legend-min,
 .legend-max {
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  /* 2026-10-20：12px → 10.5px，与日期同一档辅助字号 */
+  font-size: 0.66rem;
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
 }
 
 .legend-unit {
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: 0.66rem;
   letter-spacing: 0.02em;
   /* 2026-10-15：单位紧跟在右侧刻度（max）后面，如「0.5 m³/m³」 */
   margin-left: 0.22rem;
@@ -1583,7 +1677,12 @@ h2 {
   gap: 0.3rem;
   flex-wrap: wrap;
   padding-top: 0.16rem;
-  border-top: 1px solid var(--border-subtle);
+  /* 2026-10-20：日期行与色带共用同一个左基准（图层名称文字左端），
+     不再从条目左边缘（勾选框那一列）起排 */
+  padding-left: 1.29rem;
+  /* 2026-10-20：去掉底行上方那条分隔线——参考版「色带 → 日期」之间是纯留白；
+     一行内横着一条线会让组内成员看着仍像小容器。要恢复：改回 border-top。 */
+  /* border-top: 1px solid var(--border-subtle); */
 }
 
 /* 单位（2026-09-30 调整）：原先用绝对定位水平居中（left:50% + translateX），
@@ -1670,7 +1769,23 @@ h2 {
 
 .admin-tip-inline {
   color: var(--accent);
-  font-size: var(--layer-meta-size);
+  /* 2026-10-20（用户第 2 轮）：日期字号再大一档 0.66 → 0.72rem（约 11.5px）。
+     ⚠ 不复用 --layer-meta-size：它被 Job 徽标 / 顺序提示等共用，
+     改了会连带缩掉那些元素。 */
+  font-size: 0.72rem;
+}
+
+/* 日期行 + 前置小日历（2026-10-20）：图标与文字同色、不参与文本选择 */
+.layer-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.layer-date-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+  user-select: none;
 }
 
 /* ── Job badge ─────────────────────────────────────────────────────────── */

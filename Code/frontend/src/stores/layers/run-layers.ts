@@ -237,11 +237,14 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     job: Pick<JobLayerItem, 'jobId' | 'status' | 'progress' | 'message' | 'nodeProgress'>,
   ) {
     const layer = deps.getActiveLayers().find((l) => l.catalogId === catalogId && l.runGroupId)
-    if (!layer?.runGroupId) {
-      updateRunGroupFromJob(job.jobId, job)
-      return
-    }
-    const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+    // 组内成员的 catalogId 是 `wf-run-*` 占位 id，用源目录 id 直接匹配必然落空。
+    // 2026-10-20：加一层「按 sourceLayerId 归一化找组」兜底，否则重跑时组状态/进度
+    // 只能靠 runId 那条路更新，组头容易停在上一次的状态。
+    const g = layer?.runGroupId
+      ? runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+      : runLayerGroups.value.find(
+          (x) => resolveInversionCatalogId(String(x.sourceLayerId || '')) === catalogId,
+        )
     if (!g) {
       updateRunGroupFromJob(job.jobId, job)
       return
@@ -293,6 +296,18 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       existingCatalogLayer.jobLayer = jobLayer
       existingCatalogLayer.dataState = 'real'
       // 不在工作流更新时修改 selectedInstanceId，避免视口变化重提交导致图层选中被篡改
+      return
+    }
+
+    // 2026-10-20 修复「组 + 同名独立行」重复：
+    // 组内成员的 catalogId 是 `wf-run-*` 占位 id，上面的 existingCatalogLayer 按源目录 id
+    // 必然找不到 ⇒ 每次提交都会 addLayer 出一条与组同名的独立图层（如「smap卫星动态散射约束
+    // 产品 · 排队中」），和下面已有的产物组重复显示。组已存在时状态由组头表达，不要再建层。
+    const groupForSource = runLayerGroups.value.find(
+      (x) => resolveInversionCatalogId(String(x.sourceLayerId || '')) === resolvedCatalogId,
+    )
+    if (groupForSource) {
+      updateRunGroupFromJob(jobLayer.jobId, jobLayer)
       return
     }
 

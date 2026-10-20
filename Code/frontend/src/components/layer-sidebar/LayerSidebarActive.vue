@@ -2,9 +2,9 @@
 import { LAYERS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
 import { PRODUCT_TAG_LABELS, productTagDescription } from '../../utils/workflow-expected-outputs'
 import { formatTimeKeyLabel } from '../../utils/time-key-format'
-import { toLayerDisplayName } from '../../utils/layer-display-name'
+import { toLayerDisplayName, toRunGroupDisplayName } from '../../utils/layer-display-name'
 import type { DataStatusBadge } from '../../utils/layer-data-status'
-import { Check, ChevronDown, Info, Layers, MoreHorizontal, X } from '../ui/icons'
+import { CalendarDays, Check, ChevronDown, Info, Layers, MoreHorizontal } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { ActiveTocRow } from './useSidebarDragReorder'
 import type { ActiveLayerDisplayLike } from './useSidebarSymbology'
@@ -96,7 +96,9 @@ const emit = defineEmits<{
     </div>
 
     <template v-else>
-      <!-- 批量操作工具栏 -->
+      <!-- 批量操作工具栏（2026-10-20 用户要求：整块隐藏，代码保留，取消注释即可恢复）
+           恢复时注意两件事：① 把 `X` 加回上方 import（否则未使用会报错）；
+           ② 「全部移除」已由头部垃圾桶承接，两处并存会重复，二选一。
       <div class="batch-toolbar">
         <button class="batch-btn" title="显示所有图层" @click="emit('showAllLayers')">
           <span class="vis-check-box vis-check-box--sm is-on" aria-hidden="true">
@@ -116,6 +118,7 @@ const emit = defineEmits<{
           <X :size="14" aria-hidden="true" /> 全部移除
         </button>
       </div>
+      -->
 
       <!-- 图层列表：组头 + 成员；按内容高度排列 -->
       <ul class="layer-list" role="listbox" aria-label="已添加图层">
@@ -145,12 +148,13 @@ const emit = defineEmits<{
             >
               <ChevronDown :size="16" aria-hidden="true" />
             </button>
-            <span class="group-accent" aria-hidden="true"></span>
+            <!-- 2026-10-20 用户要求：组头前面不再有任何竖杠（蓝色 inset 阴影 + 这条灰色
+                 group-accent 一起移除），组头与成员靠卡片边框收口。 -->
             <span class="group-icon" aria-hidden="true">
               <Layers :size="13" :stroke-width="2" />
             </span>
             <strong class="group-title">{{
-              toLayerDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
+              toRunGroupDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
             }}</strong>
             <span
               v-if="groupStatusLabel(row.groupId)"
@@ -182,6 +186,7 @@ const emit = defineEmits<{
               hidden: !row.layer.visible,
               'drag-over': row.layer.instanceId === dragOverInstanceId,
               'in-run-group': row.indented,
+              'group-last-row': row.groupLast,
               'group-locked': row.layer.runGroupLocked,
             }"
             :style="{
@@ -357,12 +362,21 @@ const emit = defineEmits<{
               <!-- 2026-10-09 栅格图层的「生效时间」单独显示；2026-10-15 起统一格式化为
                    `YYYY_MM_DD` / `YYYY_MM_DD~YYYY_MM_DD`（只改展示，不动时间键）。无日期时该分支不占位 -->
               <template v-else-if="row.layer.isImportedRaster">
+                <!-- 2026-10-20 用户要求：日期前加小日历图标（只加给日期，
+                     其它「边界/导入/计算占位」文案不加） -->
                 <span
                   v-if="row.layer.importedRasterEffectiveTime"
-                  class="admin-tip-inline"
+                  class="admin-tip-inline layer-date"
                   :title="`数据时间：${formatTimeKeyLabel(row.layer.importedRasterEffectiveTime)}`"
-                  >{{ formatTimeKeyLabel(row.layer.importedRasterEffectiveTime) }}</span
                 >
+                  <CalendarDays
+                    class="layer-date-icon"
+                    :size="13"
+                    :stroke-width="2"
+                    aria-hidden="true"
+                  />
+                  <span>{{ formatTimeKeyLabel(row.layer.importedRasterEffectiveTime) }}</span>
+                </span>
               </template>
               <span
                 v-else-if="

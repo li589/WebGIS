@@ -42,6 +42,8 @@ export {
   Eye,
   EyeOff,
   ClipboardCheck,
+  // 2026-10-20：图层侧栏「日期」行前的小日历图标
+  CalendarDays,
   // ── 加载 ──
   LoaderCircle,
   // ── 图层 / 地图 ──

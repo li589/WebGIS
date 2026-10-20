@@ -10,6 +10,12 @@ export type ActiveTocRow =
       layer: ActiveLayerDisplay
       key: string
       indented: boolean
+      /**
+       * 2026-10-20：该行是否为所属组的最后一行。
+       * 组头与成员在 DOM 里是平级的 `<li>`（没有包裹层），靠 CSS 边框拼接成
+       * 一张卡片；加包裹层会牵连拖拽 / 折叠 / 右键三套逻辑，故改用标记位。
+       */
+      groupLast: boolean
     }
 
 const EXPANDED_GROUPS_KEY = 'cgda.sidebar.expandedGroups'
@@ -100,7 +106,16 @@ export function useSidebarDragReorder(
         layer,
         key: layer.instanceId,
         indented: Boolean(layer.runGroupId),
+        groupLast: false,
       })
+    }
+    // 2026-10-20：标注组内最后一个成员——组块卡片的下圆角与底边框只画在它身上。
+    // 判据：下一行不存在 / 是组头 / 是不缩进的独立图层。
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i]
+      if (row.kind !== 'layer' || !row.indented) continue
+      const next = rows[i + 1]
+      row.groupLast = !next || next.kind === 'group' || (next.kind === 'layer' && !next.indented)
     }
     return rows
   })
