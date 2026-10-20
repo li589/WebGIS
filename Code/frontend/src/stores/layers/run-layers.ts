@@ -240,10 +240,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     // 组内成员的 catalogId 是 `wf-run-*` 占位 id，用源目录 id 直接匹配必然落空。
     // 2026-10-20：加一层「按 sourceLayerId 归一化找组」兜底，否则重跑时组状态/进度
     // 只能靠 runId 那条路更新，组头容易停在上一次的状态。
+    // 两侧都要归一：入参可能是英文 workflow id，组上存的是后端 layer id。
+    const catalogKey = resolveInversionCatalogId(String(catalogId || ''))
     const g = layer?.runGroupId
       ? runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
       : runLayerGroups.value.find(
-          (x) => resolveInversionCatalogId(String(x.sourceLayerId || '')) === catalogId,
+          (x) => resolveInversionCatalogId(String(x.sourceLayerId || '')) === catalogKey,
         )
     if (!g) {
       updateRunGroupFromJob(job.jobId, job)
@@ -260,10 +262,51 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     if (typeof job.progress === 'number') g.progress = job.progress
     if (job.message) g.message = job.message
     refreshRunGroupDissolvable(g.groupId)
+    // 组已出现、且成员拿到真实栅格后，清掉用户「添加」时留下的同源独立行
+    pruneStandaloneSourceLayers()
   }
 
   function setJobLayers(jobs: JobLayerItem[]) {
     jobLayers.value = jobs
+  }
+
+  /**
+   * 摘掉与产物组同源的独立占位层（2026-10-20，侧栏「组 + 同名独立行」重复的根治）。
+   *
+   * 真正来源不是新建层，而是**用户自己加的层**：
+   *   `addCatalogItem` 先 `addLayer(源目录 id)` 建一条独立层 → 再提交工作流
+   *   → 产物回来时建组，组员是 `wf-run-*` 新层 ⇒ 那条独立层就成了与组同名的
+   *   重复行（徽标「排队中」）。单产出场景有 `existingTrigger` 收编，多产出
+   *   （SMAP 三产物）根本不走那条逻辑，所以一直留着。
+   *
+   * 四个条件全部满足才摘：
+   *   ① 不在任何组内；② 没有挂真实栅格；③ catalogId 归一化后与某组 sourceLayerId
+   *   同源；④ 该组**至少已有一个挂上真实栅格的成员**（产物还没到就先别动用户刚加的层）。
+   * 只摘侧栏引用，后端 overlay 与盘上产物一概不动。
+   */
+  function pruneStandaloneSourceLayers() {
+    const layers = deps.getActiveLayers()
+    if (!layers.length || !runLayerGroups.value.length) return
+    const sourceKeys = new Set<string>()
+    for (const group of runLayerGroups.value) {
+      const key = resolveInversionCatalogId(String(group.sourceLayerId || ''))
+      if (!key) continue
+      const hasRealMember = group.memberInstanceIds.some((id) => {
+        const member = layers.find((l) => l.instanceId === id)
+        return Boolean(member?.importedRaster?.overlayLayerId)
+      })
+      if (hasRealMember) sourceKeys.add(key)
+    }
+    if (!sourceKeys.size) return
+    const drop = layers.filter(
+      (l) =>
+        !l.runGroupId &&
+        !l.importedRaster?.overlayLayerId &&
+        sourceKeys.has(resolveInversionCatalogId(String(l.catalogId || ''))),
+    )
+    for (const layer of drop) {
+      deps.removeLayer(layer.instanceId, { dismiss: false, deleteBackendFile: false })
+    }
   }
 
   function syncJobLayerToActiveLayer(catalogId: string, jobLayer: JobLayerItem) {
@@ -1118,6 +1161,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     }
     reconcileOmegaBlockLayers()
     scrubEnglishInversionFreeLayers()
+    // 产物已挂进组 ⇒ 清掉同源的独立占位行（多产出反演不会走 existingTrigger 收编）
+    pruneStandaloneSourceLayers()
     deps.scheduleWorkspacePersist()
     return imports.length
   }

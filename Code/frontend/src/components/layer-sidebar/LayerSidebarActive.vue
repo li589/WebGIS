@@ -363,11 +363,16 @@ const emit = defineEmits<{
                    `YYYY_MM_DD` / `YYYY_MM_DD~YYYY_MM_DD`（只改展示，不动时间键）。无日期时该分支不占位 -->
               <template v-else-if="row.layer.isImportedRaster">
                 <!-- 2026-10-20 用户要求：日期前加小日历图标（只加给日期，
-                     其它「边界/导入/计算占位」文案不加） -->
+                     其它「边界/导入/计算占位」文案不加）；
+                     逐日产品优先显示「该月覆盖范围」（importedRasterMonthRange），
+                     与风云月产品口径一致，避免出现 27~31 这类历史窗口键 -->
                 <span
-                  v-if="row.layer.importedRasterEffectiveTime"
+                  v-if="row.layer.importedRasterMonthRange || row.layer.importedRasterEffectiveTime"
                   class="admin-tip-inline layer-date"
-                  :title="`数据时间：${formatTimeKeyLabel(row.layer.importedRasterEffectiveTime)}`"
+                  :title="`数据时间：${
+                    row.layer.importedRasterMonthRange ||
+                    formatTimeKeyLabel(row.layer.importedRasterEffectiveTime)
+                  }`"
                 >
                   <CalendarDays
                     class="layer-date-icon"
@@ -375,7 +380,10 @@ const emit = defineEmits<{
                     :stroke-width="2"
                     aria-hidden="true"
                   />
-                  <span>{{ formatTimeKeyLabel(row.layer.importedRasterEffectiveTime) }}</span>
+                  <span>{{
+                    row.layer.importedRasterMonthRange ||
+                    formatTimeKeyLabel(row.layer.importedRasterEffectiveTime)
+                  }}</span>
                 </span>
               </template>
               <span

@@ -50,6 +50,7 @@ import AddLayerComputeDialog from './layer-sidebar/AddLayerComputeDialog.vue'
 import LayerSidebarActive from './layer-sidebar/LayerSidebarActive.vue'
 import LayerSidebarContextMenu from './layer-sidebar/LayerSidebarContextMenu.vue'
 import { onOpenLayerGroupManager } from '../utils/layer-group-manager-bridge'
+import { resolveInversionCatalogId } from '../stores/layers/inversion-catalog'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -168,6 +169,14 @@ const addedCatalogIds = computed(() => {
   const ids = new Set<string>()
   for (const layer of activeLayers.value) {
     if (!layer.isAdminBoundary) ids.add(layer.catalogId)
+  }
+  // 产物组成员的 catalogId 是 `wf-run-*` 占位 id，这份数据在图层库里对应的
+  // 源目录 id 只能由组来表达。2026-10-20：不同步这一步的话，同源独立行被
+  // 清掉后图层库会把该数据集误判成「未添加」，再点一次「添加」又重跑一遍
+  // 并重新长出重复行。
+  for (const group of runLayerGroups.value) {
+    const key = resolveInversionCatalogId(String(group.sourceLayerId || ''))
+    if (key) ids.add(key)
   }
   return ids
 })

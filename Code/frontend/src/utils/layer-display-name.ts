@@ -54,6 +54,27 @@ export function toRunGroupDisplayName(raw: string | null | undefined): string {
   return toLayerDisplayName(name)
 }
 
+/**
+ * 反演产品的「族」标识（只看平台，不看平均/动态）。
+ *
+ * 用途：侧栏去重。占位层（用户点「添加」时建的空壳）名字是目录名
+ * 「SMAP 动态散射约束产品」，而产物组归一后的名字是「SMAP卫星反演产品」，
+ * 两者**字符串永远不相等**，所以按名字/按 id 都无法判定重复。
+ * 而用户眼里它们就是同一个产品 ⇒ 用「平台」这一层做判定。
+ *
+ * 返回 'smap' / 'fy' / ''（空串＝不是反演产品，不参与去重）。
+ * GLDAS 明确排除：名字里带第三套数据源，归并会丢信息。
+ */
+export function inversionFamilyKey(raw: string | null | undefined): string {
+  const name = String(raw ?? '').trim()
+  if (!name) return ''
+  if (/GLDAS/i.test(name)) return ''
+  if (!/散射约束|omega/i.test(name)) return ''
+  if (/SMAP/i.test(name)) return 'smap'
+  if (/风云|FY/i.test(name)) return 'fy'
+  return ''
+}
+
 export function toLayerDisplayName(raw: string | null | undefined): string {
   let name = String(raw ?? '').trim()
   if (!name) return ''

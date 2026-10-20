@@ -4,6 +4,7 @@ import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
 import { resolveStyleRenderHint } from '../../components/map/layer-symbology'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
+import { formatMonthCoverageLabel } from '../../utils/time-key-format'
 import { buildAvailabilityState, buildCatalogFallbackItem } from './catalog-builders'
 import { resolvePersistedDisplayName } from './layer-display-names'
 import { resolveLayerDisplayLabel } from './layer-naming'
@@ -34,6 +35,34 @@ export interface ActiveLayersDisplayContext {
   isWeatherEngineLayer: (catalogId: string) => boolean
   /** 计算组状态：importedRaster 渐进产物勿在 computing 时标「完整数据」 */
   runLayerGroups?: ActiveRunLayerGroup[]
+}
+
+/**
+ * 逐日产品的日期口径：显示该月实际覆盖范围。
+ *
+ * 2026-10-20 用户要求：SMAP 这种逐日图层要和风云（月产品）一样，卡片日期是一整月。
+ *
+ * 判据用「清单里存在单日键（YYYYMMDD）」而不是 nativeStep：逐日产物的 time_list
+ * 里混着历史窗口键时，`nativeStep` 可能被推断成 `8d`（见 useTimelineSync 的兜底），
+ * 靠它判断会漏。风云那种月产品只有 `20251201_20251231`，没有单日键 ⇒ 不介入，
+ * 保持原有的真实区间显示。
+ */
+function rasterMonthRangeLabel(
+  raster:
+    | {
+        effectiveTimeLabel?: string | null
+        nativeStep?: string | { value: number; unit: string } | null
+        timeList?: string[] | null
+      }
+    | null
+    | undefined,
+): string | undefined {
+  const effective = raster?.effectiveTimeLabel
+  const timeList = raster?.timeList
+  if (!effective || !timeList?.length) return undefined
+  const hasDailyFrame = timeList.some((t) => /^\d{8}$/.test(String(t ?? '').trim()))
+  if (!hasDailyFrame) return undefined
+  return formatMonthCoverageLabel(effective, timeList) ?? undefined
 }
 
 function isWorkflowProductComputing(
@@ -148,6 +177,13 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
             : hasTimes
               ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
               : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。'
+          const nativeStepLabel =
+            typeof payload.nativeStep === 'string'
+              ? payload.nativeStep
+              : payload.nativeStep
+                ? `${payload.nativeStep.value}${payload.nativeStep.unit === 'hour' ? 'h' : payload.nativeStep.unit === 'day' ? 'd' : payload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
+                : undefined
+          const monthRange = rasterMonthRangeLabel(payload)
           return {
             instanceId: layer.instanceId,
             catalogId: layer.catalogId,
@@ -191,13 +227,9 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
             importedRasterBounds: payload.bounds,
             importedBounds: payload.bounds,
             importedRasterSourceCrs: payload.sourceCrs,
-            importedRasterNativeStep:
-              typeof payload.nativeStep === 'string'
-                ? payload.nativeStep
-                : payload.nativeStep
-                  ? `${payload.nativeStep.value}${payload.nativeStep.unit === 'hour' ? 'h' : payload.nativeStep.unit === 'day' ? 'd' : payload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
-                  : undefined,
+            importedRasterNativeStep: nativeStepLabel,
             importedRasterEffectiveTime: payload.effectiveTimeLabel,
+            importedRasterMonthRange: monthRange,
             importedRasterTimeCount: payload.timeList?.length,
             importedFileName: payload.fileName,
             paletteOverride: layer.paletteOverride ?? null,
@@ -370,6 +402,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
                 ? `${rasterPayload.nativeStep.value}${rasterPayload.nativeStep.unit === 'hour' ? 'h' : rasterPayload.nativeStep.unit === 'day' ? 'd' : rasterPayload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
                 : undefined,
           importedRasterEffectiveTime: rasterPayload?.effectiveTimeLabel,
+          importedRasterMonthRange: rasterMonthRangeLabel(rasterPayload),
           importedRasterTimeCount: rasterPayload?.timeList?.length ?? 0,
           paletteOverride: layer.paletteOverride ?? null,
           defaultPalette: baseRenderHint?.palette ?? undefined,

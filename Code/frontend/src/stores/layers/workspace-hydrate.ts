@@ -225,12 +225,18 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
    */
   function pruneStandaloneDuplicatesOfRunGroups() {
     const layers = deps.getActiveLayers()
-    const groupSourceKeys = new Set(
-      deps
-        .getRunLayerGroups()
-        .map((g) => resolveInversionCatalogId(String(g.sourceLayerId || '')))
-        .filter(Boolean),
-    )
+    const groupSourceKeys = new Set<string>()
+    for (const group of deps.getRunLayerGroups()) {
+      const key = resolveInversionCatalogId(String(group.sourceLayerId || ''))
+      if (!key) continue
+      // 组里至少要有一个挂上真实栅格的成员，才判定「组已经能代表这份数据」；
+      // 空组/占位组若把用户刚加的层摘掉，侧栏就什么都不剩了。
+      const hasRealMember = (group.memberInstanceIds || []).some((id) => {
+        const member = layers.find((l) => l.instanceId === id)
+        return Boolean(member?.importedRaster?.overlayLayerId)
+      })
+      if (hasRealMember) groupSourceKeys.add(key)
+    }
     if (!groupSourceKeys.size) return
     for (let i = layers.length - 1; i >= 0; i -= 1) {
       const layer = layers[i]

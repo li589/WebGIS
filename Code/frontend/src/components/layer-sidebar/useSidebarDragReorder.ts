@@ -2,6 +2,7 @@ import { computed, ref, type Ref } from 'vue'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { SidebarDragDeps } from './sidebar-layers-deps'
 import { LAYERS_COPY } from '../../ui-copy'
+import { inversionFamilyKey } from '../../utils/layer-display-name'
 
 export type ActiveTocRow =
   | { kind: 'group'; groupId: string; key: string; collapsed: boolean }
@@ -86,7 +87,39 @@ export function useSidebarDragReorder(
   const activeTocRows = computed<ActiveTocRow[]>(() => {
     const rows: ActiveTocRow[] = []
     const seen = new Set<string>()
+    /**
+     * 2026-10-20：屏蔽「组 + 同名空占位行」这类重复（纯展示层，不动 store）。
+     *
+     * 来源：点「添加」先建一条空壳层（名字＝目录名，徽标「排队中」），随后工作流
+     * 产物回来另建一个组，组员是 `wf-run-*` 新层 ⇒ 那条空壳层成了与组并排的
+     * 重复行。store 侧已有两条 prune（按 id / 按快照），但它们的判据是
+     * 「源目录 id 归一化后相等」，而实际两边字符串常常对不上（一边是目录名
+     * 「SMAP 动态散射约束产品」，一边是归一后的组名「SMAP卫星反演产品」），
+     * 所以总会有漏网的。这里按**产品族**（平台）再兜一层，只要满足：
+     *   ① 不在组内；② 没挂真实栅格；③ 族与某个已有的组相同（组里得真有数据）
+     * 就不渲染。它们本来也点不开、没有色带，隐藏不丢信息。
+     */
+    const groupFamilies = new Set<string>()
+    for (const g of runLayerGroups.value) {
+      const hasRealMember = g.memberInstanceIds.some((id) => {
+        const member = activeLayersDisplay.value.find((l) => l.instanceId === id)
+        return Boolean(member?.importedRasterOverlayLayerId)
+      })
+      if (!hasRealMember) continue
+      const fam = inversionFamilyKey(g.title) || inversionFamilyKey(g.sourceLayerId || '')
+      if (fam) groupFamilies.add(fam)
+    }
+    const suppressed = new Set<string>()
+    if (groupFamilies.size) {
+      for (const layer of activeLayersDisplay.value) {
+        if (layer.runGroupId) continue
+        if (layer.isImportedRaster || layer.importedRasterOverlayLayerId) continue
+        const fam = inversionFamilyKey(layer.name) || inversionFamilyKey(layer.catalogId)
+        if (fam && groupFamilies.has(fam)) suppressed.add(layer.instanceId)
+      }
+    }
     for (const layer of activeLayersDisplay.value) {
+      if (suppressed.has(layer.instanceId)) continue
       if (layer.runGroupId) {
         const collapsed = !isGroupExpanded(layer.runGroupId)
         if (!seen.has(layer.runGroupId)) {

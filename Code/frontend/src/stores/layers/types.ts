@@ -434,6 +434,8 @@ export interface ActiveLayerDisplay {
   importedRasterNativeStep?: string
   /** 导入栅格当前生效区间标签 */
   importedRasterEffectiveTime?: string
+  /** 逐日产品按「该月实际覆盖范围」显示的日期标签（如 `2026/01/01 ~ 2026/01/31`） */
+  importedRasterMonthRange?: string
   /** 导入栅格可用时刻/块数量 */
   importedRasterTimeCount?: number
   /** 导入文件名 */

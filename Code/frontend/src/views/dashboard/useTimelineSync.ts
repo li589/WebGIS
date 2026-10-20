@@ -246,13 +246,15 @@ export function useTimelineSync(
       for (const instanceId of added) {
         const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
         if (!layer) continue
-        if (layer.importedRaster?.timeList?.length) {
-          pendingSnapCatalogIds.add(layer.catalogId)
-          // 工作流渐进物化带 runGroupId：未点播放不抢轴（色段仍会更新）
-          if (!isPlaying.value && layer.runGroupId) {
-            continue
-          }
-          snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新切片`)
+        if (layer.importedRaster) {
+          // 稳定编号直探挂载时，timeList 常由 overlay meta 稍后补到。
+          // 先登记「待落点」，等列表到位再补一次 snap（见下方 scienceTimeListSignature）。
+          // 工作流渐进物化带 runGroupId：未点播放不抢轴（色段仍会更新），故不登记。
+          const progressive = !isPlaying.value && Boolean(layer.runGroupId)
+          if (!progressive) pendingSnapCatalogIds.add(layer.catalogId)
+          if (!layer.importedRaster.timeList?.length) continue
+          if (progressive) continue
+          snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新整月`)
           uiStore.rememberLayerTime(layer.catalogId, { force: true })
           break
         }
@@ -287,6 +289,27 @@ export function useTimelineSync(
     knownScienceTimeSig.value = sig
 
     refreshImportedRasterEffectiveTimes()
+
+    // 新加层的时间列表可能是挂载之后才补到的：此时补一次落点，避免时间轴
+    // 停在添加前的旧时刻（表现为：加完 SMAP 却显示上个月某一天）。
+    // 这是添加流程的一部分，不受「未播放不抢轴」限制。
+    if (!unifiedTimeLock.value && !isPlaying.value) {
+      const pending = workspace.activeLayers.value.find(
+        (l) =>
+          l.catalogId === selectedCatalogId.value &&
+          pendingSnapCatalogIds.has(l.catalogId) &&
+          Boolean(l.importedRaster?.timeList?.length),
+      )
+      if (pending) {
+        pendingSnapCatalogIds.delete(pending.catalogId)
+        snapTimelineToLayerLatest(
+          pending.catalogId,
+          `新加科学图层 ${pending.catalogId} → 最新整月（时间列表到位）`,
+        )
+        return
+      }
+    }
+
     if (!prev) return
     if (unifiedTimeLock.value) return
     if (!isPlaying.value) return

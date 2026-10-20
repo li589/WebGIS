@@ -295,8 +295,20 @@ export function resolveSliceForInstant(
   }
 
   if (policy === 'containing' || policy === 'nearest-block') {
-    const hit = valid.find((x) => t >= x.b.start.getTime() && t < x.b.end.getTime())
-    if (hit) {
+    /**
+     * 同一时刻可能同时命中「单日帧」与「多日合成窗口键」——逐日产品物化时
+     * 会残留下 `20251227_20251231` 这类历史窗口片，而 `20251227` /
+     * `20251228` … 的单日片也在，两者覆盖范围重叠。
+     *
+     * 按 time_list 顺序取 `find()` 会先撞上窗口键，卡片日期就显示成
+     * `2025/12/27 ~ 2025/12/31`（用户 2026-10-20 反馈：为什么是 27-31）。
+     * 语义上更细的那一片才是"这一天"的真实产物，故命中多个时取区间最短者。
+     */
+    const hits = valid.filter((x) => t >= x.b.start.getTime() && t < x.b.end.getTime())
+    if (hits.length) {
+      const hit = hits.reduce((a, b) =>
+        b.b.end.getTime() - b.b.start.getTime() < a.b.end.getTime() - a.b.start.getTime() ? b : a,
+      )
       return {
         slice: hit.sl,
         nativeMatch: true,
