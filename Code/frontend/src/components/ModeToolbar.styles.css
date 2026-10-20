@@ -2,18 +2,20 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-4);
-  /* 窄屏兜底（2026-09-30）：左右两簇都放不下时**换行**而不是互相压字 */
-  flex-wrap: wrap;
-  row-gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3);
+  /* 2026-10-20：顶栏改造。原为 flex-wrap: wrap，控件太多时右半边整体掉到
+     第二行（用户反馈"不要两行"）。数据 / 地图工具 / 底图三组已合并成下拉，
+     控件从 13 组降到 9 组，这里改为强制单行。
+     窄屏（≤1024px）仍回落到换行，见文件末尾媒体查询。 */
+  flex-wrap: nowrap;
+  padding: 6px var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--surface-1);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--elevation-2);
-  min-height: 48px;
+  min-height: 42px;
 }
 
 /* 左侧 */
@@ -22,8 +24,7 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  flex-wrap: wrap;
-  row-gap: var(--space-2);
+  flex-wrap: nowrap;
 }
 
 .brand {
@@ -75,24 +76,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  /* 窄屏兜底（2026-09-30）：原为单行不可换行，min-content 撑破容器后
-     按钮会压到右侧状态簇上。允许换行 + min-width:0 后改为折行显示。 */
-  flex-wrap: wrap;
+  /* 2026-10-20：同上，改为不再折行（数据/地图工具/底图已合并成 3 个下拉） */
+  flex-wrap: nowrap;
   min-width: 0;
-  row-gap: 6px;
 }
 
 /* 统一工具按钮 — 已迁移至 AppButton */
-
-/* 模式按钮组容器 — 按钮本身由 IconButton 渲染 */
-.mode-group {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-}
 
 /* 日志按钮包装器（用于 badge 定位） */
 .log-btn-wrap {
@@ -139,62 +128,8 @@
   justify-content: flex-end;
 }
 
-/* 来源选择器 */
-.source-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 4px 2px 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface-sunken);
-}
-
-.source-btn {
-  min-width: 30px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 0 var(--space-2);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft);
-}
-
-.source-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.source-btn.active {
-  background: var(--accent-surface);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--border-accent);
-}
-
-.source-btn.locked {
-  opacity: 0.42;
-  color: var(--text-disabled);
-  text-decoration: line-through;
-}
-
-.source-btn.locked:hover {
-  background: var(--danger-surface);
-  color: var(--danger);
-}
-
-.source-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* 来源选择器 / 底图风格分段控件：2026-10-20 起已并入「底图」下拉
+   （components/toolbar/BasemapMenu.vue），此处不再保留相关样式 */
 
 /* 2D/3D 视图切换 — 已迁移至 SegmentedControl（.dim-seg），交互态由组件自身提供 */
 
@@ -206,24 +141,25 @@
   text-overflow: ellipsis;
 }
 
-:deep(.time-chip) {
-  min-width: 56px;
-  justify-content: center;
-  color: var(--text-strong);
-  font-weight: var(--font-weight-medium);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  max-width: none;
+/* 响应式 */
+@media (max-width: 1180px) {
+  /* 品牌文字收起，只留 logo，保证单行放得下 */
+  .brand-copy {
+    display: none;
+  }
 }
 
-/* 响应式 */
 @media (max-width: 1024px) {
   .mode-toolbar {
     flex-direction: column;
     align-items: stretch;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
   .toolbar-left {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+  .toolbar-tools {
     flex-wrap: wrap;
   }
   .toolbar-right {

@@ -361,20 +361,23 @@
 }
 
 .overlay-top {
-  top: 0.8rem;
+  /* 2026-10-20：顶栏改单行后高度从 ~96px 降到 ~46px，顶距一并收紧，
+     让工具栏更贴合网页顶部（原 0.8rem 空太多）。 */
+  top: 0.45rem;
   left: 0.8rem;
   right: 0.8rem;
   z-index: 20;
 }
 
 .overlay-left {
-  top: 9.5rem;
+  /* 顶栏变矮 ⇒ 左侧图层面板跟着上移，否则中间留一大块空白 */
+  top: 4.3rem;
   left: 0.8rem;
   width: min(18rem, calc(100vw - 1.6rem));
 }
 
 .overlay-right {
-  top: 9.5rem;
+  top: 4.3rem;
   right: 0.8rem;
   /* 宽度跟面板走，右缘钉在 right；向左拉宽时右边缘不动 */
   width: max-content;

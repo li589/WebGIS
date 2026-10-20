@@ -409,11 +409,14 @@ const WorkflowEditorPanel = defineAsyncComponent(
 
 // ── 面板尺寸 ──────────────────────────────────────────────────────────────
 // 2026-08-25 用户反馈：图层/分析面板纵向拉伸要能拉到主界面最底——
-// maxHeight 随视口高度动态计算（overlay 顶部 9.5rem=152px + 12px 底部
-// 呼吸余量）；小屏（结果 < 540）保持原 540 下限，行为不回退。
+// maxHeight 随视口高度动态计算（overlay 顶部 + 12px 底部呼吸余量）；
+// 小屏（结果 < 540）保持原 540 下限，行为不回退。
+// 2026-10-20：顶栏改单行后 overlay 顶部从 9.5rem(152px) 收到 4.3rem(≈69px)，
+// 这里跟着改，面板才能一直拉到主界面最底。
+const SIDE_PANEL_TOP_OFFSET = 69
 function computeSidePanelMaxHeight(): number {
   if (typeof window === 'undefined') return 540
-  return Math.max(540, window.innerHeight - 152 - 12)
+  return Math.max(540, window.innerHeight - SIDE_PANEL_TOP_OFFSET - 12)
 }
 const sidePanelMaxHeight = ref(computeSidePanelMaxHeight())
 function handleSidePanelResize(): void {
@@ -658,7 +661,6 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       <div class="overlay overlay-top cgda-boot-reveal cgda-boot-reveal--1">
         <ModeToolbar
           :tile-source-id="tileSourceId"
-          :hour-label="hourLabel"
           @change-tile-source="handleTileSourceChange"
           @open-screenshot="handleOpenScreenshot"
           @open-settings="handleOpenSettings"

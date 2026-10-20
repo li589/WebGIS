@@ -3,6 +3,8 @@
 @import './textures.css';
 @import './motion.css';
 @import './native-controls.css';
+/* 2026-10-20：顶栏下拉菜单（数据 / 地图工具 / 底图）共用视觉规格 */
+@import './toolbar-menu.css';
 
 html,
 body,

@@ -16,13 +16,14 @@ const toneClass = computed(() => `tone-${props.summary.tone}`)
 
 const label = computed(() => {
   const s = props.summary
-  if (s.total === 0) return WORKFLOW_COPY.entry
+  // 2026-10-20：空闲态由「工作流」改为「运行」，与左侧工作流编辑器按钮区分
+  if (s.total === 0) return WORKFLOW_COPY.statusIdle
   const active = s.running + s.queued + s.retryPending
   if (active > 0) return '运行中'
   if (s.failed > 0) return '失败'
   if (s.succeeded > 0) return WORKFLOW_COPY.statusDone
   if (s.cancelled > 0) return '已取消'
-  return WORKFLOW_COPY.entry
+  return WORKFLOW_COPY.statusIdle
 })
 
 const showRunningBadge = computed(() => props.summary.running > 0)

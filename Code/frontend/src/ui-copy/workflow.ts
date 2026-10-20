@@ -5,6 +5,12 @@ export const WORKFLOW_COPY = {
   editorTitle: '工作流',
   statusOverview: '工作流状态',
   statusDone: '已完成',
+  /**
+   * 2026-10-20：右上角状态胶囊的空闲文案。
+   * 原来也显示「工作流」，与左侧打开编辑器的「工作流」按钮重名，用户要求
+   * 其中一个改名；胶囊表示"当前在跑什么"，所以叫「运行」。
+   */
+  statusIdle: '运行',
   openEditorLog: '打开工作流编辑器',
 
   // 提交 / 生命周期
