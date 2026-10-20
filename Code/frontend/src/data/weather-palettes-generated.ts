@@ -297,6 +297,13 @@ export const GENERATED_WEATHER_PALETTES: Record<string, GeneratedPaletteDefiniti
     type: 'sequential',
     exposed: false,
   },
+  'darkgreen-yellow': {
+    colors: ['#1f4d3f', '#ffe14d'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: '墨绿亮黄',
+    type: 'sequential',
+    exposed: true,
+  },
 }
 
 export const GENERATED_PALETTE_ALIASES: Record<string, string> = {

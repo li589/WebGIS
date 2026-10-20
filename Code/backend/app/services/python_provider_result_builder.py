@@ -49,17 +49,20 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
     # vmin/vmax：科学默认拉伸（run-11369247180a 抽样 SM p50~0.08 p98~0.45；
     # OMEGA p50~0.11 p98~0.28；VOD p50~0.03 p98~0.75）。缺省时 FE 曾强制 0–1
     # 导致色差被压扁。
-    # VOD 上限 2026-10-14 由 1.0 调至 1.5：实测 SMAP/FY 的 VOD p99≈1.04/1.08、
-    # max≈1.77/1.55；设 1.0 会把 >1 的尾部压成色带顶同一色（风云片约 2% 像元），
-    # 1.5 既覆盖到接近实测极值、又不过度拉大上限导致画面整体偏暗。
+    # VOD 上限沿革：2026-10-14 由 1.0 调至 1.5（实测 SMAP/FY 的 VOD p99≈1.04/1.08、
+    # max≈1.77/1.55；设 1.0 会把 >1 的尾部压成色带顶同一色）。2026-10-20 曾试调
+    # 0.75，被用户否决 ⇒ 已回退，**维持 1.5**。
     "omega_sf_omega_pixel": {
         "variable": "omega_pix_map",
         "grid_preset": "ease2-global-9km",
         "label": "OMEGA",
-        # 2026-10-20（用户第 5 轮）：reds → ylorrd。reds 起点近白、终点血红，
-        # 大面积低值区发白、高值区刺眼；ylorrd 是 ColorBrewer 顺序色带，
-        # 黄→橙→深红过渡自然，与 SM 的 ylgnbu、VOD 的 magma 色相完全分离。
-        "palette": "ylorrd",
+        # 2026-10-20（用户第 7 轮）：ylorrd → reds。
+        # ylorrd 的黄→橙→红在面板上偏「火焰图」观感，用户要求换掉；
+        # reds 是 ColorBrewer 顺序色带（近白 → 深红），去掉黄橙中段后更素净，
+        # 红系与 SM 的 ylgnbu（绿蓝）、VOD 的 darkgreen-yellow（墨绿→亮黄）色相分离。
+        # ⚠ ω 低值偏多 ⇒ 色带起点必须是浅色（不可用 magma / viridis 这类深起点，
+        #   否则大面积糊成暗块），reds 起点 #fff5f0 满足。
+        "palette": "reds",
         "vmin": 0.0,
         "vmax": 0.5,
     },
@@ -76,13 +79,18 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "variable": "VOD",
         "grid_preset": "ease2-global-9km",
         "label": "VOD",
-        # 2026-10-20（用户第 5 轮）：plasma → purple-orange。
-        # plasma 中段品红 + 末段荧光黄偏"霓虹"，用户嫌丑；
-        # 也试过 matplotlib 的 magma，但 magma 起点是近纯黑(#000004)，
-        # 而 VOD 实测中位值贴着 vmin ⇒ 大面积会糊成死黑（读盘验过：中位色 [0,0,4]）。
-        # purple-orange 起点深紫(#2d1b3d)有颜色不发黑，末端香槟黄柔和，
-        # 与 SM 的 ylgnbu（绿蓝）、ω 的 ylorrd（黄红）色相完全分离。
-        "palette": "purple-orange",
+        # 2026-10-20（用户第 9 轮）：purple-orange → darkgreen-yellow（墨绿 → 亮黄）。
+        # 用户要「两个不同色系」的双色渐变，亲自在真实图上选定这一对（严格两点）。
+        # 历史：plasma（中段品红+荧光黄，嫌霓虹）→ magma（起点近纯黑 #000004，
+        # VOD 低值偏多 ⇒ 大面积死黑，实测中位色 [0,0,4]）→ purple-orange
+        # （起点深紫 #2d1b3d 不发黑）→ 本条。
+        # 与 SM 的 ylgnbu（绿蓝）、ω 的 reds（近白→深红）色相分离。
+        #
+        # ⚠ vmax 保持 1.5（用户明确要求，勿动）：曾于 2026-10-20 试调到 0.75，
+        # 被用户当场否决并回退。实测 VOD 反演值 p50≈0.03~0.22、p99≈0.54~0.71，
+        # 按 1.5 上限时色带只用掉左 1/3~1/2（第二个端点色基本落不到图上）——
+        # 这是**已知且被接受的现状**，属数据表达口径，非缺陷。若要改必须再问用户。
+        "palette": "darkgreen-yellow",
         "from_block_dir": True,
         "vmin": 0.0,
         "vmax": 1.5,
@@ -91,7 +99,8 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "variable": "OMEGA",
         "grid_preset": "ease2-global-9km",
         "label": "OMEGA",
-        "palette": "ylorrd",
+        # 与 omega_sf_omega_pixel 保持同一套色带（2026-10-20 第 7 轮：ylorrd → reds）
+        "palette": "reds",
         "from_block_dir": True,
         "vmin": 0.0,
         "vmax": 0.5,
@@ -1851,10 +1860,12 @@ class PythonProviderResultBuilder:
                     block_native_step = "1M" if has_monthly_block else "8d"
                     # vmin/vmax 必须与 _MAPPABLE_PRODUCTS 主注册路径一致，否则
                     # 兜底扫描会用空范围覆盖已落盘的色阶（VOD 会被冲回自适应，
-                    # 2026-10-14 定位）。VOD 上限 1.5 见 _MAPPABLE_PRODUCTS 注释。
+                    # 2026-10-14 定位）。VOD 为 0–1.5，见 _MAPPABLE_PRODUCTS 注释。
+                    # 2026-10-20：VOD 这条同时把 palette 由 viridis 对齐成主路径的
+                    # darkgreen-yellow（原先两处 palette 本就不一致，兜底一跑就换色）。
                     for variable, label, palette, vmin, vmax in (
                         ("SM", "SM", "ylgnbu", 0.0, 0.5),
-                        ("VOD", "VOD", "viridis", 0.0, 1.5),
+                        ("VOD", "VOD", "darkgreen-yellow", 0.0, 1.5),
                         ("OMEGA", "OMEGA", "cividis", 0.0, 0.5),
                     ):
                         try:

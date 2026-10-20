@@ -380,6 +380,16 @@
       "label": "rdylgn_r",
       "type": "sequential",
       "exposed": false
+    },
+    "darkgreen-yellow": {
+      "colors": [
+        "#1f4d3f",
+        "#ffe14d"
+      ],
+      "lineColor": "rgba(255,255,255,0.08)",
+      "label": "墨绿亮黄",
+      "type": "sequential",
+      "exposed": true
     }
   },
   "backend_aliases": {
