@@ -353,7 +353,10 @@ export const useSettingsStore = defineStore('settings', () => {
     /**
      * 受限登录态（demo 游客）：后端 `require_config_read_access` 把「敏感配置读取」
      * 等同于可写角色（admin / standard），demo 一律 403
-     * （detail 借用写接口文案：「Demo account cannot perform write operations.」）。
+     * （2026-10-20 起 detail 改为只读语义的
+     *  「This account is not allowed to view system configuration.」，
+     *  原先借用写接口文案「Demo account cannot perform write operations.」，
+     *  把「无权查看」说成「不能写」，日志里极易误导）。
      *
      * 前端原先只有 `loadAll()` 做了跳过，但顶部工具栏 `ModeToolbar` 挂载时会单独
      * 调一次本函数，于是 demo 每次进页面都必然 403、每次都往日志面板写一条

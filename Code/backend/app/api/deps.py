@@ -160,10 +160,32 @@ def require_config_read_access(
     request: Request,
     x_api_key: str | None = Security(_api_key_header),
 ) -> None:
+    """配置读取权限：admin / standard 可读；其他已登录角色（demo 游客）明确拒绝。
+
+    2026-10-20 修正：原实现是「不是可写角色就继续落到 require_write_access」，
+    于是 demo 读配置时收到的是**写接口的文案**
+    「Demo account cannot perform write operations.」——把「无权查看」说成
+    「不能执行写操作」，前端日志面板里极具误导（`/config/weather`、
+    `/config/api-keys` 等全部中招，用户会以为是自己在误触保存）。
+
+    现在：带了凭证但权限不够 ⇒ 直接给一条**只读语义**的拒绝文案；
+    完全没带凭证 ⇒ 仍交给 require_write_access（服务密钥 / 开发态 bypass
+    的既有判定逻辑原样保留）。
+
+    ⚠️ 权限**没有任何放宽**：返回码依旧是 403，能读的角色依旧只有
+    admin / standard，demo 依旧读不到任何系统配置——只是把话说对了。
+    """
     ctx = resolve_credential(request, x_api_key)
-    if ctx is not None and allows_sensitive_read(ctx):
+    if ctx is None:
+        require_write_access(request, x_api_key)
         return
-    require_write_access(request, x_api_key)
+    if allows_sensitive_read(ctx):
+        return
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="This account is not allowed to view system configuration.",
+    )
 
 
 def require_gee_account_management_enabled() -> None:
