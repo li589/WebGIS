@@ -2264,8 +2264,10 @@ h2 {
 .dataset-tabs {
   display: flex;
   align-items: center;
-  /* 2026-10-20（用户第 6 轮）：「科研数据」与「公共数据」再拉开一点，1.05 → 1.85rem */
-  gap: 1.85rem;
+  /* 2026-10-21（用户第 10 轮）：加入第三个页签「收藏」后，从「固定 gap 左对齐」
+     改为**三等分均匀排开**——每个页签 flex:1 各占 1/3、内容居中，
+     所以不再需要 gap。 */
+  gap: 0;
   /* 上下留白同时加大：上方与面板内边距之间、下方与分隔线之间都不再贴死 */
   padding: 0.16rem 0.12rem 0;
   border-bottom: 1px solid var(--border-subtle);
@@ -2276,6 +2278,11 @@ h2 {
      页签行整体高度变大，文字与上边框、与下方细线都有呼吸空间 */
   display: inline-flex;
   align-items: center;
+  /* 三等分：flex-basis 0 + flex-grow 1，三个页签宽度完全相等 */
+  flex: 1 1 0;
+  min-width: 0;
+  /* 等宽之后靠居中保持视觉平衡（不是贴着每格左边） */
+  justify-content: center;
   gap: 0.3rem;
   padding: 0.36rem 0 0.52rem;
   border: none;
@@ -2300,6 +2307,11 @@ h2 {
 
 .dataset-tab.active .dataset-tab-icon {
   opacity: 1;
+}
+
+/* 三等分后每格只有约 1/3 宽度，禁止页签文字折行 */
+.dataset-tab-label {
+  white-space: nowrap;
 }
 
 .dataset-tab:hover {

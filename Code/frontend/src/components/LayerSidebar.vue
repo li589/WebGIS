@@ -54,11 +54,12 @@ import { onOpenLayerGroupManager } from '../utils/layer-group-manager-bridge'
 import { resolveInversionCatalogId } from '../stores/layers/inversion-catalog'
 
 /**
- * 数据集页签（2026-10-20 用户第 4 轮）：科研数据 / 公共数据。
- * 目前只是界面层分流——「公共数据」暂未接入真实目录，选中后渲染空态占位
- * （用户选择「先只做界面，等以后接真实数据」）。默认停在「科研数据」。
+ * 数据集页签（2026-10-20 用户第 4 轮）：研发产品 / 公共数据；
+ * 2026-10-21（第 10 轮）追加「收藏」。
+ * 目前只是界面层分流——「公共数据」「收藏」都还没接真实数据，选中后渲染空态
+ * （用户选择「先只做界面，等以后接真实数据」）。默认停在「研发产品」。
  */
-const datasetScope = ref<'research' | 'public'>('research')
+const datasetScope = ref<'research' | 'public' | 'favorite'>('research')
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -948,7 +949,7 @@ onMounted(() => {
 
 <template>
   <aside ref="sidebarRootEl" class="panel">
-    <!-- ── 数据集页签（科研数据 / 公共数据）───────────────────────────── -->
+    <!-- ── 数据集页签（研发产品 / 公共数据）───────────────────────────── -->
     <!-- 2026-10-20（用户第 5 轮）：页签从「已添加图层」标题**下面**上移到**上面**。
          层级关系：侧栏面板 → 页签（数据集大类）→ 已添加图层（清单）→ 组块。
          只在「已添加图层」视图下出现；选中态只变文字颜色（不加短蓝线）。 -->
@@ -1013,13 +1014,24 @@ onMounted(() => {
       @toggle-category="toggleCategory"
     />
 
-    <!-- ── 公共数据（空态占位）─────────────────────────────────────────── -->
+    <!-- ── 公共数据 / 收藏（空态占位）───────────────────────────────────── -->
     <!-- 2026-10-20 用户第 4 轮：目录里目前没有「公共」数据集分类，按用户选择
-         先只做界面，点进来显示「暂无公共数据集」，等以后接真实数据。 -->
-    <div v-else-if="sidebarView === 'active' && datasetScope === 'public'" class="dataset-empty">
+         先只做界面，点进来显示「暂无公共数据集」，等以后接真实数据。
+         2026-10-21 第 10 轮：新增「收藏」页签，同样先做空态占位。 -->
+    <div v-else-if="sidebarView === 'active' && datasetScope !== 'research'" class="dataset-empty">
       <Diamond :size="20" class="empty-icon" aria-hidden="true" />
-      <p class="dataset-empty-title">暂无公共数据集</p>
-      <p class="dataset-empty-hint">公共数据尚未接入，<br />请切换到「科研数据」查看已添加图层。</p>
+      <template v-if="datasetScope === 'favorite'">
+        <p class="dataset-empty-title">暂无收藏图层</p>
+        <p class="dataset-empty-hint">
+          收藏功能尚未接入，<br />请切换到「研发产品」查看已添加图层。
+        </p>
+      </template>
+      <template v-else>
+        <p class="dataset-empty-title">暂无公共数据集</p>
+        <p class="dataset-empty-hint">
+          公共数据尚未接入，<br />请切换到「研发产品」查看已添加图层。
+        </p>
+      </template>
     </div>
 
     <!-- ── ACTIVE STATE ───────────────────────────────────────────────── -->
