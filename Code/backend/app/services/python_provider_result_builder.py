@@ -56,7 +56,10 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "variable": "omega_pix_map",
         "grid_preset": "ease2-global-9km",
         "label": "OMEGA",
-        "palette": "cividis",
+        # 2026-10-20（用户第 5 轮）：reds → ylorrd。reds 起点近白、终点血红，
+        # 大面积低值区发白、高值区刺眼；ylorrd 是 ColorBrewer 顺序色带，
+        # 黄→橙→深红过渡自然，与 SM 的 ylgnbu、VOD 的 magma 色相完全分离。
+        "palette": "ylorrd",
         "vmin": 0.0,
         "vmax": 0.5,
     },
@@ -73,7 +76,13 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "variable": "VOD",
         "grid_preset": "ease2-global-9km",
         "label": "VOD",
-        "palette": "viridis",
+        # 2026-10-20（用户第 5 轮）：plasma → purple-orange。
+        # plasma 中段品红 + 末段荧光黄偏"霓虹"，用户嫌丑；
+        # 也试过 matplotlib 的 magma，但 magma 起点是近纯黑(#000004)，
+        # 而 VOD 实测中位值贴着 vmin ⇒ 大面积会糊成死黑（读盘验过：中位色 [0,0,4]）。
+        # purple-orange 起点深紫(#2d1b3d)有颜色不发黑，末端香槟黄柔和，
+        # 与 SM 的 ylgnbu（绿蓝）、ω 的 ylorrd（黄红）色相完全分离。
+        "palette": "purple-orange",
         "from_block_dir": True,
         "vmin": 0.0,
         "vmax": 1.5,
@@ -82,7 +91,7 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "variable": "OMEGA",
         "grid_preset": "ease2-global-9km",
         "label": "OMEGA",
-        "palette": "cividis",
+        "palette": "ylorrd",
         "from_block_dir": True,
         "vmin": 0.0,
         "vmax": 0.5,

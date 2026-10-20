@@ -4,6 +4,14 @@
   /* 2026-10-20（用户第 2 轮）：圆角统一收小一档——0.6 → 0.42rem（约 9.6px → 6.7px）。
      只动侧栏自己的变量，不影响其他面板。 */
   --sidebar-soft-radius: 0.42rem;
+  /* 2026-10-20（用户第 5 轮）：组头底色改回**素净的天蓝**。
+     原先的 rgba(90,213,255,.1) 是青蓝（cyan），在面板上发"电子感"，
+     用户嫌丑；这里换成中性蓝（#569cff 系），深色主题下略提亮。
+     ⚠ 这层底色**只给组头**（「风云卫星微波反演产品」那一行），
+     成员行不再继承（见 .layer-item.in-run-group 的 background: transparent）。 */
+  --sidebar-group-tint: rgba(86, 156, 255, 0.12);
+  /* 组块左侧那条竖向色条：组头与成员共用，纵向连成一条贯穿整组 */
+  --sidebar-group-accent: rgba(86, 156, 255, 0.62);
   --sidebar-section-padding: 0.46rem;
   --sidebar-inner-padding: 0.32rem;
   display: flex;
@@ -24,6 +32,15 @@
   height: min(100%, calc(100vh - 12rem));
   max-height: min(100%, calc(100vh - 12rem));
   box-sizing: border-box;
+}
+
+/* 浅色主题：组头底色再压淡一档，避免在浅面板上发灰、发脏。
+   ⚠ scoped CSS 里必须写成 `:root[data-theme='light'] .X`（本文件下方
+   .library-card 同写法）；写成 :global(...) 会只剩 [data-theme=light]，
+   规则浮到根元素上 ⇒ 既失效又污染整页。 */
+:root[data-theme='light'] .panel {
+  --sidebar-group-tint: rgba(37, 99, 235, 0.07);
+  --sidebar-group-accent: rgba(37, 99, 235, 0.55);
 }
 
 .panel,
@@ -1222,11 +1239,12 @@ h2 {
   background: linear-gradient(var(--surface-hover), var(--surface-hover)), var(--surface-1);
 }
 
-.layer-item.active {
-  background: linear-gradient(var(--accent-surface), var(--accent-surface)), var(--surface-1);
-  /* 2026-10-20（用户第 2 轮）：去掉那圈 1px 蓝色内描边——用户说点一下就冒出一个
-     "蓝色方框"。选中态只用浅蓝底色表达；组内成员的左侧蓝条另见 .in-run-group.active。 */
-}
+/* 2026-10-20（用户第 6 轮）：选中态**不再给整行任何底色**。
+   用户原话：「勾选图层不要给我显示背景颜色，只要方框打勾有颜色就行了」。
+   ⇒ 「当前图层」的唯一标识就是左侧那个已打勾的复选框（蓝底白勾），
+     整行背景保持与未选中完全一致；悬停反馈（.layer-item:hover）仍保留，
+     那是鼠标位置提示，不是选中表达。
+   ⚠ 请勿再加回 background / 内描边 / 左侧彩条。 */
 
 /* 2026-10-20（用户第 3 轮，最终结论）：隐藏态**不做任何淡化**。
    之前试过整行 opacity 0.55 → 0.78，又试过只淡化色带，用户明确否掉：
@@ -1249,27 +1267,26 @@ h2 {
   /* 2026-10-20：组块之间留大间距（0.55rem），组头与成员之间贴合成一张卡 */
   margin: 0.55rem 0 0;
   padding: 0.5rem 0.62rem;
-  /* 2026-10-20（用户第 2 轮）：组块**不要整圈蓝框**，只保留左侧一条蓝竖条。
-     做法：外框换成极淡中性发丝线（--border-subtle，6% 透明度，几乎看不见），
-     左侧用 3px 内阴影画蓝条；组头与每个成员都画同一条 ⇒ 纵向连成一整条。
-     ⚠ 原先是 border: 1px solid var(--border-strong)，浅色主题下 --border-strong
-     是蓝色（rgba(0,113,227,.38)），这就是"外面那圈蓝框"的来源。 */
-  border: 1px solid var(--border-subtle);
-  /* 组块卡片：组头只画上圆角，成员沿左右边框往下拼，最后一个成员补下圆角 */
+  /* 2026-10-20（用户第 4 轮）：组块改成「一整片淡色 + 左侧一条蓝竖条」。
+     做法：组头与成员共用完全相同的底色、都没有边框、都没有左右圆角，
+     只有组头画上两角、最后一个成员画下两角 ⇒ 视觉上是同一个容器包住
+     三行，中间不出现任何横线或方框。折叠时组头自己补成完整圆角。 */
+  /* 2026-10-20（用户第 5 轮）：只有组头这一行有底色（淡蓝），
+     成员行透明 —— 用户明确「不是整个都有颜色，只有组头这一个地方有颜色」。
+     左边那条竖线仍在（--sidebar-group-accent 贯穿 4 行），
+     用"竖线 + 缩进"表达包含关系，不用整片底色。 */
+  border: none;
   border-radius: var(--sidebar-soft-radius) var(--sidebar-soft-radius) 0 0;
-  border-bottom: none;
-  background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-1) 100%);
-  box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.55);
+  background: var(--sidebar-group-tint);
+  box-shadow: inset 3px 0 0 var(--sidebar-group-accent);
   /* 2026-10-19：整行可点即折叠/展开 */
   cursor: pointer;
   user-select: none;
 }
 
-/* 折叠时组头自己就是一个完整卡片，下边要收口 */
+/* 折叠时组头自己就是一个完整卡片，四个角都要收口 */
 .layer-group-header.collapsed {
   border-radius: var(--sidebar-soft-radius);
-  /* 折叠时组头自己就是完整卡片，底边补回来（外框是中性发丝线） */
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* 折叠箭头（2026-10-19）：与 AppSelect 下拉同一条路径 m6 9 6 6 6-6，
@@ -1406,30 +1423,31 @@ h2 {
    成员之间不加分隔线（用户要求），靠上下 0.46rem、左右 0.62rem 的留白区分。 */
 .layer-item.in-run-group {
   margin-top: 0;
+  /* 2026-10-20（用户第 4 轮）：成员不再贴边，也不再有独立卡片。
+     左内边距 2.2rem 让「图层名」正落在组标题文字下方（略缩进一档：
+     勾选框 1.05rem + 间距 0.24rem 由 padding 承担，2.2+1.29 ≈ 3.49rem，
+     组标题文字左起约 3.28rem）；非对称表达「这层属于上面那个组」。 */
   margin-left: 0;
-  padding: 0.46rem 0.62rem;
-  /* 左右用中性发丝线（与组头同色），不画上下边 ⇒ 成员之间不会出现横向接缝 */
+  padding: 0.46rem 0.62rem 0.46rem 2.2rem;
+  /* 无边框：成员之间、成员与组头之间都不画任何线 */
   border: none;
-  border-left: 1px solid var(--border-subtle);
-  border-right: 1px solid var(--border-subtle);
   border-radius: 0;
-  /* 与组头渐变末端同色，整卡底色连续；不能用 transparent，
-     否则会透出面板底色，组内成员看着仍像独立小块 */
-  background: var(--surface-1);
-  /* 左侧蓝条：与组头同宽同色，纵向连成一条 */
-  box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.55);
+  /* 2026-10-20（用户第 5 轮）：成员**不再有底色**（原来是 var(--sidebar-group-tint)），
+     否则整个组块看起来是一大片浅蓝。现在只有组头有色，成员透明；
+     包含关系靠左侧那条贯穿竖线 + 缩进表达。 */
+  background: transparent;
+  /* 左侧竖线：与组头同宽同色，纵向连成一条贯穿整个组 */
+  box-shadow: inset 3px 0 0 var(--sidebar-group-accent);
 }
 
-/* 组内最后一个成员：补底边 + 下圆角，把整张卡收口 */
+/* 组内最后一个成员：补下圆角，把整片容器收口（不加底边线） */
 .layer-item.in-run-group.group-last-row {
-  border-bottom: 1px solid var(--border-subtle);
   border-radius: 0 0 var(--sidebar-soft-radius) var(--sidebar-soft-radius);
 }
 
-/* 选中时把左侧蓝条提亮（外框已取消，选中靠底色 + 这条蓝条表达） */
-.layer-item.in-run-group.active {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
+/* 2026-10-20（用户第 6 轮）：组内成员选中时同样**不加底色、不提亮左侧竖条**——
+   竖条颜色与未选中的成员完全一致，选中只由复选框的勾表达。
+   （第 5 轮这里曾给过浅蓝底 + 亮蓝竖条，用户否掉了。） */
 
 .layer-item.group-locked {
   opacity: 0.92;
@@ -1551,9 +1569,11 @@ h2 {
 /* 变量短码（2026-10-19）：SM / VOD / ω，紧跟图层名，弱化处理不抢主名 */
 .layer-tag {
   flex-shrink: 0;
-  /* 2026-10-20：12px → 11px，作为主名的附属标记 */
+  /* 2026-10-20（用户第 4 轮）：短码（SM / VOD / ω）不再是浅灰 ——
+     和图层名同一个颜色，层级只靠字号（11px vs 13px）与字重（400 vs 650）
+     区分。用户明确要求「整行都是同一个颜色，别搞浅灰色」。 */
   font-size: 0.68rem;
-  color: var(--text-faint);
+  color: var(--text-strong);
   letter-spacing: 0.02em;
   user-select: none;
   margin-left: -0.06rem;
@@ -2224,4 +2244,99 @@ h2 {
 .template-run-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* ── 标题内计数（2026-10-20 用户第 4 轮） ──────────────────────────────────
+   原来是标题右侧一个带圈的独立徽标，用户要求去掉，改成「已添加图层（3）」
+   写在标题里，数字随图层数实时变化。字重比标题轻一档，颜色沿用标题色，
+   不再新增灰阶。 */
+.header-count {
+  margin-left: 0.1rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 数据集页签（2026-10-20 用户第 4 轮） ──────────────────────────────────
+   位置：「图层」标题行之下、「已添加图层」列表之上的一条页签。
+   选中态**只把文字变主色**——用户明确否掉了「下面一条短蓝线」的方案，
+   所以这里刻意不画任何下划线/指示条。整行底部一条极淡通栏细线，
+   只作为与下方列表的分界。 */
+.dataset-tabs {
+  display: flex;
+  align-items: center;
+  /* 2026-10-20（用户第 6 轮）：「科研数据」与「公共数据」再拉开一点，1.05 → 1.85rem */
+  gap: 1.85rem;
+  /* 上下留白同时加大：上方与面板内边距之间、下方与分隔线之间都不再贴死 */
+  padding: 0.16rem 0.12rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dataset-tab {
+  /* 2026-10-20（用户第 6 轮）：上下 padding 一起加（0.06/0.34 → 0.36/0.52），
+     页签行整体高度变大，文字与上边框、与下方细线都有呼吸空间 */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.36rem 0 0.52rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-soft);
+}
+
+/* 2026-10-20（用户第 6 轮）：页签前的图标（科研=显微镜 / 公共=地球仪）。
+   尺寸跟文字齐平，颜色继承文字 ⇒ 选中时图标一起变亮。 */
+.dataset-tab-icon {
+  width: 0.92rem;
+  height: 0.92rem;
+  flex: 0 0 auto;
+  stroke-width: 1.9;
+  opacity: 0.8;
+}
+
+.dataset-tab.active .dataset-tab-icon {
+  opacity: 1;
+}
+
+.dataset-tab:hover {
+  color: var(--text-primary);
+}
+
+.dataset-tab.active {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.dataset-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}
+
+/* 公共数据暂未接入真实目录：空态占位（用户选择「先只做界面」） */
+.dataset-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.36rem;
+  /* 撑满页签以下的剩余高度，空态才落在可视区中间 */
+  flex: 1 1 auto;
+  padding: 2.2rem 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.dataset-empty-title {
+  font-size: var(--font-size-body);
+  color: var(--text-strong);
+}
+
+.dataset-empty-hint {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }

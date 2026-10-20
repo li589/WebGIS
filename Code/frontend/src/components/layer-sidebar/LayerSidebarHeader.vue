@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { LayoutGrid, Trash2 } from '../ui/icons'
 import Tooltip from '../ui/Tooltip.vue'
-import AnimatedNumber from '../ui/AnimatedNumber.vue'
 
 defineProps<{
   sidebarViewLabel: string
@@ -24,22 +23,19 @@ const emit = defineEmits<{
   <div class="panel-topline">
     <div class="panel-header">
       <div class="header-copy">
-        <h2>{{ sidebarViewLabel }}</h2>
+        <h2>
+          {{ sidebarViewLabel
+          }}<span v-if="sidebarView === 'active' && activeLayerCount > 0" class="header-count"
+            >（{{ activeLayerCount }}）</span
+          >
+        </h2>
         <p v-if="sidebarView !== 'active'" class="panel-subtitle">
           {{ sidebarView === 'empty' ? '开始添加图层' : '从库中选择' }}
         </p>
       </div>
       <div class="header-actions">
-        <Tooltip v-if="activeLayerCount > 0" text="已添加">
-          <button
-            class="badge"
-            type="button"
-            aria-label="查看已添加图层"
-            @click="emit('openActive')"
-          >
-            <AnimatedNumber :value="activeLayerCount" />
-          </button>
-        </Tooltip>
+        <!-- 2026-10-20 用户第 4 轮：原来标题右侧那个带圈数字已删除，
+             数量改为写进标题「已添加图层（3）」，见上方 .header-count。 -->
         <div class="view-tabs" role="tablist">
           <Tooltip v-if="canManageGroups" text="分组">
             <button
