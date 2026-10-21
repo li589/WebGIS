@@ -55,6 +55,7 @@ import {
 } from '../services/api-config'
 import { isReducedMotionActive } from '../services/motion-preference'
 import { isGlobalMapViewport } from '../utils/map-viewport'
+import { DEFAULT_LAYER_OPACITY } from '../utils/layer-opacity'
 import {
   isMapDistributionChromeEnabled,
   subscribeMapDistributionChrome,
@@ -298,7 +299,7 @@ const hasAdminBoundary = computed(() =>
 )
 const adminBoundaryOpacity = computed(() => {
   const layer = workspace.activeLayersDisplay.value.find((d) => d.isAdminBoundary)
-  return layer ? layer.opacity : 1
+  return layer ? layer.opacity : DEFAULT_LAYER_OPACITY
 })
 
 // Safe fallback for template (no selected layer = dark atmospheric state)

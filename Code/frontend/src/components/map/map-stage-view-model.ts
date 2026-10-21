@@ -1,4 +1,5 @@
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
+import { DEFAULT_LAYER_OPACITY } from '../../utils/layer-opacity'
 import { LAYERS_COPY } from '../../ui-copy'
 
 export interface MapStageDisplayModel {
@@ -69,7 +70,7 @@ export function buildFallbackActiveLayerDisplay(): ActiveLayerDisplay {
     isImported: false,
     isImportedRaster: false,
     visible: true,
-    opacity: 1,
+    opacity: DEFAULT_LAYER_OPACITY,
     order: 0,
     dataState: 'catalog',
   }

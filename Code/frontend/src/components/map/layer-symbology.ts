@@ -2,6 +2,7 @@
  * 图层符号 / 图例解析：侧栏与 InfoPanel 共用。
  */
 import type { WeatherLayerRenderHint } from '../../services/runtime-api'
+import { DEFAULT_LAYER_OPACITY } from '../../utils/layer-opacity'
 import {
   buildWeatherLegendGradient,
   buildWeatherLegendStops,
@@ -125,7 +126,7 @@ export function buildLegendHintFromOverlayMeta(
     // 2026-10-15：后端把变量标签写进了 unit（meta.unit = SM / VOD / OMEGA）⇒
     // 角色码按口径换成真实单位（SM= m³/m³；无量纲 ⇒ 空串，不显示）
     unit_label: isProductRoleCode(meta.unit) ? unitForRole(meta.unit) : (meta.unit ?? ''),
-    opacity: typeof meta.opacity === 'number' ? meta.opacity : 0.7,
+    opacity: typeof meta.opacity === 'number' ? meta.opacity : DEFAULT_LAYER_OPACITY,
     legend_ticks: [vmin, mid, vmax],
     notes: ['有源图层可改配色；地图与图例同步重着色'],
   }

@@ -6,6 +6,7 @@ import { nextTick } from 'vue'
 
 import { useWeatherTileManager } from '../weather-tile-manager'
 import type { BoundingBox } from '../../services/runtime-api'
+import { DEFAULT_LAYER_OPACITY } from '../../utils/layer-opacity'
 import { buildImportedRasterPayload } from './imported-raster'
 import { buildImportedVectorPayload } from './imported-vector'
 import {
@@ -177,7 +178,8 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
       catalogId: saved.catalogId,
       name: saved.name,
       visible: saved.visible !== false,
-      opacity: typeof saved.opacity === 'number' ? saved.opacity : 1,
+      // 统一加载透明度：快照里遗留的旧值（1 / 0.85 / 0.7）一律拉回 0.9
+      opacity: DEFAULT_LAYER_OPACITY,
       order: typeof saved.order === 'number' ? saved.order : activeLayers.length,
       isAdminBoundary: false,
       dataState: saved.dataState === 'real' ? 'real' : 'catalog',
@@ -430,7 +432,8 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         catalogId: saved.catalogId,
         name: saved.name,
         visible: saved.visible !== false,
-        opacity: typeof saved.opacity === 'number' ? saved.opacity : 1,
+        // 统一加载透明度：快照里遗留的旧值（1 / 0.85 / 0.7）一律拉回 0.9
+        opacity: DEFAULT_LAYER_OPACITY,
         order: typeof saved.order === 'number' ? saved.order : activeLayers.length,
         isAdminBoundary: false,
         dataState: 'imported',
@@ -525,7 +528,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
           catalogId: saved.catalogId || saved.backendLayerId,
           name: displayName,
           visible: saved.visible !== false,
-          opacity: typeof saved.opacity === 'number' ? saved.opacity : 0.85,
+          opacity: DEFAULT_LAYER_OPACITY,
           order: typeof saved.order === 'number' ? saved.order : activeLayers.length,
           isAdminBoundary: false,
           dataState: 'imported',

@@ -6,6 +6,7 @@ import { computed, markRaw, nextTick, ref } from 'vue'
 
 import type { LayerDescriptor } from '../../services/runtime-api'
 import { deleteImportedRaster } from '../../services/data-import'
+import { DEFAULT_LAYER_OPACITY } from '../../utils/layer-opacity'
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useUiStore } from '../ui'
 import { safeLog } from '../log'
@@ -153,7 +154,8 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       instanceId: genInstanceId(),
       catalogId,
       visible: true,
-      opacity: 1,
+      // 统一加载透明度（2026-10-21 用户要求：所有图层一律 0.9）
+      opacity: DEFAULT_LAYER_OPACITY,
       order: maxOrder + 1,
       isAdminBoundary: false,
       jobLayer,
@@ -253,7 +255,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
           '',
         ) || name,
       visible: true,
-      opacity: 0.85,
+      opacity: DEFAULT_LAYER_OPACITY,
       order: maxOrder + 1,
       isAdminBoundary: false,
       importedVector: payload,
@@ -286,7 +288,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       catalogId,
       name: name || `绘制图层-${new Date().toLocaleString('zh-CN')}`,
       visible: true,
-      opacity: 0.85,
+      opacity: DEFAULT_LAYER_OPACITY,
       order: maxOrder + 1,
       isAdminBoundary: false,
       importedVector: payload,
@@ -383,7 +385,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       catalogId: safeCatalogId,
       name: safeName,
       visible: true,
-      opacity: 0.7,
+      opacity: DEFAULT_LAYER_OPACITY,
       order: maxOrder + 1,
       isAdminBoundary: false,
       importedRaster: payload,

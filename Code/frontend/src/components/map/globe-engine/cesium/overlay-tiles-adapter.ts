@@ -3,6 +3,7 @@
  * /weather/tiles 返回 GeoJSON，本阶段跳过（风场等仍走 MapLibre）。
  */
 import { buildOverlayStyleQuery } from '../../layer-symbology'
+import { DEFAULT_LAYER_OPACITY, normalizeLayerOpacity } from '../../../../utils/layer-opacity'
 import type { ActiveLayerDisplay } from '../../../../stores/layers/types'
 
 export interface CesiumOverlayTileSpec {
@@ -61,7 +62,7 @@ export function collectCesiumOverlayTileSpecs(
     out.push({
       id: overlayId,
       urlTemplate: `${base}${qs}`,
-      opacity: Math.max(0, Math.min(1, layer.opacity ?? 1)),
+      opacity: normalizeLayerOpacity(layer.opacity ?? DEFAULT_LAYER_OPACITY),
       maximumLevel: 18,
     })
   }

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { showToast } from '../../data-manager/core/workspace-store'
 import { overlaySafeWgs84Bounds } from '../../services/geo-math'
+import { DEFAULT_LAYER_OPACITY } from '../../utils/layer-opacity'
 import { buildOverlayStyleQuery } from './layer-symbology'
 import {
   addBandedImageSources,
@@ -227,7 +228,18 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
   const vmin = _overlayMetaFiniteNumber(meta.vmin) ?? null
   const vmax = _overlayMetaFiniteNumber(meta.vmax) ?? null
   const unit = _overlayMetaString(meta.unit) ?? ''
-  const opacity = _overlayMetaFiniteNumber(meta.opacity) ?? 0.7
+  /**
+   * 2026-10-21（用户要求）：0.7 → 0.9。
+   *
+   * 老师反馈「底图好像掩盖了上面的图层数据」：数据叠加层只给 70% 不透明度，
+   * 底图有 30% 透上来；再叠上反演产物本身稀疏（SM 有值像元仅占画幅 3%）、
+   * 色带低值端偏浅，观感就是"数据被底图压住"。
+   * 提到 0.9 后数据基本实色，只在极浅色底图上还留一点融合感，不牺牲可读性。
+   * 盘上 meta.json 有 opacity 字段时仍以盘上为准（本值只是缺省）。
+   * 2026-10-21 二次统一：默认值收敛到 `DEFAULT_LAYER_OPACITY`（0.9），
+   * 与「新建图层 / 快照还原 / 图例 hint」共用同一个常量，避免各处又飘。
+   */
+  const opacity = _overlayMetaFiniteNumber(meta.opacity) ?? DEFAULT_LAYER_OPACITY
   const supports_recolor = Boolean(meta.supports_recolor)
   const supports_xyz_tiles = Boolean(meta.supports_xyz_tiles)
   // P2-4：direct 源图层无烘焙 overview PNG（缺省 true 向后兼容旧 meta）
