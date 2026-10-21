@@ -3021,10 +3021,28 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "composite_period",
                 "string",
                 default="none",
-                options=["none", "month"],
+                options=["none", "month", "window"],
                 description=(
                     "时间合成粒度：month=按自然月聚合逐日结果为整月块"
-                    "（如 20251201_20251231.mat），日帧保留在盘上；none=仅逐日。"
+                    "（如 20251201_20251231.mat）；window=按下面给定的任意"
+                    "起止日聚合成一块（季节平均，如 20250601_20250831.mat）；"
+                    "none=仅逐日。日帧一律保留在盘上。"
+                ),
+            ),
+            _param(
+                "composite_window_start",
+                "string",
+                default="",
+                description=(
+                    "窗口合成起始日 YYYYMMDD（含）。仅 composite_period=window 时生效。"
+                ),
+            ),
+            _param(
+                "composite_window_end",
+                "string",
+                default="",
+                description=(
+                    "窗口合成结束日 YYYYMMDD（含）。仅 composite_period=window 时生效。"
                 ),
             ),
         ],

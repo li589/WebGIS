@@ -12,7 +12,10 @@ avg_omega_doy_dir / omega_block_mat）。
 from __future__ import annotations
 
 import calendar
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_path
@@ -218,6 +221,10 @@ _MONTHLY_COMPOSITE_VARIABLES = ("SM", "VOD", "OMEGA")
 #: 允许触发月合成的 ``composite_period`` 取值
 _MONTHLY_COMPOSITE_ALIASES = {"month", "monthly", "1m", "calendar-month"}
 
+#: 允许触发「任意窗口合成」（季节/自定义区间）的 ``composite_period`` 取值。
+#: 与月合成互斥：同一 token 不会同时命中两套别名。
+_COMPOSITE_WINDOW_ALIASES = {"window", "custom", "season", "range"}
+
 
 def monthly_composite_label(year: int, month: int) -> str:
     """自然月块标签：``20251201_20251231``。"""
@@ -342,6 +349,205 @@ def build_monthly_composites(
                     "monthly-composite",
                     100.0,
                     f"natural month composite {label} from {len(paths)} daily frames",
+                )
+            except Exception:
+                pass
+
+    return labels
+
+
+def _normalize_window_key(value: object) -> str:
+    """``2025-06-01`` / ``20250601`` / ``20250601T00:00:00`` → ``20250601``。"""
+    text = str(value or "").strip().replace("-", "")[:8]
+    return text if len(text) == 8 and text.isdigit() else ""
+
+
+def resolve_composite_windows(
+    params: Mapping[str, Any] | dict[str, Any],
+) -> list[tuple[str, str]]:
+    """从 ``algorithm_params`` 解析待合成的日期窗口列表。
+
+    优先级：``composite_windows``（多窗口）> ``composite_window_start`` +
+    ``composite_window_end``（单窗口）。多窗口支持三种写法：
+    ``[["20250601","20250831"]]``、``["20250601_20250831"]``、
+    以及 JSON 字符串形式。解析不出来就返回空列表（不合成，不报错）。
+    """
+    raw = params.get("composite_windows")
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text:
+            try:
+                import json
+
+                raw = json.loads(text)
+            except (ValueError, TypeError):
+                raw = [text]
+        else:
+            raw = None
+
+    windows: list[tuple[str, str]] = []
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                start = _normalize_window_key(item[0])
+                end = _normalize_window_key(item[1])
+            else:
+                # 单项写成 "20250601_20250831" 时，JSON 解析会得到单元素列表
+                text = str(item[0] if isinstance(item, (list, tuple)) else item or "")
+                parts = text.replace("~", "_").split("_")
+                if len(parts) != 2:
+                    continue
+                start = _normalize_window_key(parts[0])
+                end = _normalize_window_key(parts[1])
+            if start and end:
+                windows.append((start, end) if start <= end else (end, start))
+        if windows:
+            return windows
+
+    start = _normalize_window_key(params.get("composite_window_start"))
+    end = _normalize_window_key(params.get("composite_window_end"))
+    if start and end:
+        return [(start, end) if start <= end else (end, start)]
+    return []
+
+
+def window_composite_label(start_key: str, end_key: str) -> str:
+    """任意窗口块标签：``20250601_20250831``。"""
+    return f"{start_key}_{end_key}"
+
+
+def build_window_composites(
+    output_dir: Path,
+    *,
+    windows: Sequence[tuple[str, str]],
+    logger_adapter: object | None = None,
+    force: bool = False,
+    min_coverage: float = 0.8,
+) -> list[str]:
+    """把 ``output_dir`` 下的日帧按**任意日期窗口**聚合成一块（季节平均等）。
+
+    与 :func:`build_monthly_composites` 的区别只在「分桶方式」：那个按自然月
+    切，这个按调用方给定的 ``[start_key, end_key]``（含两端，``YYYYMMDD``）切。
+    聚合规则完全相同：窗口内所有日帧**逐像元取有效值（有限值）平均**，全 NaN
+    的像元保持 NaN。只读日帧、只增块，不删除任何原文件。
+
+    产物命名 ``{start}_{end}.mat``（如 ``20250601_20250831.mat``），物化侧
+    ``_BLOCK_MAT_RE`` 天生认这种「起_止」标签，无需改后端。
+
+    Args:
+        output_dir: D2 产物目录（含 ``YYYYMMDD.mat`` 日帧）。
+        windows: ``[(start_key, end_key), ...]``，可为空列表表示不合成。
+        logger_adapter: 可选，用于 ``emit_progress`` 上报。
+        force: 已存在的块是否重算覆盖。
+        min_coverage: 窗口内日帧覆盖率下限（0~1）。低于门槛不发布，避免
+            「只有十几天数据就冒充季节产品」；已存在的块不受门槛影响。
+
+    Returns:
+        产出的窗口块标签列表，例如 ``["20250601_20250831"]``。
+    """
+    import math
+
+    import numpy as np
+    from scipy.io import loadmat, savemat
+
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir() or not windows:
+        return []
+
+    # 先把日帧按日期收一遍，避免每个窗口都扫目录
+    daily: dict[str, Path] = {}
+    for path in sorted(output_dir.iterdir()):
+        if not path.is_file() or path.suffix.lower() != ".mat":
+            continue
+        stem = path.stem
+        if len(stem) != 8 or not stem.isdigit():
+            continue
+        daily[stem] = path
+
+    labels: list[str] = []
+    for start_key, end_key in windows:
+        start = str(start_key or "").strip().replace("-", "")
+        end = str(end_key or "").strip().replace("-", "")
+        if len(start) != 8 or len(end) != 8 or not (start.isdigit() and end.isdigit()):
+            continue
+        if start > end:
+            start, end = end, start
+        label = window_composite_label(start, end)
+        target = output_dir / f"{label}.mat"
+        if target.exists() and not force:
+            labels.append(label)
+            continue
+
+        paths = [path for key, path in daily.items() if start <= key <= end]
+        try:
+            span_days = (
+                datetime.strptime(end, "%Y%m%d") - datetime.strptime(start, "%Y%m%d")
+            ).days + 1
+        except ValueError:
+            continue
+        if span_days <= 0:
+            continue
+        required = max(1, math.ceil(span_days * float(min_coverage)))
+        if len(paths) < required:
+            if logger_adapter is not None:
+                try:
+                    logger_adapter.emit_progress(
+                        "window-composite",
+                        100.0,
+                        f"skip {label}: {len(paths)}/{required} daily frames "
+                        "(below coverage threshold)",
+                    )
+                except Exception:
+                    pass
+            continue
+
+        # 增量累加而非整窗 np.stack：一个季节 90+ 帧、3 个变量、
+        # 4.19M 像元时，整窗堆叠要 6GB+ 内存，累加只要两个数组。
+        sums: dict[str, np.ndarray] = {}
+        counts: dict[str, np.ndarray] = {}
+        used = 0
+        for path in paths:
+            try:
+                mat = loadmat(str(path))
+            except Exception:  # 单个坏帧不阻断整块合成
+                continue
+            used += 1
+            for variable in _MONTHLY_COMPOSITE_VARIABLES:
+                value = mat.get(variable)
+                if value is None:
+                    continue
+                array = np.asarray(value, dtype=np.float32)
+                if variable not in sums:
+                    sums[variable] = np.zeros(array.shape, dtype=np.float64)
+                    counts[variable] = np.zeros(array.shape, dtype=np.int32)
+                elif array.shape != sums[variable].shape:
+                    continue
+                finite = np.isfinite(array)
+                sums[variable][finite] += array[finite]
+                counts[variable][finite] += 1
+        if not sums or used == 0:
+            continue
+
+        payload: dict[str, np.ndarray] = {}
+        for variable, total in sums.items():
+            count = counts[variable]
+            merged = np.full(total.shape, np.nan, dtype=np.float32)
+            has_value = count > 0
+            merged[has_value] = (total[has_value] / count[has_value]).astype(np.float32)
+            payload[variable] = merged
+        if not payload:
+            continue
+
+        tmp = target.with_name(f".{target.name}.tmp")
+        savemat(str(tmp), payload, do_compression=True)
+        tmp.replace(target)
+        labels.append(label)
+        if logger_adapter is not None:
+            try:
+                logger_adapter.emit_progress(
+                    "window-composite",
+                    100.0,
+                    f"window composite {label} from {used} daily frames",
                 )
             except Exception:
                 pass
@@ -599,6 +805,7 @@ class OmegaAvgDailyModule(BaseModule):
             str(algorithm_params.get("composite_period") or "").strip().lower()
         )
         monthly_labels: list[str] = []
+        window_labels: list[str] = []
         if composite_period in _MONTHLY_COMPOSITE_ALIASES:
             try:
                 monthly_labels = build_monthly_composites(
@@ -612,6 +819,25 @@ class OmegaAvgDailyModule(BaseModule):
                     try:
                         ctx.logger_adapter.emit_progress(
                             "monthly-composite", 100.0, "monthly composite failed"
+                        )
+                    except Exception:
+                        pass
+        elif composite_period in _COMPOSITE_WINDOW_ALIASES:
+            # 任意窗口合成（季节平均等）：composite_window_start/end 单窗口，
+            # 或 composite_windows 多窗口。失败同样不拖垮日产品发布。
+            try:
+                window_labels = build_window_composites(
+                    Path(output_dir),
+                    windows=resolve_composite_windows(algorithm_params),
+                    logger_adapter=ctx.logger_adapter,
+                    force=bool(algorithm_params.get("composite_force")),
+                )
+            except Exception:
+                window_labels = []
+                if ctx.logger_adapter is not None:
+                    try:
+                        ctx.logger_adapter.emit_progress(
+                            "window-composite", 100.0, "window composite failed"
                         )
                     except Exception:
                         pass
@@ -677,6 +903,7 @@ class OmegaAvgDailyModule(BaseModule):
                 "stage_d_max_days": int(config.stage_d_max_days),
                 "composite_period": composite_period or "none",
                 "monthly_composites": monthly_labels,
+                "window_composites": window_labels,
             },
         )
         return _store_manifest(
