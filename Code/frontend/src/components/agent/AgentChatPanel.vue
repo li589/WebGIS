@@ -44,6 +44,7 @@ import {
   isUserInitiatedStop,
   layerCardsFromActiveLayers,
   sumSessionTokens,
+  summarizeTimeRange,
   type AgentLayerCard,
 } from './agent-chat-helpers'
 import { agentMapPoint } from '../../stores/agent-map-point'
@@ -102,6 +103,8 @@ interface ChatMessage {
   layerCards?: AgentLayerCard[]
   /** 结束后是否默认展开「过程」（有工具步骤时） */
   keepStepsOpen?: boolean
+  /** 后端 provider：demo = 规则演示；degraded/busy = 已降级 */
+  provider?: string
 }
 
 const WELCOME_TEXT = '你好，我是地图助手。试试「打开 CMFD 降水」或「有哪些活动图层」。'
@@ -121,6 +124,18 @@ const messages = ref<ChatMessage[]>([
 function finalizeAssistantHtml(msg: ChatMessage) {
   if (msg.role !== 'assistant') return
   msg.html = msg.text ? renderAgentMarkdown(msg.text) : ''
+}
+
+/**
+ * 助手模式徽章：让用户一眼看出这条回复是「规则演示」还是真实模型，
+ * 以及是否处于降级状态。验收要求 demo 模式必须显式标识。
+ */
+function modeBadge(provider?: string): string {
+  if (provider === 'demo') return '规则演示模式'
+  if (provider === 'degraded') return '模型不可用 · 已降级'
+  if (provider === 'busy') return '助手繁忙'
+  if (provider === 'guard') return '已超出输入预算'
+  return ''
 }
 const input = ref('')
 const sending = ref(false)
@@ -716,6 +731,18 @@ watch(input, () => {
   void nextTick(() => autosizeInput())
 })
 
+/** 可见栅格里帧数最多的那个，作为「主导时间序列」上报可用范围 */
+function dominantTimeList(): string[] | null {
+  let best: string[] | null = null
+  for (const layer of workspace.activeLayers.value) {
+    if (layer.visible === false || layer.isAdminBoundary) continue
+    const list = layer.importedRaster?.timeList
+    if (!Array.isArray(list) || !list.length) continue
+    if (!best || list.length > best.length) best = list.map((t) => String(t))
+  }
+  return best
+}
+
 function buildClientContext() {
   return buildAgentClientContextPayload({
     layers: workspace.activeLayers.value.map((l) => ({
@@ -744,6 +771,7 @@ function buildClientContext() {
         : null,
     },
     basemapId: uiStore.tileSourceId,
+    dataRange: summarizeTimeRange(dominantTimeList()),
   })
 }
 
@@ -884,6 +912,7 @@ async function applyChatResult(
       : null
     if (res.steps?.length) msg.steps = res.steps
     if (pending?.length) msg.confirmations = pending
+    msg.provider = res.provider
     finalizeAssistantHtml(msg)
   } else {
     const created: ChatMessage = {
@@ -898,6 +927,7 @@ async function applyChatResult(
         : null,
       steps: res.steps?.length ? res.steps : undefined,
       confirmations: pending,
+      provider: res.provider,
     }
     finalizeAssistantHtml(created)
     messages.value.push(created)
@@ -1312,6 +1342,13 @@ function onKeydown(ev: KeyboardEvent) {
               msg.id === streamingId ? 'agent-chat-bubble--streaming' : '',
             ]"
           >
+            <span
+              v-if="msg.role === 'assistant' && modeBadge(msg.provider)"
+              class="agent-chat-mode"
+              :class="`agent-chat-mode--${msg.provider}`"
+            >
+              {{ modeBadge(msg.provider) }}
+            </span>
             <div
               v-if="msg.role === 'assistant' && msg.html != null && msg.html !== ''"
               class="agent-chat-md agent-scroll"
@@ -1997,6 +2034,27 @@ function onKeydown(ev: KeyboardEvent) {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.agent-chat-mode {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-regular);
+  line-height: 18px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.agent-chat-mode--degraded,
+.agent-chat-mode--busy {
+  border-color: var(--accent-border);
+  color: var(--text-secondary);
 }
 
 .agent-chat-text {

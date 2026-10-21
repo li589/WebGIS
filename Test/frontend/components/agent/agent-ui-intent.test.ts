@@ -11,6 +11,7 @@ const activeLayers = ref<
     isAdminBoundary?: boolean;
     name?: string;
     jobLayer?: { status: string };
+    importedRaster?: { timeList?: string[] };
   }>
 >([]);
 
@@ -37,7 +38,9 @@ const getCatalogAddBlockReason = vi.fn(
 );
 
 const removeLayer = vi.fn((instanceId: string) => {
-  activeLayers.value = activeLayers.value.filter((l) => l.instanceId !== instanceId);
+  activeLayers.value = activeLayers.value.filter(
+    (l) => l.instanceId !== instanceId,
+  );
 });
 const bringLayerToFront = vi.fn();
 const sendLayerToBack = vi.fn();
@@ -192,7 +195,8 @@ describe("executeAgentUiIntent", () => {
     });
     expect(result.ok).toBe(true);
     expect(result.message).toContain("CMFD 降水");
-    expect(result.message).toContain("cmfd-precip-cn");
+    // 正文只给人看的中文名，内部 catalog_id 不进对话
+    expect(result.message).not.toContain("cmfd-precip-cn");
     expect(result.message).not.toContain("已使用客户端活动图层上下文");
     expect(result.message).not.toContain("边界");
   });
@@ -271,7 +275,8 @@ describe("executeAgentUiIntent", () => {
     );
     expect(res.ok).toBe(true);
     expect(setBasemap).toHaveBeenCalledWith("tianditu-img");
-    expect(res.message).toContain("tianditu-img");
+    // source id 是内部标识，只用于调用 handler，不出现在给人看的文案里
+    expect(res.message).not.toContain("tianditu-img");
 
     const resEmpty = executeAgentUiIntent(
       { name: "switch_basemap", args: {} },
@@ -302,7 +307,62 @@ describe("executeAgentUiIntent", () => {
     expect(res.ok).toBe(true);
     expect(applyDateHour).toHaveBeenCalled();
     // Must use local YYYY-MM-DD, not toISOString().slice(0,10) (UTC shift)
-    expect(res.message).toBe("已将时间轴设为 2024-06-01 08:00");
+    expect(res.message).toContain("2024-06-01");
+    expect(res.message).not.toContain("T00:00");
+  });
+
+  it("reports the frame that actually shows when the day has data", async () => {
+    applyDateHour.mockImplementation((d: Date, h: number) => {
+      currentDate.value = d;
+      currentHour.value = h;
+    });
+    activeLayers.value = [
+      {
+        instanceId: "i1",
+        catalogId: "imported-38993117b963",
+        visible: true,
+        opacity: 0.9,
+        name: "土壤水分（SMAP 平均）",
+        importedRaster: { timeList: ["20251201", "20251202", "20251203"] },
+      },
+    ];
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    const res = executeAgentUiIntent({
+      name: "set_timeline",
+      args: { date: "2025-12-02" },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain("2025-12-02");
+    expect(res.message).toContain("土壤水分（SMAP 平均）");
+    expect(res.message).not.toContain("imported-38993117b963");
+  });
+
+  it("says the day has no data instead of pretending it switched", async () => {
+    applyDateHour.mockImplementation((d: Date, h: number) => {
+      currentDate.value = d;
+      currentHour.value = h;
+    });
+    activeLayers.value = [
+      {
+        instanceId: "i1",
+        catalogId: "imported-38993117b963",
+        visible: true,
+        opacity: 0.9,
+        name: "土壤水分（SMAP 平均）",
+        importedRaster: { timeList: ["20251201", "20251202", "20251203"] },
+      },
+    ];
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    const res = executeAgentUiIntent({
+      name: "set_timeline",
+      args: { date: "2025-12-20" },
+    });
+    expect(res.ok).toBe(true);
+    // 关键：不能只说「已切到 12-20」，必须点明该日无数据、实际显示 12-03
+    expect(res.message).toContain("没有数据");
+    expect(res.message).toContain("2025-12-03");
   });
 
   it("toggles timeline playing", async () => {
@@ -332,7 +392,10 @@ describe("executeAgentUiIntent", () => {
       args: { catalog_id: "cmfd-precip-cn" },
     });
     expect(res.ok).toBe(true);
-    expect(removeLayer).toHaveBeenCalledWith("i1");
+    // 只从面板移除，不删后端产物（与侧栏 × 行为一致）
+    expect(removeLayer).toHaveBeenCalledWith("i1", {
+      deleteBackendFile: false,
+    });
   });
 
   it("refuses remove when job is running", async () => {

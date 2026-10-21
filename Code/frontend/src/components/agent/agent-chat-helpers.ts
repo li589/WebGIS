@@ -2,6 +2,12 @@
  * Agent chat helpers (P3): layer cards, markdown export, abort detection.
  */
 
+import {
+  resolveSliceForInstant,
+  timeListToSlices,
+  type TimeStep,
+} from '../../utils/temporal-interval'
+
 export interface AgentLayerCard {
   catalog_id: string
   display_name: string
@@ -148,6 +154,8 @@ export function buildAgentClientContextPayload(input: {
     bbox?: [number, number, number, number] | number[] | null
   }
   basemapId: string
+  /** 主导图层的可用时间范围，供后端判断「切到某天有没有数据」 */
+  dataRange?: { start: string; end: string; frames: number } | null
 }): {
   active_catalog_ids: string[]
   active_layers: Array<{
@@ -157,7 +165,12 @@ export function buildAgentClientContextPayload(input: {
     overlay_layer_id?: string | null
   }>
   map_point?: { lng: number; lat: number }
-  timeline: { hour: number; date: string; playing: boolean }
+  timeline: {
+    hour: number
+    date: string
+    playing: boolean
+    data_range?: { start: string; end: string; frames: number }
+  }
   viewport?: {
     center: [number, number]
     zoom: number
@@ -181,6 +194,14 @@ export function buildAgentClientContextPayload(input: {
     },
     basemap_id: input.basemapId,
   }
+  const range = input.dataRange
+  if (range && range.start && range.end) {
+    ctx.timeline.data_range = {
+      start: range.start,
+      end: range.end,
+      frames: range.frames,
+    }
+  }
   if (input.mapPoint) {
     ctx.map_point = { lng: input.mapPoint.lng, lat: input.mapPoint.lat }
   }
@@ -199,3 +220,93 @@ export function buildAgentClientContextPayload(input: {
 }
 
 export { formatLocalDateKey }
+
+/** 内部 id 形态（imported-xxx / 纯数字长串 / 日期帧），不该出现在对话正文里。 */
+export function looksLikeInternalId(text: string | null | undefined): boolean {
+  const t = String(text ?? '').trim()
+  if (!t) return false
+  if (/^\d{6,}$/.test(t)) return true
+  if (/^(imported|wf-run|wf|run|layer|overlay)-/i.test(t)) return true
+  if (/^(\d{8})(_\d{8})?$/.test(t)) return true
+  return false
+}
+
+/** 按 catalogId 取用户看到的图层名；取不到就给「该图层」，**绝不回 id**。 */
+export function layerDisplayName(
+  catalogId: string | null | undefined,
+  layers: Array<{ catalogId?: string; catalog_id?: string; name?: string; displayName?: string }>,
+  explicitName?: string | null,
+): string {
+  const explicit = String(explicitName ?? '').trim()
+  if (explicit && !looksLikeInternalId(explicit)) return explicit
+  const id = String(catalogId ?? '').trim()
+  if (!id) return explicit || '该图层'
+  for (const layer of layers) {
+    const lid = String(layer.catalogId || layer.catalog_id || '').trim()
+    if (lid !== id) continue
+    const name = String(layer.name || layer.displayName || '').trim()
+    if (name && name !== lid && !looksLikeInternalId(name)) return name
+  }
+  return '该图层'
+}
+
+/** 把 time_list 的原始键写成日期：20251203 → 2025-12-03；窗口键写成区间。 */
+export function readableFrameLabel(key: string | null | undefined): string {
+  const raw = String(key ?? '').trim()
+  const m = raw.match(/^(\d{4})(\d{2})(\d{2})(?:_(\d{4})(\d{2})(\d{2}))?$/)
+  if (!m) return raw
+  const start = `${m[1]}-${m[2]}-${m[3]}`
+  if (!m[4]) return start
+  return `${start} 至 ${m[4]}-${m[5]}-${m[6]}`
+}
+
+export interface EffectiveFrame {
+  /** time_list 原始键（如 20251203 或 20251203_20251212） */
+  key: string
+  /** 可读日期 / 区间 */
+  label: string
+  /** 目标时刻是否正好落在该帧的原生区间内（false = 被吸附到邻近帧） */
+  nativeMatch: boolean
+}
+
+/**
+ * 给定「请求的日期+钟点」，算出该图层**实际会显示哪一帧**。
+ *
+ * 时间轴本身不做吸附，吸附发生在渲染层（resolveSliceForInstant 挑切片）。
+ * 所以 ui.currentDate 只代表"用户要的那天"，不代表"屏幕上真的在放那天的数据"。
+ * 这个函数把渲染层的选择结果提前算出来，用于如实回显。
+ */
+export function resolveEffectiveFrame(
+  timeList: string[] | null | undefined,
+  date: Date,
+  hour: number,
+  step: TimeStep = { value: 1, unit: 'day' },
+): EffectiveFrame | null {
+  const list = (timeList ?? []).map((t) => String(t ?? '').trim()).filter(Boolean)
+  if (!list.length) return null
+  const at = new Date(date.getTime())
+  at.setHours(Number.isFinite(hour) ? hour : 0, 0, 0, 0)
+  const resolved = resolveSliceForInstant({ nativeStep: step, slices: timeListToSlices(list) }, at)
+  if (!resolved.slice) return null
+  const key = String(resolved.slice.label ?? resolved.slice.t0 ?? '').trim()
+  return {
+    key,
+    label: readableFrameLabel(key),
+    nativeMatch: resolved.nativeMatch,
+  }
+}
+
+/** 主导图层的可用时间范围摘要，供后端做日期校验（首末帧 + 帧数）。 */
+export function summarizeTimeRange(
+  timeList: string[] | null | undefined,
+): { start: string; end: string; frames: number } | null {
+  const list = (timeList ?? []).map((t) => String(t ?? '').trim()).filter(Boolean)
+  if (!list.length) return null
+  const first = list[0]!
+  const last = list[list.length - 1]!
+  const start = first.split('_')[0] ?? ''
+  const endParts = last.split('_')
+  const end = endParts[endParts.length - 1] ?? ''
+  if (!/^\d{8}$/.test(start) || !/^\d{8}$/.test(end)) return null
+  return { start, end, frames: list.length }
+}

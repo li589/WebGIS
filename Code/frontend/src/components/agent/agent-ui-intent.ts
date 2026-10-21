@@ -5,7 +5,12 @@ import type { AgentUiIntent } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useUiStore } from '../../stores/ui'
 import { isMapLinkedPalette, resolveCanonicalPaletteIdStrict } from '../map/layer-symbology'
-import { formatLocalDateKey } from './agent-chat-helpers'
+import {
+  formatLocalDateKey,
+  layerDisplayName,
+  readableFrameLabel,
+  resolveEffectiveFrame,
+} from './agent-chat-helpers'
 
 export interface AgentUiIntentResult {
   ok: boolean
@@ -38,6 +43,42 @@ function resolveInstanceId(
     if (byCat) return { instanceId: byCat.instanceId, catalogId: byCat.catalogId }
   }
   return { instanceId: null, catalogId: catalogId ?? null }
+}
+
+/** 意图文案里的图层称呼：中文名优先，绝不把 catalog_id 甩给用户。 */
+function nameOf(catalogId: string | null | undefined, explicit?: unknown): string {
+  const workspace = useLayerWorkspace()
+  return layerDisplayName(
+    catalogId,
+    workspace.activeLayers.value.map((l) => ({
+      catalogId: l.catalogId,
+      name: l.name,
+    })),
+    explicit == null ? null : String(explicit),
+  )
+}
+
+/**
+ * 挑一个「主导的时间序列图层」：可见、帧数最多。
+ * 用于核对「切到某天到底有没有数据」——时间轴本身不做吸附，
+ * 吸附发生在渲染层，必须拿真实 time_list 才能算准。
+ */
+function pickDominantTimeseries(): { name: string; list: string[] } | null {
+  const workspace = useLayerWorkspace()
+  let best: { name: string; list: string[] } | null = null
+  for (const layer of workspace.activeLayers.value) {
+    if (layer.visible === false) continue
+    if (layer.isAdminBoundary) continue
+    const list = layer.importedRaster?.timeList
+    if (!Array.isArray(list) || !list.length) continue
+    if (!best || list.length > best.list.length) {
+      best = {
+        name: layerDisplayName(layer.catalogId, [{ catalogId: layer.catalogId, name: layer.name }]),
+        list: list.map((t) => String(t)),
+      }
+    }
+  }
+  return best
 }
 
 function parseDateArg(raw: unknown): Date | null {
@@ -78,18 +119,19 @@ export function executeAgentUiIntent(
       resolved = resolveInstanceId(catalogId, undefined)
     }
     if (!resolved.instanceId) {
-      return { ok: false, message: `无法添加图层 ${catalogId}` }
+      return { ok: false, message: `无法添加「${nameOf(catalogId, args.display_name)}」` }
     }
     const layer = workspace.activeLayers.value.find((l) => l.instanceId === resolved.instanceId)
-    if (!layer) return { ok: false, message: `未找到图层 ${catalogId}` }
+    if (!layer) return { ok: false, message: `未找到「${nameOf(catalogId, args.display_name)}」` }
     if (layer.visible !== visible) {
       workspace.toggleLayerVisibility(resolved.instanceId)
     }
     workspace.selectLayer(resolved.instanceId)
     workspace.setSidebarView('active')
+    const label = nameOf(catalogId, args.display_name || layer.name)
     return {
       ok: true,
-      message: visible ? `已显示 ${catalogId}` : `已隐藏 ${catalogId}`,
+      message: visible ? `已显示「${label}」` : `已隐藏「${label}」`,
     }
   }
 
@@ -101,10 +143,16 @@ export function executeAgentUiIntent(
     }
     const resolved = resolveInstanceId(catalogId, undefined)
     if (!resolved.instanceId) {
-      return { ok: false, message: `图层未在活动列表中：${catalogId}` }
+      return { ok: false, message: `「${nameOf(catalogId, args.display_name)}」还没在图层列表里` }
     }
-    workspace.setLayerOpacity(resolved.instanceId, Math.max(0, Math.min(1, opacity)))
-    return { ok: true, message: `已设置 ${catalogId} 透明度` }
+    const clamped = Math.max(0, Math.min(1, opacity))
+    workspace.setLayerOpacity(resolved.instanceId, clamped)
+    return {
+      ok: true,
+      message: `已把「${nameOf(catalogId, args.display_name)}」的透明度调为 ${Math.round(
+        clamped * 100,
+      )}%`,
+    }
   }
 
   if (name === 'fit_layer') {
@@ -115,9 +163,10 @@ export function executeAgentUiIntent(
       return { ok: false, message: '未找到可定位的图层' }
     }
     const ok = handlers.fitToLayerExtent?.(resolved.instanceId) ?? false
+    const fitLabel = nameOf(resolved.catalogId, args.display_name)
     return ok
-      ? { ok: true, message: '已缩放到图层' }
-      : { ok: false, message: '该图层暂无可用显示范围' }
+      ? { ok: true, message: `已缩放到「${fitLabel}」` }
+      : { ok: false, message: `「${fitLabel}」暂无可用显示范围` }
   }
 
   if (name === 'list_active_layers') {
@@ -133,14 +182,15 @@ export function executeAgentUiIntent(
       catalog_id: l.catalogId,
       title: (l.name || l.catalogId || '').trim() || l.catalogId,
     }))
+    // 正文只列中文名 + 显示状态；catalog_id 只留在 cards 里供点击复用
     const lines = layers.map((l) => {
-      const title = (l.name || l.catalogId || '').trim() || l.catalogId
-      const vis = l.visible === false ? '隐藏' : '显示'
-      return `- ${title}（${l.catalogId}，${vis}）`
+      const title = layerDisplayName(l.catalogId, [{ catalogId: l.catalogId, name: l.name }])
+      const vis = l.visible === false ? '已隐藏' : '显示中'
+      return `- ${title}（${vis}）`
     })
     return {
       ok: true,
-      message: `当前活动图层（${layers.length}）：\n${lines.join('\n')}`,
+      message: `当前有 ${layers.length} 个活动图层：\n${lines.join('\n')}`,
       cards,
     }
   }
@@ -178,9 +228,8 @@ export function executeAgentUiIntent(
       return { ok: false, message: '缺少底图标识 (basemap_id / source_id)' }
     }
     const ok = handlers.setBasemap?.(sourceId) ?? false
-    return ok
-      ? { ok: true, message: `已切换底图为：${sourceId}` }
-      : { ok: false, message: `切换底图失败：${sourceId}` }
+    // 底图 source id 是内部标识，正文不点名，后端回复会给出中文底图名
+    return ok ? { ok: true, message: '底图已切换' } : { ok: false, message: '底图切换失败' }
   }
 
   if (name === 'set_timeline') {
@@ -196,17 +245,45 @@ export function executeAgentUiIntent(
         return { ok: false, message: 'hour 须为 0–23 的整数' }
       }
     }
+    let targetDate = new Date(ui.currentDate)
     if (hasDate) {
       const d = parseDateArg(args.date)
       if (!d) return { ok: false, message: 'date 格式无效，请用 YYYY-MM-DD' }
+      targetDate = d
       ui.applyDateHour(d, hour)
     } else {
       ui.setHour(hour)
     }
-    const dateLabel = formatLocalDateKey(ui.currentDate)
+
+    // 时间轴只负责「选中某个时刻」，真正的帧是渲染层按切片挑的。
+    // 这里提前算出会落到哪一帧，如实回报，避免「切到 12-15」实际放的是 12-03。
+    const dominant = pickDominantTimeseries()
+    if (!dominant) {
+      return {
+        ok: true,
+        message: `时间轴已设为 ${formatLocalDateKey(targetDate)}（当前没有带时间序列的可见图层，无法核对该日是否有数据）`,
+      }
+    }
+    const eff = resolveEffectiveFrame(dominant.list, targetDate, hour)
+    if (!eff) {
+      return {
+        ok: false,
+        message: `${formatLocalDateKey(targetDate)} 没有可用数据：${dominant.name} 还没有任何时间帧`,
+      }
+    }
+    const requested = formatLocalDateKey(targetDate)
+    const span = `${readableFrameLabel(dominant.list[0])} 至 ${readableFrameLabel(
+      dominant.list[dominant.list.length - 1],
+    )}`
+    if (eff.nativeMatch) {
+      return {
+        ok: true,
+        message: `时间轴已切到 ${eff.label}（${dominant.name} 该日有数据）`,
+      }
+    }
     return {
       ok: true,
-      message: `已将时间轴设为 ${dateLabel} ${String(ui.currentHour).padStart(2, '0')}:00`,
+      message: `${requested} 该日没有数据，实际显示的是 ${eff.label}\n（${dominant.name} 的可用范围是 ${span}，已自动对齐到最近可用帧）`,
     }
   }
 
@@ -231,16 +308,17 @@ export function executeAgentUiIntent(
     }
     const layer = workspace.activeLayers.value.find((l) => l.instanceId === resolved.instanceId)
     if (!layer) return { ok: false, message: '未找到可移除的图层' }
+    const removeLabel = nameOf(resolved.catalogId, args.display_name || layer.name)
     const status = layer.jobLayer?.status
     if (status && ACTIVE_JOB.has(status)) {
       return {
         ok: false,
-        message: `图层 ${resolved.catalogId} 仍有进行中的任务（${status}），请先取消后再移除`,
+        message: `「${removeLabel}」还有进行中的任务（${status}），请先取消再移除`,
       }
     }
     // 只从面板移除，不删后端产物（与侧栏 × 行为一致）
     workspace.removeLayer(resolved.instanceId, { deleteBackendFile: false })
-    return { ok: true, message: `已移除图层 ${resolved.catalogId}` }
+    return { ok: true, message: `已从图层面板移除「${removeLabel}」（数据文件保留）` }
   }
 
   if (name === 'reorder_layer') {
@@ -258,10 +336,13 @@ export function executeAgentUiIntent(
     }
     if (action === 'front') workspace.bringLayerToFront(resolved.instanceId)
     else workspace.sendLayerToBack(resolved.instanceId)
+    const reorderLabel = nameOf(resolved.catalogId, args.display_name)
     return {
       ok: true,
       message:
-        action === 'front' ? `已将 ${resolved.catalogId} 置顶` : `已将 ${resolved.catalogId} 置底`,
+        action === 'front'
+          ? `已把「${reorderLabel}」移到最上层`
+          : `已把「${reorderLabel}」移到最下层`,
     }
   }
 
@@ -316,7 +397,10 @@ export function executeAgentUiIntent(
       }
       workspace.setLayerRangeOverride(resolved.instanceId, patch)
     }
-    return { ok: true, message: `已更新 ${resolved.catalogId} 符号化` }
+    return {
+      ok: true,
+      message: `已更新「${nameOf(resolved.catalogId, args.display_name || layer?.name)}」的配色与拉伸`,
+    }
   }
 
   return { ok: false, message: `未知意图：${name}` }
