@@ -353,14 +353,16 @@ watch(open, (v) => {
 }
 
 .agent-companion {
-  --agent-size: 56px;
+  /* 2026-10-21：56 → 68 → 80，与 composables/useAgentCompanionPosition 的
+     COMPANION_SIZE_PX 保持一致（那个常量管拖动/吸附/默认落点，这里管视觉）。 */
+  --agent-size: 80px;
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: auto;
   border: 1px solid color-mix(in srgb, var(--accent-border) 70%, var(--border-default));
-  border-radius: 20px;
+  border-radius: 28px;
   background:
     radial-gradient(
       120% 80% at 30% 20%,
@@ -436,7 +438,7 @@ watch(open, (v) => {
 .agent-companion-aura {
   position: absolute;
   inset: -10px;
-  border-radius: 24px;
+  border-radius: 32px;
   background: radial-gradient(
     circle,
     color-mix(in srgb, var(--accent) 28%, transparent),
@@ -450,7 +452,7 @@ watch(open, (v) => {
 .agent-companion-ring {
   position: absolute;
   inset: 4px;
-  border-radius: 16px;
+  border-radius: 24px;
   border: 1px dashed color-mix(in srgb, var(--accent-border) 55%, transparent);
   opacity: 0.45;
   pointer-events: none;
@@ -460,7 +462,7 @@ watch(open, (v) => {
 .agent-companion-ripple {
   position: absolute;
   inset: 8px;
-  border-radius: 18px;
+  border-radius: 26px;
   border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
   opacity: 0;
   pointer-events: none;
@@ -470,9 +472,10 @@ watch(open, (v) => {
 .agent-companion-body {
   position: relative;
   z-index: 1;
-  width: 36px;
-  height: 36px;
-  border-radius: 13px;
+  /* 2026-10-21：36 → 46 → 56。图标本体放大，随外层 56 → 68 → 80 同比。 */
+  width: 56px;
+  height: 56px;
+  border-radius: 20px;
   display: grid;
   place-items: center;
 }

@@ -26,7 +26,12 @@ export const COMPANION_DOCK_THRESHOLD_PX = 24
 /** 贴边半隐藏时露出的 peek 宽度（px） */
 export const COMPANION_PEEK_PX = 22
 
-export const COMPANION_SIZE_PX = 56
+/**
+ * 助手浮动按钮边长（px）。
+ * 2026-10-21：56 → 68 → 80。用户反馈两次「太小」，连续放大；
+ * 拖动边界、贴边吸附、默认落点都直接引用本常量，改这一处即全局同步。
+ */
+export const COMPANION_SIZE_PX = 80
 
 /** 对话面板默认尺寸（可被 CSS resize 放大） */
 export const AGENT_CHAT_PANEL_WIDTH_PX = 420
