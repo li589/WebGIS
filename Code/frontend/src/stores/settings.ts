@@ -664,8 +664,24 @@ export const useSettingsStore = defineStore('settings', () => {
     return updated
   }
 
-  /** 重新拉取天气引擎公开配置（含 effective cache_ttl_seconds） */
+  /**
+   * 重新拉取天气引擎公开配置（含 effective cache_ttl_seconds）
+   *
+   * ⚠️ 2026-10-21：这里**也必须**做受限登录态判断。
+   * `loadAll()` 早就跳过 `/config/weather` 了，但 `useWeatherCoverage`（Dashboard
+   * 挂载时）会直接调 `weatherEngine.ensureLoaded()` → 本函数，绕过了 loadAll 的
+   * 过滤，于是 demo 每次进主界面都必然打一条
+   * 「设置 API 失败 403 /config/weather」。
+   *
+   * 拒绝时返回 null、不发请求：调用方 `ensureLoaded` 会把 loaded 置 true，
+   * `defaultModel` 走 WEATHER_MODEL_BOOTSTRAP 兜底，界面照常可用
+   * （/weather/coverage 与 /weather/sync/overview 都是公开读接口，不受影响）。
+   * 无鉴权部署下 isRestrictedRole 恒为 false，此分支不生效。
+   */
   async function reloadWeatherConfig() {
+    if (useAuthStore().isRestrictedRole) {
+      return weatherConfig.value
+    }
     weatherConfig.value = await fetchWeatherConfig()
     return weatherConfig.value
   }
