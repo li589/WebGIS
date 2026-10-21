@@ -246,6 +246,17 @@ export function useTimelineSync(
       for (const instanceId of added) {
         const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
         if (!layer) continue
+        /**
+         * 未勾选的图层不参与落点（2026-10-21）。
+         *
+         * 默认图层名单新增「SMAP卫星反演产品」后，它是**挂着但默认不勾选**的：
+         * 若它也算「新加图层」，就会把时间轴从风云的整月合成帧
+         * （20251201_20251231）拽到 SMAP 的日帧（20260102）——表现为风云那一层
+         * 匹配不到切片、看着像"消失"，日期也跟着乱。
+         * 语义上也应如此：看不见的图层不该带走时间轴。
+         * 正常添加流程新增的图层都是可见的，因此不改变原有行为。
+         */
+        if (!layer.visible) continue
         if (layer.importedRaster) {
           // 稳定编号直探挂载时，timeList 常由 overlay meta 稍后补到。
           // 先登记「待落点」，等列表到位再补一次 snap（见下方 scienceTimeListSignature）。

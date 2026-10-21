@@ -54,6 +54,27 @@ interface DefaultLayerEntry {
   groupTitle: string
   /** 对应工作流 id（仅用于分组元信息，不触发任何运行） */
   workflowId?: string
+  /**
+   * 每次打开是否把成员显隐**强制**对齐名单（缺省 true）。
+   *
+   * - true（风云那条）：每次打开都按名单纠正。这是 2026-10-14 用户明确要求
+   *   「任何账号登录都要默认加载风云的土壤水分」——哪怕上次手动取消过，也要勾回来。
+   * - false（SMAP 那条）：只在**首次挂载**时落一次初始值（全部不勾选），
+   *   之后尊重用户自己的勾选，刷新不再抹掉。2026-10-21 用户口径：
+   *   「不勾选任何图层，还是默认显示风云的，留着用户自己勾选」。
+   */
+  enforceVisibility?: boolean
+  /**
+   * 是否由本条目决定**时间轴落点**（缺省 true）。
+   *
+   * 为什么必须能关：`alignTimelineToDefaultFrame` 会对每个条目各跑一次，后跑的
+   * 会把轴拽到自己的 `default_time`。风云是「整月合成」（20251201_20251231），
+   * SMAP 是「逐日」（默认 20260102）——两个都落轴，最终轴落在 SMAP 那天，
+   * 风云的月合成帧就再也匹配不上，表现为"风云层消失/日期对不上"。
+   * ⇒ 只让风云决定轴（true），SMAP 只在用户自己勾选它的图层时由
+   *   「吸附最新切片」自然接管（那时确实该跟着 SMAP 走）。
+   */
+  controlsTimeline?: boolean
   members: DefaultLayerMember[]
 }
 
@@ -66,10 +87,12 @@ interface DefaultLayerEntry {
  *   sha1('method-fy-omega-doy-avg|OMEGA|OMEGA')[:12] = 72aa577da95e
  *
  * 2026-10-09 用户调整：默认改为**风云（FY3D）平均散射约束产品反演（本地）**，
- * 默认帧＝该图层的 default_time（十天合成 2025-12-03 ~ 12-12，见 overlay meta）；
- * 原 SMAP 三条目移入 RETIRED_OVERLAY_IDS 退役（不再自动加载）。
+ * 默认帧＝该图层的 default_time（现为整月合成 20251201_20251231，见 overlay meta）。
  *
- * 默认显隐：**只显示「土壤水分」**（VOD / ω 不显示）。
+ * 2026-10-21 变化：SMAP 三条目**恢复挂载**（老师要求侧栏多一行「SMAP卫星反演产品」），
+ * 但三个成员默认全部不勾选 —— 默认画面仍是风云的土壤水分，SMAP 由用户自己勾。
+ *
+ * 默认显隐：风云只显示「土壤水分」（VOD / ω 不显示）；SMAP 三个都不显示。
  */
 /**
  * 默认图层成员显示名（**唯一权威来源**，每次打开由 `applyDefaultNames` 对齐）。
@@ -81,12 +104,24 @@ interface DefaultLayerEntry {
  * 光把名单里的后缀删掉，旧设备上存下来的旧名还会一直在（用户二次报障的原因）。
  * 现做法：名单里不带后缀，且每次打开都按 `applyDefaultNames` 把成员名刷成这里的值。
  * 数据集名由分组头（`风云 平均散射约束产品反演（本地）`）表达，成员无需再带。
+ *
+ * 2026-10-21（老师反馈后）：新增**第二条 SMAP**。老师原话「默认这个图层再显示
+ * 下面一行『SMAP卫星反演产品』，就多这一行」⇒ 侧栏在风云组下面并列出现第二组，
+ * 但**三个成员一律不勾选**（`visible: false`），默认仍只显示风云的土壤水分，
+ * 由用户自己按需勾选。
+ *
+ * ⚠ 两条的时间结构不同：风云是「整月合成」（1 帧 / native_step=1M），
+ * SMAP 是「逐日」（69 帧，20251101_20251108 ~ 20260201）。
+ * 因此 `controlsTimeline` 只给风云 = true —— SMAP 若也落轴，会把轴拽到
+ * 20260102 导致风云的月合成帧匹配不上。
  */
 export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
   {
     catalogId: 'method-fy-omega-doy-avg',
     groupTitle: '风云 平均散射约束产品反演（本地）',
     workflowId: 'omega_avg_daily_fy_single',
+    enforceVisibility: true,
+    controlsTimeline: true,
     members: [
       {
         role: 'SM',
@@ -103,6 +138,55 @@ export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
       {
         role: 'OMEGA',
         overlayId: 'imported-72aa577da95e',
+        label: '等效散射 ω',
+        visible: false,
+      },
+    ],
+  },
+  {
+    // 编号复核：sha1('method-smap-omega-doy-avg|SM|SM')[:12]       = 136c60293bbf
+    //           sha1('method-smap-omega-doy-avg|VOD|VOD')[:12]     = 169f6402583c
+    //           sha1('method-smap-omega-doy-avg|OMEGA|OMEGA')[:12] = 9a7cf36832cd
+    // ── 2026-10-21（第二次调整）：改为指向「整段季均」图层 ──────────────────
+    //
+    // 为什么换编号：原先挂的是 70 片逐日/8 天块目录（`136c60293bbf` 等），
+    // 里面**已经加进了** `20251203_20260201` 这一块 12 月—2 月的整段合成。
+    // 但前端的切片解析（`resolveSliceForInstant`，`utils/temporal-interval.ts:307`）
+    // 在同一时刻命中多个切片时**取区间最短的那一片**，为的是让卡片显示"这一天"
+    // 而不是被窗口块盖住 ⇒ 12-03 到 02-01 每一天都被单日帧命中，整段合成
+    // **永远选不中**（用户实测反馈「你并没有弄上啊」）。
+    //
+    // 所以给季均单独开目录（每层只放 1 片）：
+    //   `imported-38993117b963`（SM）  `imported-bce85323670f`（VOD）
+    //   `imported-49101c3674f8`（ω），编号规则同后端：
+    //   sha1('method-smap-season-mean|<V>|<V>')[:12]
+    // 只有一片 ⇒ 无论时间轴停在哪，解析都只能返回它 ⇒ 勾上就是整段平均图。
+    catalogId: 'method-smap-season-mean',
+    groupTitle: 'SMAP卫星反演产品',
+    // 工作流 id 仅作分组元信息；季均目录不是某次 run 的产物（沿用原 run_id 便于追溯）
+    workflowId: 'omega_avg_daily_smap_single',
+    // 成员一律不勾选，且**每次打开都强制对齐**（2026-10-21 用户口径：
+    // 「smap的图层组你加载进来但是不要勾选」）。原先设 false 会让历史快照里
+    // 遗留的 visible=true 一直生效，表现为一进页面 SMAP 土壤水分自己亮着。
+    enforceVisibility: true,
+    // 不参与时间轴落点，避免覆盖风云的月合成帧（20251201_20251231）
+    controlsTimeline: false,
+    members: [
+      {
+        role: 'SM',
+        overlayId: 'imported-38993117b963',
+        label: '土壤水分',
+        visible: false,
+      },
+      {
+        role: 'VOD',
+        overlayId: 'imported-bce85323670f',
+        label: '植被光学厚度',
+        visible: false,
+      },
+      {
+        role: 'OMEGA',
+        overlayId: 'imported-49101c3674f8',
         label: '等效散射 ω',
         visible: false,
       },
@@ -129,13 +213,22 @@ export function defaultPrimaryOverlayId(): string | null {
  * 处理方式（见 `retireDefaultLayers`）：
  * - 若工作区里还挂着这些产物（历史快照 / 跨设备同步带回），移除并登记；
  * - 只从前端工作区摘除，**不删后端数据目录**（`deleteBackendFile: false`）。
- * 想恢复 SMAP 默认加载：把 overlay 编号挪回 DEFAULT_LAYERS，并在浏览器控制台
- * 执行 `localStorage.removeItem('geo:dismissed-layers:v1')` 后强刷。
+ *
+ * ⚠ 2026-10-21（第二次）：SMAP 的**逐日目录**三条目
+ * （`136c60293bbf` / `169f6402583c` / `9a7cf36832cd`，各 70 片）退役，
+ * 改用「整段季均」目录（`38993117b963` / `bce85323670f` / `49101c3674f8`）。
+ * 原因是逐日目录里加进去的整段合成块被"取最短区间"规则永久屏蔽，选不中。
+ * 退役只摘前端工作区，**目录与 70 片日帧全部留在盘上**，需要时可从「数据管理器」
+ * 按编号加回；本数组里现在是旧编号，新编号在 `DEFAULT_LAYERS` 中，二者不重叠，
+ * 不会触发「退役→挂载」互踢（那条坑见下）。
+ *
+ * 本机制保留（空数组时 `retireDefaultLayers` 直接 return），供以后再退役用。
  */
 const RETIRED_OVERLAY_IDS: readonly string[] = [
-  'imported-136c60293bbf', // SMAP 土壤水分
-  'imported-169f6402583c', // SMAP 植被光学厚度
-  'imported-9a7cf36832cd', // SMAP 等效散射 ω
+  // 2026-10-21 退役：SMAP 逐日（70 片）——改由季均目录承载
+  'imported-136c60293bbf',
+  'imported-169f6402583c',
+  'imported-9a7cf36832cd',
 ]
 
 export interface ProbedOverlay {
@@ -347,7 +440,8 @@ function retireDefaultLayers(workspace: WorkspaceApi): void {
  *
  * 为什么需要：前端约定「新加图层 → 吸附到最新切片」（`useTimelineSync` →
  * `snapTargetFromLayer` → `latestSlice`），而最新切片通常是**单日帧**，会把后端
- * 写在 `meta.json` 里的 `default_time`（这里是十天合成帧）盖掉 ⇒ 一进去仍显示一天。
+ * 写在 `meta.json` 里的 `default_time`（现在是整月合成帧 20251201_20251231）盖掉
+ * ⇒ 一进去仍显示一天。
  *
  * 做法：在挂载 + 吸附都跑完之后，把时间轴日期落到默认帧**内部**，让
  * `resolveSliceForInstant` 解析回该帧。区间帧取**结束日**，因为 `time_list` 按字典序
@@ -425,7 +519,9 @@ export async function ensureDefaultLayers(): Promise<void> {
 
     for (const entry of DEFAULT_LAYERS) {
       try {
-        if (!isEntryPresent(workspace.activeLayers.value, entry)) {
+        // 是否「本次才挂上」：决定了显隐要不要落初始值（已有图层尊重用户当前状态）
+        const present = isEntryPresent(workspace.activeLayers.value, entry)
+        if (!present) {
           let attached = 0
           try {
             attached = await workflowRun.autoAttachProductsForNewLayer(entry.catalogId)
@@ -438,13 +534,37 @@ export async function ensureDefaultLayers(): Promise<void> {
         ensureDefaultGroup(workspace, workflowRun, entry)
         // 显示名对齐（盖掉快照里遗留的旧名，如「土壤水分（风云 平均）」）
         applyDefaultNames(workspace, entry)
-        // 每次打开都对齐一次显隐（盖掉快照恢复 / 历史手动取消勾选留下的状态）
-        applyVisibilityStrategy(workspace, entry)
-        // 等「吸附最新切片」那批 watcher 跑完，再把时间轴定位到默认帧（十天合成）
+        // 显隐：
+        // - 首次挂载 ⇒ 按名单落一次初始值。必须做，因为官方恢复路径
+        //   （autoAttachProductsForNewLayer）默认把成员全勾上，SMAP 那组
+        //   若不压回 list 里的 false，一进页面就三个全亮。
+        // - 之后 ⇒ 只有 enforceVisibility 的条目才每次打开重新对齐
+        //   （风云维持"永远只显示土壤水分"；SMAP 尊重用户自己勾的）。
+        if (!present || entry.enforceVisibility !== false) {
+          applyVisibilityStrategy(workspace, entry)
+        }
+      } catch (err) {
+        console.warn('[default-layers] 跳过', entry.catalogId, err)
+      }
+    }
+
+    /**
+     * 时间轴落点：**所有条目挂载完之后**再统一执行，不放在上面的循环里。
+     *
+     * 原因（2026-10-21 加 SMAP 时踩到）：新加图层会触发 `useTimelineSync` 的
+     * 「吸附最新切片」watcher，它按 instanceId 新增来判断，**不看显隐**。
+     * 若边挂边落轴：风云落轴 → SMAP 三个图层接着被加进来 → 它们的 snap 后跑，
+     * 把轴拽到 SMAP 的 default（20260102），风云的月合成帧再也匹配不上。
+     * 连 `nextTick()` 都挡不住（watcher 是每个 tick 各自排队的）。
+     * ⇒ 把落轴挪到最后统一做，且只让 `controlsTimeline` 的条目（风云）落轴。
+     */
+    for (const entry of DEFAULT_LAYERS) {
+      if (entry.controlsTimeline === false) continue
+      try {
         await nextTick()
         await alignTimelineToDefaultFrame(workspace, entry)
       } catch (err) {
-        console.warn('[default-layers] 跳过', entry.catalogId, err)
+        console.warn('[default-layers] 时间轴落点失败', entry.catalogId, err)
       }
     }
   } catch (err) {
