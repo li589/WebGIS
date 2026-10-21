@@ -1,4 +1,12 @@
-"""Mock agent orchestrator — keyword rules + UI intents (no real LLM)."""
+"""Mock agent orchestrator — keyword rules + UI intents (no real LLM).
+
+``reply`` 一律只写人话：用图层的中文显示名，**不出现任何内部 id**
+（``catalog_id`` / ``instance_id`` / ``overlay-xxx``）。id 只随 ``ui_intents``
+的 ``args`` 传给前端执行，以及在过程面板里留痕。
+
+用户 2026-10-21 反馈：问「有哪些图层」回的是「风云卫星反演（id：123456677）」，
+看不懂。此前本文件有 9 处把 id 拼进正文，已全部改为中文名。
+"""
 
 from __future__ import annotations
 
@@ -6,14 +14,20 @@ import re
 import uuid
 from typing import Any
 
+from app.services.agent.naming import (
+    build_layer_name_map,
+    human_layer_name,
+    join_layer_names,
+)
 
 # Demo catalog ids used when client context has no match
 _DEMO_PRECIP = "cmfd-precip-cn"
-_DEMO_FALLBACKS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"cmfd|降水|precip|rain", re.I), _DEMO_PRECIP),
-    (re.compile(r"dem|etopo|高程|地形", re.I), "dem-etopo"),
-    (re.compile(r"clcd|土地|土地利用|land\s*cover", re.I), "clcd-cn"),
-    (re.compile(r"co2|二氧化碳", re.I), "co2-cn"),
+#: (正则, catalog_id, 中文名)。第三项用于回复文案，切勿再吐 id。
+_DEMO_FALLBACKS: list[tuple[re.Pattern[str], str, str]] = [
+    (re.compile(r"cmfd|降水|precip|rain", re.I), _DEMO_PRECIP, "CMFD 区域降水"),
+    (re.compile(r"dem|etopo|高程|地形", re.I), "dem-etopo", "ETOPO 高程"),
+    (re.compile(r"clcd|土地|土地利用|land\s*cover", re.I), "clcd-cn", "CLCD 土地利用"),
+    (re.compile(r"co2|二氧化碳", re.I), "co2-cn", "CO2 浓度"),
 ]
 
 # Well-known city centers (WGS84) for demo locate heuristics
@@ -58,6 +72,24 @@ _BASEMAP_HINTS: list[tuple[re.Pattern[str], str, str]] = [
 ]
 
 
+class LayerPick:
+    """一次图层指向：内部 id 给前端用，中文名给用户看。"""
+
+    __slots__ = ("catalog_id", "name")
+
+    def __init__(self, catalog_id: str, name: str) -> None:
+        self.catalog_id = catalog_id
+        self.name = name
+
+
+def _known_label(catalog_id: str) -> str | None:
+    """内置演示图层的已知中文名（前端没上报 name 时兜底用）。"""
+    for _pattern, cid, label in _DEMO_FALLBACKS:
+        if cid == catalog_id:
+            return label
+    return None
+
+
 def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, str]]:
     if not client_context:
         return []
@@ -70,36 +102,116 @@ def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, s
             cid = str(item.get("catalog_id") or "").strip()
             if not cid:
                 continue
+            name = str(item.get("name") or "").strip()
+            if not name or name == cid:
+                # 前端没给中文名（或直接拿 id 当名）时，不把 id 暴露给用户
+                name = _known_label(cid) or f"图层 {len(out) + 1}"
             out.append(
                 {
                     "catalog_id": cid,
                     "instance_id": str(item.get("instance_id") or ""),
-                    "name": str(item.get("name") or cid),
+                    "name": name,
                 }
             )
         return out
     ids = client_context.get("active_catalog_ids")
     if isinstance(ids, list):
-        return [
-            {"catalog_id": str(x).strip(), "instance_id": "", "name": str(x).strip()}
-            for x in ids
-            if str(x).strip()
-        ]
+        out = []
+        for index, raw_id in enumerate(ids, start=1):
+            cid = str(raw_id).strip()
+            if not cid:
+                continue
+            out.append(
+                {
+                    "catalog_id": cid,
+                    "instance_id": "",
+                    # 只有 id 时先按已知图层反查中文名，仍查不到就按序号称呼
+                    "name": _known_label(cid) or f"图层 {index}",
+                }
+            )
+        return out
     return []
 
 
-def _match_catalog(message: str, layers: list[dict[str, str]]) -> str | None:
+def _display(layer: dict[str, str]) -> str:
+    """活动图层列表项的中文名（``_normalize_layers`` 已保证不会是 id）。"""
+    return str(layer.get("name") or "").strip() or "该图层"
+
+
+def _name_keys(layer: dict[str, str]) -> list[str]:
+    """图层名的可匹配片段，从长到短。
+
+    用户很少念完整名字——「风云卫星反演（土壤水分）」他只会说「风云」。
+    因此除全名外，还要试：去括号后的主体、按标点切开的片段、中文名前两字。
+    命中越长的片段越可信；同等长度命中多个图层则视为歧义，交给调用方反问。
+    """
+    name = _display(layer)
+    keys: set[str] = {name}
+    base = re.sub(r"[（(][^)）]*[)）]", "", name).strip()
+    if base:
+        keys.add(base)
+    for part in re.split(r"[·、,，/|\s]+", base or name):
+        piece = part.strip()
+        if len(piece) >= 2:
+            keys.add(piece)
+    if len(name) >= 3 and re.search(r"[\u4e00-\u9fff]", name):
+        keys.add(name[:2])
+    return sorted((k for k in keys if k), key=len, reverse=True)
+
+
+def _resolve_layer(
+    message: str,
+    layers: list[dict[str, str]],
+    *,
+    allow_demo_fallback: bool = True,
+) -> LayerPick | None:
+    """把消息里的图层指向解析成 ``LayerPick``；解析不出来返回 ``None``。
+
+    与旧 ``_match_catalog`` 的关键差别：**不再瞎回落**。
+    旧实现匹配不到就返回 ``layers[0]`` 或 CMFD 降水，于是「隐藏风云」实际隐藏了
+    别的图层，回复却报成功——比不回答更糟。
+    """
     lower = message.lower()
+    # 最长命中优先；同长命中多个图层视为歧义 → 反问
+    best_len = 0
+    best: dict[str, dict[str, str]] = {}
     for layer in layers:
-        for key in (layer["catalog_id"], layer["name"]):
-            if key and key.lower() in lower:
-                return layer["catalog_id"]
-    for pattern, catalog_id in _DEMO_FALLBACKS:
+        for key in _name_keys(layer):
+            if key.lower() not in lower:
+                continue
+            if len(key) > best_len:
+                best_len = len(key)
+                best = {layer["catalog_id"]: layer}
+            elif len(key) == best_len:
+                best[layer["catalog_id"]] = layer
+            break
+    if len(best) == 1:
+        only = next(iter(best.values()))
+        return LayerPick(only["catalog_id"], _display(only))
+    if len(best) > 1:
+        return None
+    if not allow_demo_fallback:
+        return None
+    for pattern, catalog_id, label in _DEMO_FALLBACKS:
         if pattern.search(message):
-            return catalog_id
-    if layers:
-        return layers[0]["catalog_id"]
+            # 已加入地图的图层优先用它的名字
+            for layer in layers:
+                if layer["catalog_id"] == catalog_id:
+                    return LayerPick(catalog_id, _display(layer))
+            return LayerPick(catalog_id, label)
     return None
+
+
+def _layer_choices(layers: list[dict[str, str]]) -> str:
+    """「要操作哪个图层？当前有 A、B、C」的可选项文案。"""
+    if not layers:
+        return "当前地图上没有活动图层，请先在左侧图层面板添加。"
+    names = "、".join(f"「{_display(layer)}」" for layer in layers[:5])
+    return f"请指明是哪个图层。当前有：{names}。"
+
+
+def _visible_layer_names(layers: list[dict[str, str]]) -> str:
+    return join_layer_names([layer["catalog_id"] for layer in layers], None)
 
 
 def _parse_opacity(message: str) -> float | None:
@@ -142,7 +254,107 @@ def _parse_lng_lat(message: str) -> tuple[float, float] | None:
             return None
     if lng < -180 or lng > 180 or lat < -90 or lat > 90:
         return None
-    return lng, lat
+    return (lng, lat)
+
+
+def _parse_date_arg(message: str) -> str | None:
+    """从中文句子里抓日期，返回 ``YYYY-MM-DD``。
+
+    验收会考「切换到2025年12月15日」这种自然说法，旧实现只认
+    ``2025-12-15``，于是整句落到兜底的能力介绍——等于答非所问。
+    """
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", message or "")
+    if not m:
+        m = re.search(r"(\d{4})\s*/\s*(\d{1,2})\s*/\s*(\d{1,2})", message or "")
+    if not m:
+        m = re.search(
+            r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?", message or ""
+        )
+    if not m:
+        return None
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if not (1900 <= year <= 2200 and 1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+def _timeline_data_range(
+    client_context: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """读取前端上报的当前图层可用时间范围（``timeline.data_range``）。
+
+    形如 ``{"start": "20251201", "end": "20260201", "frames": 63}``。
+    没有上报时返回 ``None``——此时不要假装知道有没有数据。
+    """
+    if not isinstance(client_context, dict):
+        return None
+    tl = client_context.get("timeline")
+    if not isinstance(tl, dict):
+        return None
+    rng = tl.get("data_range")
+    if not isinstance(rng, dict):
+        return None
+    start = str(rng.get("start") or "").strip()
+    end = str(rng.get("end") or "").strip()
+    if not start or not end:
+        return None
+    frames = rng.get("frames")
+    return {
+        "start": start,
+        "end": end,
+        "frames": int(frames) if isinstance(frames, int) else None,
+    }
+
+
+def _compact_date(date_s: str) -> str:
+    return date_s.replace("-", "").replace("/", "").strip()
+
+
+def _readable_date(date_s: str) -> str:
+    compact = _compact_date(date_s)
+    if len(compact) == 8 and compact.isdigit():
+        return f"{compact[0:4]}-{compact[4:6]}-{compact[6:8]}"
+    return date_s
+
+
+def _build_timeline_reply(
+    args_tl: dict[str, Any],
+    client_context: dict[str, Any] | None,
+) -> tuple[str, bool]:
+    """时间轴切换的回复 ``(文案, 是否允许下发意图)``。
+
+    **先校验，再回答**：日期超出已知可用范围时明确说「没有切换」，
+    而不是旧版那句空口的「正在更新时间轴」——用户会以为切成功了。
+    """
+    date_s = str(args_tl.get("date") or "").strip()
+    hour = args_tl.get("hour")
+    hour_txt = f"{int(hour):02d}:00" if isinstance(hour, int) else ""
+
+    if not date_s:
+        return (f"时间轴已切到 {hour_txt}。" if hour_txt else "时间轴已更新。"), True
+
+    wanted = _readable_date(date_s)
+    rng = _timeline_data_range(client_context)
+    if rng is not None:
+        target = _compact_date(date_s)
+        start, end = _compact_date(rng["start"]), _compact_date(rng["end"])
+        if target < start or target > end:
+            span = f"{_readable_date(rng['start'])} 至 {_readable_date(rng['end'])}"
+            frames = rng.get("frames")
+            extra = (
+                f"，共 {frames} 帧" if isinstance(frames, int) and frames > 0 else ""
+            )
+            return (
+                f"{wanted} 不在当前图层的可用时间内，**没有切换**。\n\n"
+                f"当前可用范围：{span}{extra}。\n"
+                "要切到范围内的某一天，直接说日期即可。"
+            ), False
+    suffix = f"（{hour_txt}）" if hour_txt else ""
+    return (
+        f"已把时间轴切到 {wanted}{suffix}。\n"
+        "若该图层这一天没有数据，会自动对齐到最近的可用帧，"
+        "实际生效日期以气泡下方的执行结果为准。"
+    ), True
 
 
 def mock_chat(
@@ -156,6 +368,18 @@ def mock_chat(
     text = (message or "").strip()
     layers = _normalize_layers(client_context)
     intents: list[dict[str, Any]] = []
+    # 供 human_layer_name 兜底：把上下文里的 id→中文名登记进去
+    name_ctx = {"active_layers": [dict(item) for item in layers]}
+    if isinstance(client_context, dict) and isinstance(
+        client_context.get("active_layers"), list
+    ):
+        name_ctx = client_context
+    names = build_layer_name_map(name_ctx)
+
+    def display(catalog_id: str, fallback: str | None = None) -> str:
+        if catalog_id in names:
+            return names[catalog_id]
+        return human_layer_name(catalog_id, name_ctx, default=fallback)
 
     if not text:
         return {
@@ -168,16 +392,12 @@ def mock_chat(
     if re.search(r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", text, re.I):
         if not layers:
             reply = (
-                "当前没有活动图层。你可以先在左侧图层目录添加图层，"
-                "或说「打开 CMFD 降水」让我帮你打开演示图层。"
+                "当前地图上还没有图层。可以在左侧「图层目录」里添加，"
+                "或直接说「打开 CMFD 降水」让我帮你打开一个示例图层。"
             )
         else:
-            lines = [
-                f"- {L['name']} (`{L['catalog_id']}`)"
-                + (f" · {L['instance_id'][:8]}…" if L.get("instance_id") else "")
-                for L in layers
-            ]
-            reply = "当前活动图层：\n" + "\n".join(lines)
+            lines = [f"- {_display(layer)}" for layer in layers]
+            reply = f"当前有 {len(layers)} 个活动图层：\n" + "\n".join(lines)
         return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
     # Fit China (before generic fit / city locate)
@@ -190,7 +410,7 @@ def mock_chat(
         intents.append({"name": "fit_china", "args": {}})
         return {
             "session_id": sid,
-            "reply": "正在缩放到中国全境范围。",
+            "reply": "已缩放到中国全境。",
             "ui_intents": intents,
         }
 
@@ -206,7 +426,7 @@ def mock_chat(
                 )
                 return {
                     "session_id": sid,
-                    "reply": f"正在切换底图为{label}（`{source_id}`）。",
+                    "reply": f"已切换到{label}底图。",
                     "ui_intents": intents,
                 }
         return {
@@ -231,7 +451,7 @@ def mock_chat(
         )
         return {
             "session_id": sid,
-            "reply": f"正在定位到坐标 ({lng:.4f}, {lat:.4f})。",
+            "reply": f"已定位到经度 {lng:.4f}、纬度 {lat:.4f}。",
             "ui_intents": intents,
         }
 
@@ -247,7 +467,7 @@ def mock_chat(
                 )
                 return {
                     "session_id": sid,
-                    "reply": f"正在定位到{label}（{lng:.4f}, {lat:.4f}）。",
+                    "reply": f"已定位到{label}。",
                     "ui_intents": intents,
                 }
 
@@ -263,72 +483,89 @@ def mock_chat(
         intents.append({"name": "set_timeline_playing", "args": {"playing": True}})
         return {
             "session_id": sid,
-            "reply": "已开始时间轴播放。",
+            "reply": "已开始播放时间轴。",
             "ui_intents": intents,
         }
 
     # Set timeline clock
     hour_m = re.search(r"(?:设为|调到|跳到|时间)\s*(\d{1,2})\s*[点时:：]", text, re.I)
-    date_m = re.search(r"(\d{4}-\d{2}-\d{2})", text)
-    if hour_m or (date_m and re.search(r"时间|日期|时刻|timeline", text, re.I)):
+    date_str = _parse_date_arg(text)
+    if hour_m or (
+        date_str and re.search(r"时间|日期|时刻|切|跳|切到|timeline", text, re.I)
+    ):
         args_tl: dict[str, Any] = {}
         if hour_m:
             h = int(hour_m.group(1))
             if 0 <= h <= 23:
                 args_tl["hour"] = h
-        if date_m:
-            args_tl["date"] = date_m.group(1)
+        if date_str:
+            args_tl["date"] = date_str
         if args_tl:
-            intents.append({"name": "set_timeline", "args": args_tl})
-            return {
-                "session_id": sid,
-                "reply": "正在更新时间轴。",
-                "ui_intents": intents,
-            }
+            reply, changeable = _build_timeline_reply(args_tl, client_context)
+            # 超出可用范围 ⇒ 不生成意图，避免「前端换了、正文说没数据」自相矛盾
+            if changeable:
+                intents.append({"name": "set_timeline", "args": args_tl})
+            return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
     # Remove layer
-    if re.search(r"移除图层|删除图层|去掉图层|remove\s*layer", text, re.I):
-        catalog_id = _match_catalog(text, layers)
-        if not catalog_id:
+    if re.search(r"移除|删除|去掉|remove\s*layer|remove\b", text, re.I):
+        pick = _resolve_layer(text, layers)
+        if not pick:
             return {
                 "session_id": sid,
-                "reply": "请指定要移除的图层名称。",
+                "reply": _layer_choices(layers),
                 "ui_intents": [],
             }
-        intents.append({"name": "remove_layer", "args": {"catalog_id": catalog_id}})
+        intents.append(
+            {
+                "name": "remove_layer",
+                "args": {
+                    "catalog_id": pick.catalog_id,
+                    "display_name": pick.name,
+                },
+            }
+        )
         return {
             "session_id": sid,
-            "reply": f"正在移除图层 `{catalog_id}`。",
+            "reply": f"已从图层面板移除「{pick.name}」（后端产物保留，不会被删除）。",
             "ui_intents": intents,
         }
 
     # Reorder
     if re.search(r"置顶|提到最前|bring\s*to\s*front", text, re.I):
-        catalog_id = _match_catalog(text, layers)
-        if catalog_id:
+        pick = _resolve_layer(text, layers)
+        if pick:
             intents.append(
                 {
                     "name": "reorder_layer",
-                    "args": {"catalog_id": catalog_id, "action": "front"},
+                    "args": {
+                        "catalog_id": pick.catalog_id,
+                        "action": "front",
+                        "display_name": pick.name,
+                    },
                 }
             )
             return {
                 "session_id": sid,
-                "reply": f"正在将 `{catalog_id}` 置顶。",
+                "reply": f"已将「{pick.name}」移到最上层。",
                 "ui_intents": intents,
             }
     if re.search(r"置底|沉到最后|send\s*to\s*back", text, re.I):
-        catalog_id = _match_catalog(text, layers)
-        if catalog_id:
+        pick = _resolve_layer(text, layers)
+        if pick:
             intents.append(
                 {
                     "name": "reorder_layer",
-                    "args": {"catalog_id": catalog_id, "action": "back"},
+                    "args": {
+                        "catalog_id": pick.catalog_id,
+                        "action": "back",
+                        "display_name": pick.name,
+                    },
                 }
             )
             return {
                 "session_id": sid,
-                "reply": f"正在将 `{catalog_id}` 置底。",
+                "reply": f"已将「{pick.name}」移到最下层。",
                 "ui_intents": intents,
             }
 
@@ -336,94 +573,122 @@ def mock_chat(
     if re.search(r"隐藏|关闭显示|hide|关掉", text, re.I) and not re.search(
         r"打开|显示|show", text, re.I
     ):
-        catalog_id = _match_catalog(text, layers)
-        if not catalog_id:
+        pick = _resolve_layer(text, layers, allow_demo_fallback=False)
+        if not pick:
             return {
                 "session_id": sid,
-                "reply": "请指定要隐藏的图层名称或 catalog_id。",
+                "reply": _layer_choices(layers),
                 "ui_intents": [],
             }
         intents.append(
             {
                 "name": "set_layer_visibility",
-                "args": {"catalog_id": catalog_id, "visible": False},
+                "args": {
+                    "catalog_id": pick.catalog_id,
+                    "visible": False,
+                    "display_name": pick.name,
+                },
             }
         )
         return {
             "session_id": sid,
-            "reply": f"已隐藏图层 `{catalog_id}`。",
+            "reply": f"已隐藏「{pick.name}」。",
             "ui_intents": intents,
         }
 
     # Show / open
     if re.search(r"打开|显示|开启|show|enable|可见", text, re.I):
-        catalog_id = _match_catalog(text, layers) or _match_catalog(text, [])
-        if not catalog_id:
-            catalog_id = _DEMO_PRECIP
+        pick = _resolve_layer(text, layers)
+        if not pick:
+            if layers:
+                names = "、".join(f"「{_display(item)}」" for item in layers[:5])
+                reply = (
+                    f"要打开哪个图层？当前有：{names}。\n"
+                    "也可以直接说图层名，例如「打开 CMFD 降水」。"
+                )
+            else:
+                reply = (
+                    "要打开哪个图层？可以直接说图层名，例如「打开 CMFD 降水」"
+                    "「打开高程」；想看全部可用图层可以说「搜索图层 干旱」。"
+                )
+            return {"session_id": sid, "reply": reply, "ui_intents": []}
+        added = pick.catalog_id not in {item["catalog_id"] for item in layers}
         intents.append(
             {
                 "name": "set_layer_visibility",
-                "args": {"catalog_id": catalog_id, "visible": True},
+                "args": {
+                    "catalog_id": pick.catalog_id,
+                    "visible": True,
+                    "display_name": pick.name,
+                },
             }
         )
-        return {
-            "session_id": sid,
-            "reply": f"已为你打开图层 `{catalog_id}`。",
-            "ui_intents": intents,
-        }
+        reply = (
+            f"已把「{pick.name}」添加到地图并显示。"
+            if added
+            else f"已显示「{pick.name}」。"
+        )
+        return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
     # Opacity
     opacity = _parse_opacity(text)
     if opacity is not None or re.search(r"透明度|opacity", text, re.I):
-        catalog_id = _match_catalog(text, layers)
+        pick = _resolve_layer(text, layers, allow_demo_fallback=False)
         if opacity is None:
             return {
                 "session_id": sid,
                 "reply": "请给出透明度，例如「透明度 50%」。",
                 "ui_intents": [],
             }
-        if not catalog_id:
+        if not pick:
             return {
                 "session_id": sid,
-                "reply": "请指定图层名称，例如「CMFD 降水透明度 50%」。",
+                "reply": _layer_choices(layers),
                 "ui_intents": [],
             }
+        pct = int(round(opacity * 100))
         intents.append(
             {
                 "name": "set_layer_opacity",
-                "args": {"catalog_id": catalog_id, "opacity": opacity},
+                "args": {
+                    "catalog_id": pick.catalog_id,
+                    "opacity": opacity,
+                    "display_name": pick.name,
+                },
             }
         )
         return {
             "session_id": sid,
-            "reply": f"已将 `{catalog_id}` 透明度设为 {int(round(opacity * 100))}%。",
+            "reply": f"已把「{pick.name}」的透明度调为 {pct}%。",
             "ui_intents": intents,
         }
 
     # Fit / zoom to layer
     if re.search(r"定位|缩放到|飞到|fit|zoom\s*to|居中", text, re.I):
-        catalog_id = _match_catalog(text, layers)
+        pick = _resolve_layer(text, layers)
         instance_id = ""
-        if catalog_id:
-            for L in layers:
-                if L["catalog_id"] == catalog_id and L.get("instance_id"):
-                    instance_id = L["instance_id"]
+        if pick:
+            for layer in layers:
+                if layer["catalog_id"] == pick.catalog_id and layer.get("instance_id"):
+                    instance_id = layer["instance_id"]
                     break
-        if not catalog_id and not instance_id:
+        if not pick and not instance_id:
             return {
                 "session_id": sid,
-                "reply": "请指定要定位的图层，或先添加活动图层。",
+                "reply": _layer_choices(layers),
                 "ui_intents": [],
             }
-        args: dict[str, Any] = {}
+        args_fit: dict[str, Any] = {}
         if instance_id:
-            args["instance_id"] = instance_id
-        if catalog_id:
-            args["catalog_id"] = catalog_id
-        intents.append({"name": "fit_layer", "args": args})
+            args_fit["instance_id"] = instance_id
+        if pick:
+            args_fit["catalog_id"] = pick.catalog_id
+            args_fit["display_name"] = pick.name
+        intents.append({"name": "fit_layer", "args": args_fit})
+        target_name = pick.name if pick else "该图层"
         return {
             "session_id": sid,
-            "reply": f"正在缩放到图层 `{catalog_id or instance_id}`。",
+            "reply": f"已缩放到「{target_name}」的数据范围。",
             "ui_intents": intents,
         }
 
@@ -432,18 +697,21 @@ def mock_chat(
         return {
             "session_id": sid,
             "reply": (
-                "当前为演示版助手，暂不自动提交工作流。"
-                "请在图层侧栏或分析面板手动运行；后续版本会支持确认后提交。"
+                "当前是**规则演示模式**，不会自动提交工作流。"
+                "请在图层侧栏或分析面板手动运行；"
+                "配置大模型后可做到「先出确认卡，再提交」。"
             ),
             "ui_intents": [],
         }
 
+    hint = _visible_layer_names(layers)
     return {
         "session_id": sid,
         "reply": (
-            "我可以帮你：查看活动图层、打开/隐藏/移除图层、调透明度与色带、缩放到图层、"
-            "缩放到中国、定位城市/坐标、切换底图、调整时间轴。"
-            "试试「打开 CMFD 降水」「缩放到中国」或「切换为天地图影像」。"
+            "我可以帮你：查看活动图层、打开/隐藏/移除图层、调透明度、"
+            "缩放到图层或中国、定位城市与经纬度、切换底图、切换时间轴。\n\n"
+            "试试「有哪些活动图层」「打开 CMFD 降水」「切换为天地图影像」。"
+            + (f"\n\n当前图层：{hint}。" if layers else "")
         ),
         "ui_intents": [],
     }

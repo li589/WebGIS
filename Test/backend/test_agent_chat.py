@@ -142,7 +142,9 @@ def test_agent_chat_list_layers_from_context(agent_client: TestClient):
     )
     assert res.status_code == 200
     body = res.json()
-    assert "dem-etopo" in body["reply"]
+    # 正文只说人话：给中文名，绝不把 catalog_id 甩给用户
+    assert "ETOPO 高程" in body["reply"]
+    assert "dem-etopo" not in body["reply"]
 
 
 def test_agent_chat_opacity_intent(agent_client: TestClient):
@@ -1650,4 +1652,6 @@ def test_catalog_search_vs_list_active_heuristics():
         ]
     )
     assert hits is not None
-    assert "cmfd-precip-cn" in hits
+    # 正文给中文名；内部 layer_id 不进正文（用户 2026-10-21 反馈看不懂 id）
+    assert "CMFD 降水" in hits
+    assert "cmfd-precip-cn" not in hits

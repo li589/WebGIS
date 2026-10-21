@@ -18,6 +18,7 @@ from app.services.agent.config_service import (
     get_profile_api_key,
 )
 from app.services.agent.mock_orchestrator import mock_chat
+from app.services.agent.naming import fmt_value, human_layer_name
 from app.services.agent.server_tools_runtime import (
     ALLOWED_SERVER_TOOLS,
     catalog_summary,
@@ -71,6 +72,93 @@ def _max_tool_hops() -> int:
         return max(1, min(8, int(raw)))
     except (TypeError, ValueError):
         return 4
+
+
+# --- 并发闸门 / 降级 -------------------------------------------------------
+# 地图助手与主服务同进程运行，路由是同步 def ⇒ 由 anyio 线程池（默认 40 线程）
+# 承载。模型调用是 urllib 同步阻塞，若不设上限，几十个并发对话就能把线程池
+# 占满，地图请求开始排队。这里加一道闸门：只放行少量对话，其余快速返回可读
+# 提示（而不是把线程挂住 30 秒）。
+
+_GATE_LOCK = threading.Lock()
+_GATE: threading.BoundedSemaphore | None = None
+_GATE_SIZE = -1
+
+
+def _env_int(name: str, default: int, *, low: int, high: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        return max(low, min(high, int(raw)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _gate() -> threading.BoundedSemaphore:
+    """按配置惰性创建并发闸门（配置改了会自动重建）。"""
+    global _GATE, _GATE_SIZE
+    size = _env_int("BACKEND_AGENT_MAX_CONCURRENT", 2, low=1, high=16)
+    with _GATE_LOCK:
+        if _GATE is None or _GATE_SIZE != size:
+            _GATE = threading.BoundedSemaphore(size)
+            _GATE_SIZE = size
+        return _GATE
+
+
+def _gate_wait_seconds() -> float:
+    return float(_env_int("BACKEND_AGENT_QUEUE_TIMEOUT", 15, low=0, high=120))
+
+
+def _degraded_result(
+    *,
+    session_id: str | None,
+    reply: str,
+    provider: str,
+    reason: str = "",
+    on_event: EventCallback | None = None,
+) -> dict[str, Any]:
+    """构造一条「助手不可用但地图照用」的降级回复（HTTP 仍是 200）。"""
+    sid = (session_id or "").strip() or uuid.uuid4().hex
+    steps: list[dict[str, Any]] = [
+        {
+            "type": "thought",
+            "summary": "助手已降级",
+            "detail": reason or provider,
+        }
+    ]
+    usage = {
+        "prompt_tokens": 0,
+        "completion_tokens": estimate_tokens(reply),
+        "total_tokens": estimate_tokens(reply),
+        "estimated": True,
+    }
+    _emit_stream_tail(on_event, reply=reply, ui_intents=[])
+    return {
+        "session_id": sid,
+        "reply": reply,
+        "ui_intents": [],
+        "provider": provider,
+        "profile_id": None,
+        "usage": usage,
+        "steps": steps,
+        "confirmations": [],
+    }
+
+
+def _busy_reply() -> str:
+    return (
+        "现在问助手的人有点多，这条没能排上。"
+        "**地图本身不受影响**：底图、图层、时间轴、点查都可以正常用。\n\n"
+        "稍等几秒再问一次即可。"
+    )
+
+
+def _llm_down_reply(detail: str) -> str:
+    hint = _friendly_tool_error(detail) or "模型服务没有响应"
+    return (
+        f"地图助手这次没连上模型服务：{hint}。\n\n"
+        "**地图不受影响**：底图、图层、时间轴、点查都能正常用。\n\n"
+        "可以稍后重试，或在「设置 → Agent 配置」里换一个模型 / 换成「演示（无网）」。"
+    )
 
 
 def _prompt_token_budget() -> int:
@@ -211,6 +299,9 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
 
     Models often call search_layers / sample tools and return empty ``content``;
     without this, the UI only shows a blank bubble or a collapsed「过程」panel.
+
+    文案铁律（用户 2026-10-21 反馈「风云卫星反演（id：123456677）」看不懂）：
+    正文只写中文显示名，**不拼 internal id，不糊 JSON**。id 留在 ``steps`` 里。
     """
     for step in reversed(steps):
         if not isinstance(step, dict) or step.get("type") != "tool_result":
@@ -227,9 +318,9 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
         if not isinstance(data, dict):
             continue
         if not data.get("ok"):
-            err = str(data.get("error") or "").strip()
+            err = _friendly_tool_error(str(data.get("error") or ""))
             if err:
-                return f"工具调用未成功：{err}"
+                return err
             continue
         layers = data.get("layers")
         if isinstance(layers, list):
@@ -240,40 +331,101 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
                     f"未在图层库中找到与{hint}匹配的图层。"
                     "若要查看地图上已添加的图层，请说「有哪些活动图层」。"
                 )
-            lines = [
-                f"- {item.get('display_name') or item.get('layer_id')}（`{item.get('layer_id')}`）"
-                for item in layers
-                if isinstance(item, dict) and item.get("layer_id")
-            ]
+            lines: list[str] = []
+            for item in layers[:10]:
+                if not isinstance(item, dict):
+                    continue
+                cid = str(item.get("layer_id") or item.get("catalog_id") or "").strip()
+                fallback = str(item.get("display_name") or item.get("name") or "")
+                label = human_layer_name(cid, None, default=fallback)
+                if label not in lines:
+                    lines.append(label)
+            if not lines:
+                continue
             head = (
-                f"图层库搜索「{q}」命中 {len(lines)} 条："
+                f"图层库里与「{q}」相关的有 {len(lines)} 个："
                 if q
                 else f"找到 {len(lines)} 个图层："
             )
-            return head + "\n" + "\n".join(lines)
+            return head + "\n" + "\n".join(f"- {name}" for name in lines)
         samples = data.get("samples")
         if isinstance(samples, list) and samples:
             lines = []
-            for s in samples[:12]:
+            for s in samples[:8]:
                 if not isinstance(s, dict):
                     continue
-                cid = s.get("catalog_id") or s.get("display_name") or "?"
-                if s.get("ok"):
-                    val = s.get("value")
-                    unit = s.get("unit") or ""
-                    lines.append(f"- {cid}: {val}{(' ' + unit) if unit else ''}")
-                else:
-                    lines.append(f"- {cid}: {s.get('error') or '采样失败'}")
+                cid = str(s.get("catalog_id") or "").strip()
+                fallback = str(s.get("display_name") or "")
+                label = human_layer_name(cid, None, default=fallback)
+                if not s.get("ok"):
+                    reason = _friendly_tool_error(str(s.get("error") or ""))
+                    lines.append(f"- {label}：{reason or '这个点取不到值'}")
+                    continue
+                val_txt = fmt_value(s.get("value"), s.get("unit"))
+                when = str(s.get("time") or "").strip()
+                quality = str(s.get("quality_label") or "").strip()
+                tail = " · ".join(x for x in (when, quality) if x)
+                lines.append(f"- {label}：{val_txt}" + (f"（{tail}）" if tail else ""))
             if lines:
-                return "点值采样结果：\n" + "\n".join(lines)
+                coord = (
+                    f"（{fmt_value(data.get('lng'))}, {fmt_value(data.get('lat'))}）"
+                )
+                return f"该点{coord}的取值：\n" + "\n".join(lines)
         layer_meta = data.get("layer")
         if isinstance(layer_meta, dict) and layer_meta.get("layer_id"):
-            return (
-                f"图层 `{layer_meta.get('layer_id')}`："
-                f"{layer_meta.get('display_name') or ''}\n"
-                f"{json.dumps(layer_meta, ensure_ascii=False)[:600]}"
-            )
+            return _describe_layer_meta(layer_meta)
     return None
+
+
+def _friendly_tool_error(raw: str) -> str:
+    """把工具返回的英文/技术错误翻成用户看得懂的一句话。"""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    lowered = text.casefold()
+    if "无权" in text or "permission" in lowered or "forbidden" in lowered:
+        return "当前账号没有这个图层的查看权限"
+    if "未找到" in text or "not found" in lowered:
+        return "找不到这个图层，可能已下线或名称有误"
+    if "nodata" in lowered or "缺测" in text:
+        return "该位置没有有效数据（缺测）"
+    if "timeout" in lowered or "超时" in text:
+        return "数据服务响应超时，稍后再试"
+    return text[:80]
+
+
+def _describe_layer_meta(layer_meta: dict[str, Any]) -> str:
+    """图层详情的人话版：名称、用途、时间覆盖、空间范围，不塞原始 JSON。"""
+    lid = str(layer_meta.get("layer_id") or "").strip()
+    name = human_layer_name(
+        lid, None, default=str(layer_meta.get("display_name") or "")
+    )
+    parts: list[str] = [f"「{name}」"]
+    desc = str(layer_meta.get("description") or "").strip()
+    if desc:
+        parts.append(desc[:200].rstrip("。") + "。")
+    coverage = str(layer_meta.get("temporal_coverage") or "").strip()
+    if coverage:
+        parts.append(f"时间覆盖：{coverage}。")
+    elif layer_meta.get("is_realtime"):
+        parts.append("该图层为实时数据。")
+    extent = layer_meta.get("extent")
+    if isinstance(extent, dict):
+        try:
+            parts.append(
+                "空间范围：经度 {:.2f}~{:.2f}、纬度 {:.2f}~{:.2f}。".format(
+                    float(extent["west"]),
+                    float(extent["east"]),
+                    float(extent["south"]),
+                    float(extent["north"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            pass
+    summary = str(layer_meta.get("run_readiness_summary") or "").strip()
+    if summary:
+        parts.append(summary[:200])
+    return "".join(parts)
 
 
 def _ensure_visible_reply(
@@ -412,7 +564,9 @@ def sanitize_client_context(
                 if not isinstance(item, dict):
                     continue
                 entry: dict[str, str] = {}
-                for key in ("catalog_id", "instance_id", "name"):
+                # overlay_layer_id 必留：运行时栅格（imported-*）点查只能靠它，
+                # 旧白名单把它砍掉，导致点查一直拿不到 overlay 图层。
+                for key in ("catalog_id", "instance_id", "name", "overlay_layer_id"):
                     if key in item and item[key] is not None:
                         entry[key] = str(item[key])[:256]
                 if entry:
@@ -459,6 +613,19 @@ def sanitize_client_context(
                     slim_tl["date"] = date_s
             if "playing" in tl:
                 slim_tl["playing"] = bool(tl.get("playing"))
+            rng = tl.get("data_range")
+            if isinstance(rng, dict):
+                # 当前图层的可用时间范围，用于「切到某天有没有数据」的校验。
+                slim_rng: dict[str, Any] = {}
+                for key in ("start", "end"):
+                    val = str(rng.get(key) or "").strip()[:32]
+                    if val:
+                        slim_rng[key] = val
+                frames = rng.get("frames")
+                if isinstance(frames, int) and 0 < frames <= 100000:
+                    slim_rng["frames"] = frames
+                if slim_rng.get("start") and slim_rng.get("end"):
+                    slim_tl["data_range"] = slim_rng
             if slim_tl:
                 cleaned["timeline"] = slim_tl
     if "viewport" in client_context:
@@ -702,7 +869,7 @@ def refresh_models_for_profile(
         }
 
 
-def run_chat(
+def _run_chat_impl(
     message: str,
     *,
     session_id: str | None = None,
@@ -1363,3 +1530,68 @@ def run_chat(
     except Exception as exc:
         logger.exception("Agent LLM call failed profile=%s", profile_id)
         raise LlmClientError(f"模型调用失败：{exc}") from exc
+
+
+def run_chat(
+    message: str,
+    *,
+    session_id: str | None = None,
+    client_context: dict[str, Any] | None = None,
+    user_id: int | None = None,
+    cred: Any = None,
+    on_event: EventCallback | None = None,
+) -> dict[str, Any]:
+    """地图助手对话入口（唯一对外入口，含并发闸门与降级）。
+
+    两道保险，目的是「助手出问题不牵连地图」：
+
+    1. **并发闸门**：同时只放 ``BACKEND_AGENT_MAX_CONCURRENT``（默认 2）个对话
+       进入模型调用；排不上的在 ``BACKEND_AGENT_QUEUE_TIMEOUT``（默认 15s）后
+       直接收到一句可读提示，不再长时间占用线程池。
+    2. **降级**：模型超时/断网/配错 Key 时不再抛 502，而是返回一条
+       「地图不受影响」的中文回复（``provider="degraded"``），
+       真实原因留在 ``steps`` 里供排查。
+    """
+    gate = _gate()
+    if not gate.acquire(timeout=_gate_wait_seconds()):
+        logger.warning("agent busy: no free slot, fast-fail")
+        return _degraded_result(
+            session_id=session_id,
+            reply=_busy_reply(),
+            provider="busy",
+            reason=f"并发已满（上限 {_GATE_SIZE}）",
+            on_event=on_event,
+        )
+    try:
+        return _run_chat_impl(
+            message,
+            session_id=session_id,
+            client_context=client_context,
+            user_id=user_id,
+            cred=cred,
+            on_event=on_event,
+        )
+    except ValueError:
+        # 参数/配置类错误（消息过长、无配置档）仍交给路由转 422，
+        # 不属于「服务不可用」，不该被降级吞掉。
+        raise
+    except LlmClientError as exc:
+        logger.warning("agent degraded: LLM error: %s", exc)
+        return _degraded_result(
+            session_id=session_id,
+            reply=_llm_down_reply(str(exc)),
+            provider="degraded",
+            reason=str(exc),
+            on_event=on_event,
+        )
+    except Exception as exc:
+        logger.exception("agent degraded: unexpected failure")
+        return _degraded_result(
+            session_id=session_id,
+            reply=_llm_down_reply(str(exc)),
+            provider="degraded",
+            reason=f"{type(exc).__name__}: {exc}",
+            on_event=on_event,
+        )
+    finally:
+        gate.release()
