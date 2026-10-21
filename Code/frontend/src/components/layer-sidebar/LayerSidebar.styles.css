@@ -140,9 +140,10 @@ h2 {
   background: var(--border-blue-tint);
   color: var(--accent);
   /* 勿用 font: inherit，会继承面板大字号把徽标撑爆 */
-  font-family: var(--font-mono);
+  /* 2026-10-21：短码（SM/VOD）是英文，按规范走 Inter，不再用等宽 */
+  font-family: var(--font-sans);
   font-size: var(--font-size-caption);
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -785,7 +786,9 @@ h2 {
 .src-coord {
   color: var(--text-disabled);
   font-size: var(--font-size-caption);
-  font-family: var(--font-mono);
+  /* 2026-10-21：坐标数字走 Inter + 等宽数字 */
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .src-auth,
@@ -1342,7 +1345,7 @@ h2 {
   /* 2026-10-20 字号层级（用户要求「图层字号比日期大」）：
      组标题 14px > 图层名 13px > 色带刻度 / 日期 10.5px */
   font-size: var(--font-size-title);
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text-strong);
   flex: 1;
   min-width: 0;
@@ -1557,8 +1560,9 @@ h2 {
   min-width: 0;
   color: var(--text-strong);
   /* 2026-10-20：12px → 13px 并加重，与日期（10.5px / 常规 / 暗色）拉开层级 */
+  /* 2026-10-21：字重 600 → 500（规范：图层名称 Medium；思源黑体 600 在 13px 偏糊） */
   font-size: var(--font-size-body);
-  font-weight: 650;
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1676,7 +1680,8 @@ h2 {
   /* 2026-10-20：12px → 10.5px，与日期同一档辅助字号 */
   font-size: 0.66rem;
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono);
+  /* 2026-10-21：色带刻度数值走 Inter */
+  font-family: var(--font-sans);
 }
 
 .legend-unit {
@@ -2320,7 +2325,7 @@ h2 {
 
 .dataset-tab.active {
   color: var(--text-strong);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .dataset-tab:focus-visible {

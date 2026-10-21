@@ -13,11 +13,15 @@
     <meta name="darkreader-lock" />
     <!-- 旧品牌「综合地理态势分析系统（CGDA/CGDAS）」沿革见 src/ui-copy/brand.ts -->
     <title>星地融合土壤水分监测与干旱预警数据分析与可视化系统</title>
-    <!-- 字体：Sora（显示/正文）+ IBM Plex Mono（等宽数据），display=swap 避免 FOIT -->
+    <!-- 字体（2026-10-21 换用思源黑体 + Inter）：
+         Inter 负责英文/数字/日期，Noto Sans SC（思源黑体的 Google 发行名）
+         负责中文；两者同一 font-family 栈里按字形自动分工。
+         display=swap 避免 FOIT；若 CDN 不可达则回落到系统字体（见 tokens.css）。
+         回退方式：Tools\restore-fonts.bat -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <!-- 首屏同步主题，避免刷新时先暗后浅 / 半透明叠错底发棕 -->

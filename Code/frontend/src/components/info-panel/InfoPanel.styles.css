@@ -1197,7 +1197,7 @@
   min-width: 2.4rem;
 }
 .style-field-row strong {
-  font-weight: 550;
+  font-weight: 500;
   color: var(--text-primary);
 }
 .style-range-block {
@@ -1224,7 +1224,7 @@
   font-size: var(--font-size-caption);
 }
 .style-range-cell strong {
-  font-weight: 550;
+  font-weight: 500;
   color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
@@ -1559,7 +1559,7 @@
 .job-report-title {
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-weight: 700;
+  font-weight: 600;
 }
 .job-status-chip {
   padding: 0.12rem 0.34rem;

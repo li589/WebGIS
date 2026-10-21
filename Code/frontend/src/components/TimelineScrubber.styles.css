@@ -71,10 +71,13 @@
 }
 
 .date-text {
-  font-family: var(--font-mono);
+  /* 2026-10-21：日期改走 Inter（--font-sans）+ 等宽数字，不再用等宽字体 */
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
   font-size: var(--font-size-caption);
   color: var(--accent);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -133,11 +136,12 @@
 }
 
 .now-label {
-  font-family: var(--font-mono);
+  /* 2026-10-21：英文标签改 Inter */
+  font-family: var(--font-sans);
   font-style: normal;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-caption);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   line-height: 1;
   text-transform: uppercase;
 }
@@ -470,7 +474,9 @@
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-family: var(--font-mono);
+  /* 2026-10-21：刻度上的日期数字改 Inter + 等宽数字 */
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: var(--font-size-caption);
   padding: 0;
   border-radius: 0.2rem;

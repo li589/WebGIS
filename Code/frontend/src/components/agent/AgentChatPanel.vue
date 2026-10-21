@@ -2006,7 +2006,9 @@ function onKeydown(ev: KeyboardEvent) {
   word-break: break-word;
   font-family: inherit;
   font-size: var(--font-size-caption);
-  line-height: 1.5;
+  /* 2026-10-21：Agent 对话按规范用 Regular + 行高 1.6（原 1.5 偏挤） */
+  font-weight: var(--font-weight-regular);
+  line-height: 1.6;
   max-height: min(42vh, 320px);
   overflow: auto;
 }
@@ -2014,7 +2016,9 @@ function onKeydown(ev: KeyboardEvent) {
 .agent-chat-md {
   margin: 0;
   font-size: var(--font-size-caption);
-  line-height: 1.55;
+  /* 2026-10-21：同上，正文 Regular / 1.6 */
+  font-weight: var(--font-weight-regular);
+  line-height: 1.6;
   overflow-wrap: anywhere;
   word-break: break-word;
   max-height: min(42vh, 360px);

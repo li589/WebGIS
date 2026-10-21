@@ -5,8 +5,9 @@
  * 迁移策略：229 个内联 hex → 统一 token 引用，分阶段组件改造（S1 token → S2 基础组件 → S3 迁移）。
  *
  * 颜色主题：深空蓝青（品牌 #5ad5ff）+ 低透明黑玻璃层级 + WCAG AA 对比度。
- * 排版基线：root=15px；正文 floor ≥12px（商业化可读下限）；五档字重（300/400/500/600/700）。
- * 字体族：Sora（几何无衬线，技术感）+ IBM Plex Mono（等宽数据）+ 中文回退。
+ * 排版基线：root=15px；正文 floor ≥12px（商业化可读下限）；四档字重（400/500/600，封顶 600）。
+ * 字体族（2026-10-21 全面更换）：Inter（英文/数字/日期）+ 思源黑体 Noto Sans SC（中文），
+ *   等宽 IBM Plex Mono 仅留给代码/ID；一键回退见 Tools\restore-fonts.bat。
  * 动效哲学：克制（120–320ms）、缓出、有物理感（translateY / shadow 不用 scale）。
  */
 
@@ -129,16 +130,29 @@
   --font-size-h3: 1.2rem; /* 18px — 第三级标题（兼容旧引用） */
   --font-size-h1: 1.6rem; /* 24px — 主标题 */
 
-  /* ═══ 字体族 ═══ */
-  --font-sans: 'Sora', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', 'Courier New', 'Microsoft YaHei', monospace;
+  /* ═══ 字体族（2026-10-21 全局换字体）═══
+   * 中文：思源黑体（Google 发行名 Noto Sans SC；本机装了思源黑体也认）；
+   * 英文 / 数字 / 日期：Inter（排在最前，拉丁字形优先命中它，
+   *   汉字不在 Inter 字库里 ⇒ 自动落到后面的思源黑体）。
+   * 后面几个是「CDN 不可达 / 未装字体」时的兜底，保证不会退成宋体。
+   *
+   * ⚠ 改这里等于改全站字体（组件全部用 var(--font-sans)）。
+   *   一键回退：Tools\restore-fonts.bat
+   */
+  --font-sans:
+    'Inter', 'Noto Sans SC', 'Source Han Sans SC', 'Source Han Sans CN', 'PingFang SC',
+    'HarmonyOS Sans SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+  /* 等宽只留给「真·代码/ID/坐标」这类需要逐字符对齐的内容；
+     日期、数值一律走 --font-sans + tabular-nums（见各组件） */
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
 
-  /* ═══ 字重（五档：建立排版层级；Sora 可变字体 300-700） ═══ */
-  --font-weight-light: 300; /* 大号显示文本 / 辅助标签 */
-  --font-weight-regular: 400; /* 正文 */
-  --font-weight-medium: 500; /* UI 标签 / 按钮 */
-  --font-weight-semibold: 600; /* 区块标题 / 卡片标题 */
-  --font-weight-bold: 700; /* 页面标题 / 强调 */
+  /* ═══ 字重（2026-10-21 重新定档：汉字加粗天生比拉丁重，
+   *   原来的 650/700/800 在思源黑体下会糊成一团，统一封顶 600）═══ */
+  --font-weight-light: 300; /* 已不使用，保留兼容 */
+  --font-weight-regular: 400; /* 正文 / 图例 / 辅助说明 / Agent 对话 */
+  --font-weight-medium: 500; /* 顶部按钮 / 图层名称 / 数值 */
+  --font-weight-semibold: 600; /* 中文标题（最高档） */
+  --font-weight-bold: 600; /* ⚠ 刻意等于 semibold：再重汉字就发糊 */
 
   /* ═══ Elevation（暗色实现：低透明阴影 + 内高光） ═══ */
   --glass-blur: 12px; /* 统一玻璃模糊：12px 兼顾平滑虚化与 GPU 卷积性能 */
