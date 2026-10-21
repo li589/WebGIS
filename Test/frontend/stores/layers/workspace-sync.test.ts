@@ -1,78 +1,94 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getApiStorageScope } from '@/services/_http'
-import { setActiveStorageUserId, writeScopedItem } from '@/services/user-local-isolation'
-import { WorkspaceConflictApiError, type RemoteWorkspaceState } from '@/services/workspace-api'
+import { getApiStorageScope } from "@/services/_http";
+import {
+  setActiveStorageUserId,
+  writeScopedItem,
+} from "@/services/user-local-isolation";
+import {
+  WorkspaceConflictApiError,
+  type RemoteWorkspaceState,
+} from "@/services/workspace-api";
 import {
   loadWorkspaceSnapshot,
   loadDismissedLayers,
   saveWorkspaceSnapshot,
+  WORKSPACE_SCHEMA_VERSION,
   type WorkspaceSnapshot,
-} from '@/stores/layers/workspace-persist'
+} from "@/stores/layers/workspace-persist";
 import {
   resetWorkspaceSyncState,
   scheduleWorkspaceSyncPush,
   syncWorkspaceOnBoot,
   workspaceSyncStatus,
-} from '@/stores/layers/workspace-sync'
-import { toRemotePayload, type ScopedWorkspaceBundle } from '@/stores/layers/workspace-remote-payload'
+} from "@/stores/layers/workspace-sync";
+import {
+  toRemotePayload,
+  type ScopedWorkspaceBundle,
+} from "@/stores/layers/workspace-remote-payload";
 
-const fetchWorkspaceMock = vi.fn()
-const pushWorkspaceMock = vi.fn()
-const reloadMock = vi.fn()
+const fetchWorkspaceMock = vi.fn();
+const pushWorkspaceMock = vi.fn();
+const reloadMock = vi.fn();
 
-vi.mock('@/services/workspace-api', () => ({
+vi.mock("@/services/workspace-api", () => ({
   fetchWorkspace: (...args: unknown[]) => fetchWorkspaceMock(...(args as [])),
   pushWorkspace: (...args: unknown[]) => pushWorkspaceMock(...(args as [])),
   WorkspaceConflictApiError: class WorkspaceConflictApiError extends Error {
-    readonly serverRevision: number
+    readonly serverRevision: number;
     constructor(message: string, serverRevision: number) {
-      super(message)
-      this.serverRevision = serverRevision
+      super(message);
+      this.serverRevision = serverRevision;
     }
   },
-}))
+}));
 
-let authUserMock: { id: number; username: string; role: string } | null = null
+let authUserMock: { id: number; username: string; role: string } | null = null;
 
-vi.mock('@/stores/auth', () => ({
+vi.mock("@/stores/auth", () => ({
   useAuthStore: () => ({ user: authUserMock }),
-}))
+}));
 
-const MARKER_KEY = 'geo:workspace-sync-user:v1'
-const TEST_ORIGIN = 'http://test.local'
+const MARKER_KEY = "geo:workspace-sync-user:v1";
+const TEST_ORIGIN = "http://test.local";
 
 function syncMarker(username: string): string {
-  return `${username}|${getApiStorageScope()}`
+  return `${username}|${getApiStorageScope()}`;
 }
 
 function mockBrowserStorage() {
-  const store = new Map<string, string>()
+  const store = new Map<string, string>();
   const storage = {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => {
-      store.set(k, v)
+      store.set(k, v);
     },
     removeItem: (k: string) => {
-      store.delete(k)
+      store.delete(k);
     },
     clear: () => store.clear(),
-  }
-  vi.stubGlobal('localStorage', storage)
-  vi.stubGlobal('window', {
+  };
+  vi.stubGlobal("localStorage", storage);
+  vi.stubGlobal("window", {
     localStorage: storage,
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
     setInterval: globalThis.setInterval.bind(globalThis),
     clearInterval: globalThis.clearInterval.bind(globalThis),
     location: { reload: reloadMock, origin: TEST_ORIGIN },
-  })
-  return storage
+  });
+  return storage;
 }
 
-function snapshot(savedAt: string, tag = 'koppen', apiScope = TEST_ORIGIN): WorkspaceSnapshot {
+function snapshot(
+  savedAt: string,
+  tag = "koppen",
+  apiScope = TEST_ORIGIN,
+  schemaVersion: number = WORKSPACE_SCHEMA_VERSION,
+): WorkspaceSnapshot {
   return {
     version: 1,
+    schemaVersion,
     savedAt,
     apiScope,
     layers: [],
@@ -87,23 +103,24 @@ function snapshot(savedAt: string, tag = 'koppen', apiScope = TEST_ORIGIN): Work
     ],
     vectorLayers: [],
     groups: [],
-  }
+  };
 }
 
 function scopeBundle(
   savedAt: string,
-  tag = 'koppen',
+  tag = "koppen",
   apiScope = TEST_ORIGIN,
+  schemaVersion: number = WORKSPACE_SCHEMA_VERSION,
 ): ScopedWorkspaceBundle {
   return {
-    snapshot: snapshot(savedAt, tag, apiScope),
+    snapshot: snapshot(savedAt, tag, apiScope, schemaVersion),
     dismissed: {
       overlayLayerIds: [],
       catalogIds: [],
       runIds: [],
       vectorBackendLayerIds: [],
     },
-  }
+  };
 }
 
 function remoteState(
@@ -112,131 +129,180 @@ function remoteState(
 ): RemoteWorkspaceState {
   return {
     revision,
-    updated_at: '2026-08-17T00:00:00Z',
+    updated_at: "2026-08-17T00:00:00Z",
     payload: scopes ? toRemotePayload({ version: 2, scopes }) : null,
-  }
+  };
 }
 
-describe('workspace-sync 跨设备同步引擎', () => {
-  let store: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void }
+describe("workspace-sync 跨设备同步引擎", () => {
+  let store: {
+    getItem: (k: string) => string | null;
+    setItem: (k: string, v: string) => void;
+  };
 
   beforeEach(() => {
-    vi.useFakeTimers()
-    fetchWorkspaceMock.mockReset()
-    pushWorkspaceMock.mockReset()
-    reloadMock.mockReset()
-    authUserMock = null
-    setActiveStorageUserId(null)
-    store = mockBrowserStorage()
-  })
+    vi.useFakeTimers();
+    fetchWorkspaceMock.mockReset();
+    pushWorkspaceMock.mockReset();
+    reloadMock.mockReset();
+    authUserMock = null;
+    setActiveStorageUserId(null);
+    store = mockBrowserStorage();
+  });
 
   afterEach(() => {
-    resetWorkspaceSyncState()
-    setActiveStorageUserId(null)
-    vi.useRealTimers()
-    vi.unstubAllGlobals()
-    vi.clearAllMocks()
-  })
+    resetWorkspaceSyncState();
+    setActiveStorageUserId(null);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
 
-  it('未登录 / demo 账号：同步停用且不发起任何请求', async () => {
-    authUserMock = null
-    await syncWorkspaceOnBoot()
-    expect(workspaceSyncStatus.value).toBe('disabled')
-    expect(fetchWorkspaceMock).not.toHaveBeenCalled()
+  it("未登录 / demo 账号：同步停用且不发起任何请求", async () => {
+    authUserMock = null;
+    await syncWorkspaceOnBoot();
+    expect(workspaceSyncStatus.value).toBe("disabled");
+    expect(fetchWorkspaceMock).not.toHaveBeenCalled();
 
-    authUserMock = { id: 3, username: 'guest', role: 'demo' }
-    await syncWorkspaceOnBoot()
-    expect(workspaceSyncStatus.value).toBe('disabled')
-    expect(fetchWorkspaceMock).not.toHaveBeenCalled()
-  })
+    authUserMock = { id: 3, username: "guest", role: "demo" };
+    await syncWorkspaceOnBoot();
+    expect(workspaceSyncStatus.value).toBe("disabled");
+    expect(fetchWorkspaceMock).not.toHaveBeenCalled();
+  });
 
-  it('同账号且远端当前 scope 较新：接管远端快照', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice'))
-    saveWorkspaceSnapshot(snapshot('2026-08-10T00:00:00Z', 'old'))
+  it("同账号且远端当前 scope 较新：接管远端快照", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    saveWorkspaceSnapshot(snapshot("2026-08-10T00:00:00Z", "old"));
     const remoteDismissed = {
-      overlayLayerIds: ['ov-1'],
-      catalogIds: ['cat-1'],
+      overlayLayerIds: ["ov-1"],
+      catalogIds: ["cat-1"],
       runIds: [],
       vectorBackendLayerIds: [],
-    }
+    };
     fetchWorkspaceMock.mockResolvedValue(
       remoteState(5, {
         [TEST_ORIGIN]: {
-          snapshot: snapshot('2026-08-16T00:00:00Z', 'new'),
+          snapshot: snapshot("2026-08-16T00:00:00Z", "new"),
           dismissed: remoteDismissed,
         },
       }),
-    )
+    );
 
-    await syncWorkspaceOnBoot()
+    await syncWorkspaceOnBoot();
 
-    expect(pushWorkspaceMock).not.toHaveBeenCalled()
-    const local = loadWorkspaceSnapshot()
-    expect(local?.catalogLayers?.[0]?.catalogId).toBe('new')
-    expect(loadDismissedLayers().overlayLayerIds).toEqual(['ov-1'])
-  })
+    expect(pushWorkspaceMock).not.toHaveBeenCalled();
+    const local = loadWorkspaceSnapshot();
+    expect(local?.catalogLayers?.[0]?.catalogId).toBe("new");
+    expect(loadDismissedLayers().overlayLayerIds).toEqual(["ov-1"]);
+  });
 
-  it('同账号且本地较新：推送 v2 分桶快照', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice'))
-    saveWorkspaceSnapshot(snapshot('2026-08-16T00:00:00Z', 'local-new'))
+  it("出厂配置版本升级：本地旧快照作废，远端旧快照也不被采纳", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    const stale = WORKSPACE_SCHEMA_VERSION - 1;
+    saveWorkspaceSnapshot(
+      snapshot("2026-08-16T00:00:00Z", "stale-local", TEST_ORIGIN, stale),
+    );
+    // 远端 dismissed 带可识别标记：采纳成功才会被写进本地登记表，
+    // 用它能区分「拒绝采纳」与「采纳后再自查过期」这两种情况。
+    fetchWorkspaceMock.mockResolvedValue(
+      remoteState(5, {
+        [TEST_ORIGIN]: {
+          snapshot: snapshot(
+            "2026-08-17T00:00:00Z",
+            "stale-remote",
+            TEST_ORIGIN,
+            stale,
+          ),
+          dismissed: {
+            overlayLayerIds: ["stale-ov"],
+            catalogIds: [],
+            runIds: [],
+            vectorBackendLayerIds: [],
+          },
+        },
+      }),
+    );
+
+    await syncWorkspaceOnBoot();
+
+    // 本地旧快照被清掉，远端旧快照（savedAt 更新）也不算「较新」⇒ 保持空，
+    // 交回 ensureDefaultLayers 按当前出厂默认重建，避免旧布局被拉回来。
+    expect(loadWorkspaceSnapshot()).toBeNull();
+    expect(loadDismissedLayers().overlayLayerIds).toEqual([]);
+    expect(pushWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("同账号且本地较新：推送 v2 分桶快照", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    saveWorkspaceSnapshot(snapshot("2026-08-16T00:00:00Z", "local-new"));
     fetchWorkspaceMock.mockResolvedValue(
       remoteState(3, {
-        [TEST_ORIGIN]: scopeBundle('2026-08-01T00:00:00Z', 'remote-old'),
+        [TEST_ORIGIN]: scopeBundle("2026-08-01T00:00:00Z", "remote-old"),
       }),
-    )
-    pushWorkspaceMock.mockResolvedValue({ revision: 4, updated_at: '2026-08-17T01:00:00Z' })
+    );
+    pushWorkspaceMock.mockResolvedValue({
+      revision: 4,
+      updated_at: "2026-08-17T01:00:00Z",
+    });
 
-    await syncWorkspaceOnBoot()
+    await syncWorkspaceOnBoot();
 
-    expect(pushWorkspaceMock).toHaveBeenCalledTimes(1)
-    const [payload, baseRevision] = pushWorkspaceMock.mock.calls[0]
-    expect(baseRevision).toBe(3)
-    expect(payload.version).toBe(2)
-    expect(payload.scopes[TEST_ORIGIN].snapshot.catalogLayers[0].catalogId).toBe('local-new')
-    expect(workspaceSyncStatus.value).toBe('idle')
-  })
+    expect(pushWorkspaceMock).toHaveBeenCalledTimes(1);
+    const [payload, baseRevision] = pushWorkspaceMock.mock.calls[0];
+    expect(baseRevision).toBe(3);
+    expect(payload.version).toBe(2);
+    expect(
+      payload.scopes[TEST_ORIGIN].snapshot.catalogLayers[0].catalogId,
+    ).toBe("local-new");
+    expect(workspaceSyncStatus.value).toBe("idle");
+  });
 
-  it('账号切换且远端当前 scope 为空：清空本地工作区', async () => {
-    authUserMock = { id: 2, username: 'bob', role: 'standard' }
-    setActiveStorageUserId(2)
-    writeScopedItem(MARKER_KEY, syncMarker('alice'))
-    saveWorkspaceSnapshot(snapshot('2026-08-16T00:00:00Z', 'alice-data'))
-    fetchWorkspaceMock.mockResolvedValue(remoteState(0, null))
+  it("账号切换且远端当前 scope 为空：清空本地工作区", async () => {
+    authUserMock = { id: 2, username: "bob", role: "standard" };
+    setActiveStorageUserId(2);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    saveWorkspaceSnapshot(snapshot("2026-08-16T00:00:00Z", "alice-data"));
+    fetchWorkspaceMock.mockResolvedValue(remoteState(0, null));
 
-    await syncWorkspaceOnBoot()
+    await syncWorkspaceOnBoot();
 
-    expect(pushWorkspaceMock).not.toHaveBeenCalled()
-    expect(loadWorkspaceSnapshot()).toBeNull()
-    expect(loadDismissedLayers().overlayLayerIds).toEqual([])
-  })
+    expect(pushWorkspaceMock).not.toHaveBeenCalled();
+    expect(loadWorkspaceSnapshot()).toBeNull();
+    expect(loadDismissedLayers().overlayLayerIds).toEqual([]);
+  });
 
-  it('API 入口切换：不采纳其它 scope 的快照，保留本机 localStorage', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice').replace(TEST_ORIGIN, 'http://localhost:5175'))
-    saveWorkspaceSnapshot(snapshot('2026-08-16T00:00:00Z', 'local-only'))
+  it("API 入口切换：不采纳其它 scope 的快照，保留本机 localStorage", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(
+      MARKER_KEY,
+      syncMarker("alice").replace(TEST_ORIGIN, "http://localhost:5175"),
+    );
+    saveWorkspaceSnapshot(snapshot("2026-08-16T00:00:00Z", "local-only"));
     const otherScopeSnap: WorkspaceSnapshot = {
-      ...snapshot('2026-08-20T00:00:00Z', 'remote-from-lan'),
-      apiScope: 'http://localhost:5175',
+      ...snapshot("2026-08-20T00:00:00Z", "remote-from-lan"),
+      apiScope: "http://localhost:5175",
       groups: [
         {
-          groupId: 'g1',
-          runId: 'run-other-env',
-          title: 'ω',
-          status: 'computing',
-          memberInstanceIds: ['inst-remote'],
+          groupId: "g1",
+          runId: "run-other-env",
+          title: "ω",
+          status: "computing",
+          memberInstanceIds: ["inst-remote"],
           dissolvable: false,
-          sourceLayerId: 'method-x',
+          sourceLayerId: "method-x",
         },
       ],
-    }
+    };
     fetchWorkspaceMock.mockResolvedValue(
       remoteState(7, {
-        'http://localhost:5175': {
+        "http://localhost:5175": {
           snapshot: otherScopeSnap,
           dismissed: {
             overlayLayerIds: [],
@@ -246,80 +312,92 @@ describe('workspace-sync 跨设备同步引擎', () => {
           },
         },
       }),
-    )
+    );
 
-    await syncWorkspaceOnBoot()
+    await syncWorkspaceOnBoot();
 
-    expect(pushWorkspaceMock).not.toHaveBeenCalled()
-    const local = loadWorkspaceSnapshot()
-    expect(local?.catalogLayers?.[0]?.catalogId).toBe('local-only')
-    expect(local?.groups).toEqual([])
-  })
+    expect(pushWorkspaceMock).not.toHaveBeenCalled();
+    const local = loadWorkspaceSnapshot();
+    expect(local?.catalogLayers?.[0]?.catalogId).toBe("local-only");
+    expect(local?.groups).toEqual([]);
+  });
 
-  it('API 入口切换：采纳当前 scope 分桶（若较新）', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice').replace(TEST_ORIGIN, 'http://localhost:5175'))
-    saveWorkspaceSnapshot(snapshot('2026-08-10T00:00:00Z', 'stale-local'))
+  it("API 入口切换：采纳当前 scope 分桶（若较新）", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(
+      MARKER_KEY,
+      syncMarker("alice").replace(TEST_ORIGIN, "http://localhost:5175"),
+    );
+    saveWorkspaceSnapshot(snapshot("2026-08-10T00:00:00Z", "stale-local"));
     fetchWorkspaceMock.mockResolvedValue(
       remoteState(2, {
-        [TEST_ORIGIN]: scopeBundle('2026-08-18T00:00:00Z', 'public-new'),
+        [TEST_ORIGIN]: scopeBundle("2026-08-18T00:00:00Z", "public-new"),
       }),
-    )
+    );
 
-    await syncWorkspaceOnBoot()
+    await syncWorkspaceOnBoot();
 
-    const local = loadWorkspaceSnapshot()
-    expect(local?.catalogLayers?.[0]?.catalogId).toBe('public-new')
-  })
+    const local = loadWorkspaceSnapshot();
+    expect(local?.catalogLayers?.[0]?.catalogId).toBe("public-new");
+  });
 
-  it('本地变更防抖推送：落盘后推送 v2 合并快照', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice'))
-    fetchWorkspaceMock.mockResolvedValue(remoteState(2, null))
-    await syncWorkspaceOnBoot()
+  it("本地变更防抖推送：落盘后推送 v2 合并快照", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    fetchWorkspaceMock.mockResolvedValue(remoteState(2, null));
+    await syncWorkspaceOnBoot();
 
-    pushWorkspaceMock.mockResolvedValue({ revision: 3, updated_at: '2026-08-17T02:00:00Z' })
-    saveWorkspaceSnapshot(snapshot('2026-08-17T02:30:00Z', 'edited'))
-    scheduleWorkspaceSyncPush()
-    await vi.advanceTimersByTimeAsync(1500)
+    pushWorkspaceMock.mockResolvedValue({
+      revision: 3,
+      updated_at: "2026-08-17T02:00:00Z",
+    });
+    saveWorkspaceSnapshot(snapshot("2026-08-17T02:30:00Z", "edited"));
+    scheduleWorkspaceSyncPush();
+    await vi.advanceTimersByTimeAsync(1500);
 
-    expect(pushWorkspaceMock).toHaveBeenCalledTimes(1)
-    const [payload, baseRevision] = pushWorkspaceMock.mock.calls[0]
-    expect(baseRevision).toBe(2)
-    expect(payload.version).toBe(2)
-    expect(payload.scopes[TEST_ORIGIN].snapshot.catalogLayers[0].catalogId).toBe('edited')
-  })
+    expect(pushWorkspaceMock).toHaveBeenCalledTimes(1);
+    const [payload, baseRevision] = pushWorkspaceMock.mock.calls[0];
+    expect(baseRevision).toBe(2);
+    expect(payload.version).toBe(2);
+    expect(
+      payload.scopes[TEST_ORIGIN].snapshot.catalogLayers[0].catalogId,
+    ).toBe("edited");
+  });
 
-  it('推送冲突且远端当前 scope 较新：接管远端并刷新页面', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice'))
-    fetchWorkspaceMock.mockResolvedValueOnce(remoteState(2, null))
-    await syncWorkspaceOnBoot()
+  it("推送冲突且远端当前 scope 较新：接管远端并刷新页面", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    fetchWorkspaceMock.mockResolvedValueOnce(remoteState(2, null));
+    await syncWorkspaceOnBoot();
 
-    pushWorkspaceMock.mockRejectedValueOnce(new WorkspaceConflictApiError('conflict', 9))
+    pushWorkspaceMock.mockRejectedValueOnce(
+      new WorkspaceConflictApiError("conflict", 9),
+    );
     fetchWorkspaceMock.mockResolvedValueOnce(
       remoteState(9, {
-        [TEST_ORIGIN]: scopeBundle('2026-08-17T03:00:00Z', 'other-device'),
+        [TEST_ORIGIN]: scopeBundle("2026-08-17T03:00:00Z", "other-device"),
       }),
-    )
-    saveWorkspaceSnapshot(snapshot('2026-08-17T01:00:00Z', 'stale-local'))
-    scheduleWorkspaceSyncPush()
-    await vi.advanceTimersByTimeAsync(1500)
+    );
+    saveWorkspaceSnapshot(snapshot("2026-08-17T01:00:00Z", "stale-local"));
+    scheduleWorkspaceSyncPush();
+    await vi.advanceTimersByTimeAsync(1500);
 
-    expect(reloadMock).toHaveBeenCalled()
-    expect(loadWorkspaceSnapshot()?.catalogLayers?.[0]?.catalogId).toBe('other-device')
-  })
+    expect(reloadMock).toHaveBeenCalled();
+    expect(loadWorkspaceSnapshot()?.catalogLayers?.[0]?.catalogId).toBe(
+      "other-device",
+    );
+  });
 
-  it('拉取失败：进入 error 状态且不抛出（不影响 hydrate 启动）', async () => {
-    authUserMock = { id: 1, username: 'alice', role: 'standard' }
-    setActiveStorageUserId(1)
-    writeScopedItem(MARKER_KEY, syncMarker('alice'))
-    fetchWorkspaceMock.mockRejectedValue(new Error('backend offline'))
+  it("拉取失败：进入 error 状态且不抛出（不影响 hydrate 启动）", async () => {
+    authUserMock = { id: 1, username: "alice", role: "standard" };
+    setActiveStorageUserId(1);
+    writeScopedItem(MARKER_KEY, syncMarker("alice"));
+    fetchWorkspaceMock.mockRejectedValue(new Error("backend offline"));
 
-    await expect(syncWorkspaceOnBoot()).resolves.toBeUndefined()
-    expect(workspaceSyncStatus.value).toBe('error')
-  })
-})
+    await expect(syncWorkspaceOnBoot()).resolves.toBeUndefined();
+    expect(workspaceSyncStatus.value).toBe("error");
+  });
+});

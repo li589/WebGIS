@@ -18,6 +18,27 @@ const DISMISSED_STORAGE_KEY = 'geo:dismissed-layers:v1'
 const MAX_LAYERS = 80
 const MAX_DISMISSED = 240
 
+/**
+ * 工作区「出厂配置版本」。
+ *
+ * 与 `WorkspaceSnapshot.version` 的分工必须分清：
+ * - `version: 1` —— **序列化格式**版本。改动 `PersistedActiveLayer` 等结构时才升，
+ *   升了等于丢弃所有历史快照，代价很大；
+ * - `WORKSPACE_SCHEMA_VERSION` —— **出厂默认配置**的版本。只要 `DEFAULT_LAYERS`、
+ *   默认透明度、默认勾选策略这类「用户没碰过就该长这样」的东西变了，就 +1。
+ *
+ * 为什么需要它：工作区快照存在**每台浏览器本地**（按账号 + API 入口分桶），
+ * 服务器从不下发。以前改默认图层只对「本地还没有快照」的机器生效，已有快照的
+ * 机器永远停在旧样子，只能靠人工清站点数据。
+ * 2026-10-21 导师电脑上「有些地方改了、有些没改」正是这个原因。
+ *
+ * 版本一升的连锁反应（已由 `workspace-sync.ts` 配套处理）：
+ *   本地旧快照作废 → `ensureDefaultLayers` 按当前默认重新挂载 →
+ *   非空快照随即推送覆盖远端分桶 ⇒ 两端一起对齐。
+ * 用户自己拖的布局会重置一次，但**后端数据目录与产物一概不动**。
+ */
+export const WORKSPACE_SCHEMA_VERSION = 2
+
 export interface PersistedActiveLayer {
   instanceId: string
   catalogId: string
@@ -81,6 +102,11 @@ export interface PersistedCatalogLayer {
 
 export interface WorkspaceSnapshot {
   version: 1
+  /**
+   * 写入这份快照时的**出厂配置版本**（见 `WORKSPACE_SCHEMA_VERSION`）。
+   * 缺失 = 该字段引入之前的历史快照，按版本 1 处理。
+   */
+  schemaVersion?: number
   savedAt: string
   /** 写入时的 API/页面作用域；跨环境接管时用于剥离无效工作流状态 */
   apiScope?: string
@@ -88,6 +114,17 @@ export interface WorkspaceSnapshot {
   catalogLayers?: PersistedCatalogLayer[]
   vectorLayers?: PersistedVectorLayer[]
   groups: ActiveRunLayerGroup[]
+}
+
+/**
+ * 入参快照是否由**当前**出厂配置版本写出。
+ *
+ * 本地读取与远端接管共用这一处判定，避免两边标准不一致：
+ * 过期快照既不能落地本地，也不能从 `/workspace` 拉回来覆盖重建结果。
+ */
+export function isSnapshotSchemaCurrent(snapshot: WorkspaceSnapshot | null | undefined): boolean {
+  if (!snapshot) return false
+  return (snapshot.schemaVersion ?? 1) === WORKSPACE_SCHEMA_VERSION
 }
 
 export interface DismissedLayersRegistry {
@@ -305,6 +342,7 @@ export function buildWorkspaceSnapshot(
   if (!withOverlay.length && !catalogLayers.length && !vectorLayers.length) {
     return {
       version: 1,
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
       savedAt: new Date().toISOString(),
       apiScope: getApiStorageScope(),
       layers: [],
@@ -367,6 +405,7 @@ export function buildWorkspaceSnapshot(
 
   return {
     version: 1,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
     savedAt: new Date().toISOString(),
     apiScope: getApiStorageScope(),
     layers,
@@ -472,6 +511,13 @@ export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as WorkspaceSnapshot
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.layers)) return null
+    // 出厂配置版本已升级 ⇒ 旧快照作废并清空，让 `ensureDefaultLayers` 按当前默认
+    // 重新挂载。不在这里删掉的话，`hydrateWorkspaceFromSnapshot` 会继续按旧布局
+    // 恢复图层，改动依旧只对"本来就没快照"的机器生效。
+    if (!isSnapshotSchemaCurrent(parsed)) {
+      clearWorkspaceSnapshot()
+      return null
+    }
     if (!Array.isArray(parsed.catalogLayers)) parsed.catalogLayers = []
     if (!Array.isArray(parsed.vectorLayers)) parsed.vectorLayers = []
     if (!Array.isArray(parsed.groups)) parsed.groups = []

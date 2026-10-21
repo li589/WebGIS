@@ -23,6 +23,7 @@ import { readScopedItem, writeScopedItem } from '../../services/user-local-isola
 import { useAuthStore } from '../auth'
 import {
   clearWorkspaceSnapshot,
+  isSnapshotSchemaCurrent,
   loadDismissedLayers,
   loadWorkspaceSnapshot,
   sanitizeSnapshotForCurrentApi,
@@ -85,6 +86,20 @@ function snapshotContentKey(snap: WorkspaceSnapshot | null | undefined): string 
   return `${layerIds.join('|')}#${groupIds.join('|')}`
 }
 
+/**
+ * 远端分桶是否值得采纳：**非空** 且 出厂配置版本未过期。
+ *
+ * 后半句是 2026-10-21 加 `WORKSPACE_SCHEMA_VERSION` 时补的。少了它，本地刚
+ * 作废旧快照、`ensureDefaultLayers` 还没挂完，boot 阶段就会判定「本地为空」
+ * 而从 `/workspace` 把旧快照接管回来 —— 版本号等于白加。
+ */
+function remoteBundleAdoptable(
+  bundle: ScopedWorkspaceBundle | null,
+): bundle is ScopedWorkspaceBundle {
+  if (!bundle) return false
+  return !snapshotIsEmpty(bundle.snapshot) && isSnapshotSchemaCurrent(bundle.snapshot)
+}
+
 interface SyncMarker {
   username: string
   apiScope: string
@@ -116,10 +131,19 @@ function writeMarker(username: string): void {
   writeScopedItem(SYNC_USER_KEY, formatMarker(username))
 }
 
-function adoptScoped(bundle: ScopedWorkspaceBundle): void {
+/**
+ * 采纳远端分桶写入本地。
+ *
+ * 返回 `false` = 远端快照由**过期的出厂配置版本**写出，一律不落地。
+ * 这条护栏必不可少：否则本地清掉后一启动就被远端旧快照覆盖回来，
+ * `WORKSPACE_SCHEMA_VERSION` 形同虚设（详见 `workspace-persist.ts` 常量注释）。
+ */
+function adoptScoped(bundle: ScopedWorkspaceBundle): boolean {
+  if (!isSnapshotSchemaCurrent(bundle.snapshot)) return false
   const snapshot = sanitizeSnapshotForCurrentApi(bundle.snapshot)
   saveWorkspaceSnapshot(snapshot)
   writeDismissedLayers(bundle.dismissed ?? emptyDismissed())
+  return true
 }
 
 function currentScopeBundleFromRemote(): ScopedWorkspaceBundle | null {
@@ -137,7 +161,7 @@ async function refuseEmptyOverwriteIfNeeded(local: WorkspaceSnapshot): Promise<b
   if (!snapshotIsEmpty(local)) return false
   const scope = getApiStorageScope()
   const remoteBundle = getScopeBundle(cachedRemoteNormalized, scope)
-  if (remoteBundle && !snapshotIsEmpty(remoteBundle.snapshot)) {
+  if (remoteBundleAdoptable(remoteBundle)) {
     adoptScoped(remoteBundle)
     dirty = false
     workspaceSyncStatus.value = 'idle'
@@ -150,7 +174,7 @@ async function refuseEmptyOverwriteIfNeeded(local: WorkspaceSnapshot): Promise<b
       rememberRemotePayload(remote.payload)
       workspaceSyncedAt.value = remote.updated_at
       const bundle = getScopeBundle(cachedRemoteNormalized, scope)
-      if (!bundle || snapshotIsEmpty(bundle.snapshot)) return false
+      if (!remoteBundleAdoptable(bundle)) return false
       adoptScoped(bundle)
       dirty = false
       workspaceSyncStatus.value = 'idle'
@@ -191,12 +215,12 @@ async function resolveConflict(_serverRevision: number): Promise<void> {
   const remoteAt = remoteBundle?.snapshot?.savedAt ?? ''
   const local = loadWorkspaceSnapshot()
   const localAt = local?.savedAt ?? ''
-  if (remoteBundle && remoteAt > localAt) {
+  if (remoteBundleAdoptable(remoteBundle) && remoteAt > localAt) {
     adoptScoped(remoteBundle)
     window.location.reload()
     return
   }
-  if (remoteBundle && !snapshotIsEmpty(remoteBundle.snapshot) && snapshotIsEmpty(local)) {
+  if (remoteBundleAdoptable(remoteBundle) && snapshotIsEmpty(local)) {
     adoptScoped(remoteBundle)
     window.location.reload()
     return
@@ -257,7 +281,7 @@ async function pollRemote(): Promise<void> {
     rememberRemotePayload(remotePayload)
     const scope = getApiStorageScope()
     const remoteBundle = getScopeBundle(cachedRemoteNormalized, scope)
-    if (!remoteBundle || snapshotIsEmpty(remoteBundle.snapshot)) {
+    if (!remoteBundleAdoptable(remoteBundle)) {
       remoteRevision = remote.revision
       return
     }
@@ -273,8 +297,9 @@ async function pollRemote(): Promise<void> {
       return
     }
     remoteRevision = remote.revision
-    adoptScoped(remoteBundle)
-    window.location.reload()
+    // 采纳失败（版本过期）就不刷新：否则远端一直留着旧分桶，会陷入
+    // 「拉取 → 拒绝落地 → reload → 再拉取」的死循环。
+    if (adoptScoped(remoteBundle)) window.location.reload()
   } catch {
     /* 网络抖动：下轮再试 */
   }
@@ -299,7 +324,7 @@ function adoptCurrentScopeIfNewer(
   remoteBundle: ScopedWorkspaceBundle | null,
   local: WorkspaceSnapshot | null,
 ): boolean {
-  if (!remoteBundle || snapshotIsEmpty(remoteBundle.snapshot)) return false
+  if (!remoteBundleAdoptable(remoteBundle)) return false
   const remoteAt = remoteBundle.snapshot.savedAt ?? ''
   const localAt = local?.savedAt ?? ''
   if (!local || snapshotIsEmpty(local)) {
@@ -338,7 +363,7 @@ export async function syncWorkspaceOnBoot(): Promise<void> {
     const local = loadWorkspaceSnapshot()
 
     if (userSwitched) {
-      if (remoteBundle && !snapshotIsEmpty(remoteBundle.snapshot)) {
+      if (remoteBundleAdoptable(remoteBundle)) {
         adoptScoped(remoteBundle)
       } else {
         clearWorkspaceSnapshot()
@@ -350,7 +375,7 @@ export async function syncWorkspaceOnBoot(): Promise<void> {
       // 否则保留本 origin 的 localStorage，避免公网↔局域网互冲
     } else if (adoptCurrentScopeIfNewer(remoteBundle, local)) {
       /* 远端当前 scope 较新 */
-    } else if (remoteBundle && snapshotIsEmpty(local) && !snapshotIsEmpty(remoteBundle.snapshot)) {
+    } else if (remoteBundleAdoptable(remoteBundle) && snapshotIsEmpty(local)) {
       adoptScoped(remoteBundle)
     } else if (!snapshotIsEmpty(local)) {
       await pushNow()
