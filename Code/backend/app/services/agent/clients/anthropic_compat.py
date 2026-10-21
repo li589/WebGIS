@@ -9,11 +9,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 
 from app.core.ssrf import SSRFBlockedError, default_allow_private, safe_urlopen
-from app.services.agent.clients.openai_compat import LlmClientError
+from app.services.agent.clients.openai_compat import DEFAULT_TIMEOUT, LlmClientError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 60.0
 ANTHROPIC_VERSION = "2023-06-01"
 
 

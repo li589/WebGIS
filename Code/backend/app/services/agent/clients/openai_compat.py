@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
@@ -12,7 +13,21 @@ from app.core.ssrf import SSRFBlockedError, default_allow_private, safe_urlopen
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 60.0
+
+def _default_timeout() -> float:
+    """单次模型调用超时（秒）。Env: ``BACKEND_AGENT_LLM_TIMEOUT``。
+
+    默认 30s：对话场景里 60s 太久——用户等不及，而且同进程的线程会被占住。
+    """
+    raw = os.getenv("BACKEND_AGENT_LLM_TIMEOUT", "30")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 30.0
+    return max(5.0, min(300.0, value))
+
+
+DEFAULT_TIMEOUT = _default_timeout()
 
 
 class LlmClientError(RuntimeError):

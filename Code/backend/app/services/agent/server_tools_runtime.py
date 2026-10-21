@@ -573,6 +573,32 @@ def _sample_layer_point(
     }
 
 
+def _overlay_quality(spec: Any, raw: dict[str, Any]) -> tuple[str, str]:
+    """给一次 overlay 采样打个质量标记 ``(code, 中文说明)``。
+
+    只依据**本次采样真实拿到的信息**判断，不猜：
+    - 有 error ⇒ error
+    - value 为 None ⇒ nodata（该像元无有效值）
+    - value 落在产品 palette 常规范围外 ⇒ out_of_range（可能是异常值/单位不符）
+    - 其余 ⇒ good
+    """
+    if raw.get("error"):
+        return "error", "取不到值"
+    val = raw.get("value")
+    if val is None:
+        return "nodata", "缺测（该像元无有效值）"
+    vmin = getattr(spec, "vmin", None)
+    vmax = getattr(spec, "vmax", None)
+    try:
+        if isinstance(vmin, (int, float)) and float(val) < float(vmin):
+            return "out_of_range", "低于该产品常规取值范围"
+        if isinstance(vmax, (int, float)) and float(val) > float(vmax):
+            return "out_of_range", "高于该产品常规取值范围"
+    except (TypeError, ValueError):
+        pass
+    return "good", "有效"
+
+
 def _sample_one_layer(
     catalog_id: str,
     *,
@@ -596,6 +622,7 @@ def _sample_one_layer(
     if spec is not None:
         try:
             raw = spec.resolve_value(lng, lat, time)
+            quality, quality_label = _overlay_quality(spec, raw)
             return {
                 "ok": True,
                 "kind": "overlay",
@@ -603,7 +630,9 @@ def _sample_one_layer(
                 "display_name": display,
                 "value": raw.get("value"),
                 "unit": raw.get("unit"),
-                "time": raw.get("time"),
+                "time": raw.get("time") or time,
+                "quality": quality,
+                "quality_label": quality_label,
                 "error": raw.get("error"),
             }
         except Exception as exc:
@@ -613,6 +642,8 @@ def _sample_one_layer(
                 "kind": "overlay",
                 "catalog_id": catalog_id,
                 "display_name": display,
+                "quality": "error",
+                "quality_label": "采样失败",
                 "error": f"overlay 采样失败: {exc}",
             }
 
@@ -633,6 +664,8 @@ def _sample_one_layer(
                 "kind": "weather",
                 "catalog_id": catalog_id,
                 "display_name": display,
+                "quality": "good",
+                "quality_label": "实时数据",
                 "provider": payload.get("provider")
                 if isinstance(payload, dict)
                 else None,
@@ -665,6 +698,8 @@ def _sample_one_layer(
                 "kind": "weather",
                 "catalog_id": catalog_id,
                 "display_name": display,
+                "quality": "error",
+                "quality_label": "实时数据获取失败",
                 "error": f"天气点查失败: {exc}",
             }
 
@@ -673,6 +708,8 @@ def _sample_one_layer(
         "kind": "unsupported",
         "catalog_id": catalog_id,
         "display_name": display,
+        "quality": "unsupported",
+        "quality_label": "该图层暂不支持按点取数",
         "error": "该图层暂无 overlay/天气点采样能力",
     }
 
