@@ -499,6 +499,29 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
 }
 
+/**
+ * 量取停靠面板的实际占位（只读 DOM），供对话面板主动避让。
+ * 面板被隐藏（宽高为 0）或当前页面没有该面板时返回 null，调用方按"无面板"处理。
+ */
+function measureDockPanelRect(
+  selector: string,
+): { left: number; top: number; right: number } | null {
+  if (typeof document === 'undefined') return null
+  const el = document.querySelector<HTMLElement>(selector)
+  if (!el) return null
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+  return { left: rect.left, top: rect.top, right: rect.right }
+}
+
+/**
+ * 面板打开时的落点。
+ *
+ * 2026-10-22 改为「靠右停靠」：浮窗展开会盖住右侧分析面板与底部时间轴
+ * （SGFS 测试报告 P2）。现做法是**主动避让**——排在分析面板左侧并列显示，
+ * 纵向不让出时间轴；不改动任何面板的显隐状态。
+ * 机器人贴左边缘时仍沿用「挨着机器人」的原逻辑，避免面板跳到对侧。
+ */
 function computeAnchorBase(panelW = sizeW.value): { left: number; top: number } {
   const gap = 14
   const companion = COMPANION_SIZE_PX
@@ -506,17 +529,32 @@ function computeAnchorBase(panelW = sizeW.value): { left: number; top: number } 
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
 
   let left: number
-  if (props.anchor.dock === 'right') {
-    left = Math.max(12, props.anchor.x - panelW - gap)
-  } else if (props.anchor.dock === 'left') {
+  if (props.anchor.dock === 'left') {
     left = props.anchor.x + companion + gap
+    left = Math.min(Math.max(12, left), Math.max(12, vw - panelW - 12))
   } else {
-    left = props.anchor.x - panelW / 2 + companion / 2
+    const rightDock = measureDockPanelRect('.overlay-right')
+    const leftDock = measureDockPanelRect('.overlay-left')
+    // 左边界：不压住左侧图层面板
+    const minLeft = leftDock ? leftDock.right + 8 : 12
+    const flushRight = vw - panelW - 12
+    if (rightDock) {
+      // 与右侧分析面板并排；空间不足才退回贴屏幕右缘
+      const beside = rightDock.left - 8 - panelW
+      left = beside >= minLeft ? beside : flushRight
+    } else {
+      left = flushRight
+    }
+    left = Math.min(Math.max(minLeft, left), Math.max(minLeft, flushRight))
   }
-  left = Math.min(Math.max(12, left), Math.max(12, vw - panelW - 12))
 
   const maxH = Math.min(AGENT_CHAT_PANEL_MAX_HEIGHT_PX, vh - 96)
+  const h = clamp(sizeH.value, PANEL_MIN_H, maxH)
+  // 底部让位：不与底部时间轴重叠
+  const bottomDock = measureDockPanelRect('.overlay-bottom')
+  const bottomLimit = bottomDock ? bottomDock.top - 12 : vh - 24
   let top = Math.max(72, props.anchor.y - 48)
+  top = Math.min(top, Math.max(72, bottomLimit - h))
   top = Math.min(top, Math.max(72, vh - maxH - 24))
   return { left, top }
 }
@@ -987,6 +1025,11 @@ async function applyChatResult(
         finalizeAssistantHtml(target)
       } else if (!trimmed) {
         target.text = '（助手未返回可见文本。可展开「过程」查看工具步骤，或换一种问法重试。）'
+        finalizeAssistantHtml(target)
+      } else {
+        // 后端占位符「（模型未返回文本）」但无步骤可合成时，换成用户读得懂的一句，
+        // 不再把内部占位符直接甩给用户（外部测试报告 P1-3）。
+        target.text = '（这次没有生成文字说明。可展开「过程」查看执行步骤，或换一种问法重试。）'
         finalizeAssistantHtml(target)
       }
     }
