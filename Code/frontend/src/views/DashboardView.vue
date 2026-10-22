@@ -438,8 +438,13 @@ const sidePanelDimensions = computed(() => ({
   maxWidth: 420,
 }))
 // 默认高度（2026-10-20）：372 → 450——展开默认加载的风云卫星组（组头 + 3 个图层）时
-// 能整组完整显示，不再把第三个图层切掉。只改图层面板，分析/时间轴面板维持 372。
-// 图层容器默认宽度：292 → 312 → 326（用户第 2 轮：再宽一点点，让组名
+// 能整组完整显示，不再把第三个图层切掉。
+// 2026-10-22（用户：要让风云与 SMAP 两个组都露出来）：固定高度这条路走不通——
+// 组数、组是否展开、成员行高都会变，猜一个数字必然要么裁切、要么下方留一大片空白
+// （截图里 SMAP 组下面空了近 200px 就是这个原因）。改为**高度跟随内容**
+// （PanelDock 的 auto-height）：高度 = 内容实际高度，被面板最大高度钳制，
+// 内容再多就在面板内部滚动。用户手动拖过尺寸后即以他的尺寸为准。
+// 默认宽度：292 → 312 → 326（用户第 2 轮：再宽一点点，让组名
 // 「风云卫星微波反演产品」与「3 层」胶囊同排不挤）
 const layerPanelDimensions = computed(() => ({
   ...sidePanelDimensions.value,
@@ -688,6 +693,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           panel-key="layers"
           position="left"
           handle-position="bottom-right"
+          auto-height
           :max-offset-x="100"
           :max-offset-y="110"
           :default-width="layerPanelDimensions.defaultWidth"

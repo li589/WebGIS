@@ -87,6 +87,12 @@ const emit = defineEmits<{
   'update:collapsed': [value: boolean]
 }>()
 
+/**
+ * 面板壳 DOM 引用：仅用于 autoHeight 面板开始手动缩放时量取真实高度，
+ * 避免 fit-content 状态下拿默认高度当基准、面板跳一下。
+ */
+const frameRef = ref<HTMLElement | null>(null)
+
 const {
   visible,
   collapsed,
@@ -120,6 +126,7 @@ const {
   handlePosition: props.handlePosition,
   showResizeHandle: props.showResizeHandle,
   autoHeight: props.autoHeight,
+  measureHeight: () => frameRef.value?.offsetHeight ?? null,
 })
 
 const _viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
@@ -204,6 +211,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
       <section
         v-else
         key="frame"
+        ref="frameRef"
         class="panel-dock__frame"
         :class="[dockClass, { 'cgda-drag-lift': dragging && !resizing }]"
         :style="effectivePanelSizeStyle"

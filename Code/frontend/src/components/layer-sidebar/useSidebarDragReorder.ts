@@ -20,15 +20,29 @@ export type ActiveTocRow =
     }
 
 const EXPANDED_GROUPS_KEY = 'cgda.sidebar.expandedGroups'
+/** 用户**显式折叠过**的预置组（2026-10-22） */
+const COLLAPSED_DEFAULT_GROUPS_KEY = 'cgda.sidebar.collapsedDefaultGroups'
+
+/**
+ * 出厂预置组前缀：`default-layers.ts` 建的组统一叫 `run-group-default-<catalogId>`
+ * （风云 / SMAP 两行就是 `run-group-default-method-fy-omega-doy-avg` 与
+ * `run-group-default-method-smap-season-mean`）。
+ */
+const DEFAULT_GROUP_PREFIX = 'run-group-default-'
 
 /**
  * 组展开记忆（2026-10-19）：默认折叠，只记住用户手动展开过的组。
  * 存「展开集合」而非「折叠集合」，这样从没见过的组（新跑完的工作流）天然是收起的。
  * 写入时剔除已消失的 groupId，避免 localStorage 无限增长。
+ *
+ * 2026-10-22（用户：要让风云与 SMAP 两个组都露出来）：**出厂预置组改为默认展开**。
+ * 侧栏一进来就只看到两个组头、成员全收起，对演示是纯损失——预置组的内容是固定的，
+ * 不存在「新跑完的组太多会糊屏」的问题。工作流跑出来的临时组仍保持默认收起。
+ * 用户若手动折叠预置组，记到 `collapsedDefaultGroups` 里，下次刷新保持折叠。
  */
-function loadExpandedGroups(): Set<string> {
+function loadStringSet(key: string): Set<string> {
   try {
-    const raw = window.localStorage.getItem(EXPANDED_GROUPS_KEY)
+    const raw = window.localStorage.getItem(key)
     if (!raw) return new Set()
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return new Set()
@@ -37,6 +51,14 @@ function loadExpandedGroups(): Set<string> {
     // localStorage 不可用（隐私模式等）⇒ 退化为仅当前会话有效
     return new Set()
   }
+}
+
+function loadExpandedGroups(): Set<string> {
+  return loadStringSet(EXPANDED_GROUPS_KEY)
+}
+
+function loadCollapsedDefaultGroups(): Set<string> {
+  return loadStringSet(COLLAPSED_DEFAULT_GROUPS_KEY)
 }
 
 /**
@@ -62,21 +84,39 @@ export function useSidebarDragReorder(
 
   /** 用户手动展开过的组（未命中的组一律按折叠渲染） */
   const expandedGroups = ref<Set<string>>(loadExpandedGroups())
+  /** 用户显式折叠过的预置组（其余预置组默认展开） */
+  const collapsedDefaultGroups = ref<Set<string>>(loadCollapsedDefaultGroups())
 
   function isGroupExpanded(groupId: string): boolean {
-    return expandedGroups.value.has(groupId)
+    if (expandedGroups.value.has(groupId)) return true
+    if (collapsedDefaultGroups.value.has(groupId)) return false
+    // 出厂预置组（风云 / SMAP）默认展开，其余（工作流跑出来的）默认收起
+    return groupId.startsWith(DEFAULT_GROUP_PREFIX)
   }
 
   function toggleGroupCollapsed(groupId: string) {
+    const willExpand = !isGroupExpanded(groupId)
     const next = new Set(expandedGroups.value)
-    if (next.has(groupId)) next.delete(groupId)
-    else next.add(groupId)
+    const nextCollapsed = new Set(collapsedDefaultGroups.value)
+    if (willExpand) {
+      next.add(groupId)
+      nextCollapsed.delete(groupId)
+    } else {
+      next.delete(groupId)
+      // 预置组「默认就是展开的」，所以折叠要单独记一笔，否则刷新又自动展开
+      if (groupId.startsWith(DEFAULT_GROUP_PREFIX)) nextCollapsed.add(groupId)
+    }
     expandedGroups.value = next
+    collapsedDefaultGroups.value = nextCollapsed
     try {
       const alive = new Set(runLayerGroups.value.map((g) => g.groupId))
       window.localStorage.setItem(
         EXPANDED_GROUPS_KEY,
         JSON.stringify([...next].filter((id) => alive.has(id))),
+      )
+      window.localStorage.setItem(
+        COLLAPSED_DEFAULT_GROUPS_KEY,
+        JSON.stringify([...nextCollapsed].filter((id) => alive.has(id))),
       )
     } catch {
       // 写入失败不影响本次会话的展开状态

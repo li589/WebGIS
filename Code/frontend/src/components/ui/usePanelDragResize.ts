@@ -58,11 +58,23 @@ export interface UsePanelDragResizeOptions {
    * 高度随内容自适应（2026-08-25）：true 时高度不取固定 px，而是
    * `fit-content`（由 min/maxHeight 钳制）——适合内容高度可变的
    * 面板（时间轴等），避免固定高度留大空或裁切。
+   *
+   * 2026-10-22：语义收紧为「**默认高度**随内容」，即只有用户还没手动
+   * 缩放过尺寸时才跟随内容；一旦手动拉过，就固定成他拉的那个尺寸。
+   * 否则图层列表变长变短时高度会自己跳，用户拖出来的尺寸也留不住。
    */
   autoHeight?: boolean
+  /**
+   * 量取当前实际渲染高度（px）。仅在 autoHeight 面板开始手动缩放时使用：
+   * fit-content 下 `panelHeight` 存的是默认值而非实际高度，直接拿它做基准
+   * 会让面板在按下手柄的瞬间跳一下。
+   */
+  measureHeight?: () => number | null
 }
 
 interface PersistedPanelState {
+  /** 布局结构版本，见 LAYOUT_SCHEMA_VERSION；缺失视为旧版 */
+  version?: number
   visible: boolean
   collapsed: boolean
   offsetX: number
@@ -120,6 +132,24 @@ export interface PanelDragResizeReturn {
 const PILL_DRAG_THRESHOLD_PX = 5
 const PERSIST_DEBOUNCE_MS = 120
 
+/**
+ * 面板布局结构版本（2026-10-22）。
+ *
+ * 面板的 offset / width / height 存在**各自的** `geo-panel:<key>` 键里，
+ * 与图层工作区快照（`geo:active-layers-workspace:*`）是两套独立存储。
+ * 后者有 `WORKSPACE_SCHEMA_VERSION` 兜底，前者此前**完全没有版本号**，
+ * 于是出现了「换台电脑看到的布局还是旧的那套」——因为根本没被任何升级逻辑清理过。
+ *
+ * 触发升级的典型症状（用户 2026-10-22 报障）：
+ * - 图层面板比右侧分析面板高出一截（旧 offsets 残留）
+ * - 面板高度被拉到视口底、内容下方一大片空白
+ *
+ * 版本不符时**整份丢弃**（回到出厂位置与尺寸），保留的只有后端数据：
+ * 侧栏图层、勾选状态、后端产物一概不受影响。
+ * ⚠ 以后调整面板默认位置/尺寸时，把这个数字 +1，所有人刷新一次自动对齐。
+ */
+export const LAYOUT_SCHEMA_VERSION = 2
+
 // ── 持久化辅助 ────────────────────────────────────────────────────────
 
 function getStorageKey(panelKey: string | undefined): string {
@@ -130,7 +160,15 @@ function readPersistedState(panelKey: string | undefined): PersistedPanelState |
   if (typeof window === 'undefined' || !panelKey) return null
   try {
     const raw = window.localStorage.getItem(getStorageKey(panelKey))
-    return raw ? (JSON.parse(raw) as PersistedPanelState) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PersistedPanelState
+    // 旧版本布局：位置与尺寸可能已经不符合当前默认设计 ⇒ 丢弃并清键，
+    // 否则每次刷新都会把「飞到上面」「下面大片空白」原样恢复。
+    if (parsed?.version !== LAYOUT_SCHEMA_VERSION) {
+      window.localStorage.removeItem(getStorageKey(panelKey))
+      return null
+    }
+    return parsed
   } catch {
     return null
   }
@@ -156,6 +194,7 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     handlePosition = 'bottom-right',
     showResizeHandle = true,
     autoHeight = false,
+    measureHeight,
   } = options
 
   // ── 从 localStorage 恢复状态 ────────────────────────────────────────
@@ -272,7 +311,10 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     const w = panelWidth.value > 0 ? panelWidth.value : defaultWidth
     const h = panelHeight.value > 0 ? panelHeight.value : defaultHeight
     if (w > 0) style.width = `${clampPanelWidth(w)}px`
-    if (autoHeight) {
+    // autoHeight 只在「用户尚未手动缩放过」时接管高度：
+    // 用户一旦拖过手柄，就必须尊重他调出来的尺寸（否则拖了没反应）。
+    const followContent = autoHeight && !userResized.value
+    if (followContent) {
       // 高度随内容：fit-content + min/max 钳制（防过扁/溢出屏幕）
       style.height = 'fit-content'
     } else if (h > 0) {
@@ -280,7 +322,7 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     }
     style.minWidth = `${resolvedMinWidth.value}px`
     style.maxWidth = `${resolvedMaxWidth.value}px`
-    if (!autoHeight) {
+    if (!followContent) {
       style.minHeight = `${resolvedMinHeight.value}px`
     }
     style.maxHeight = `${resolvedMaxHeight.value}px`
@@ -482,7 +524,10 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     resizeStartX = event.clientX
     resizeStartY = event.clientY
     baseWidth = panelWidth.value || defaultWidth || resolvedMinWidth.value
-    baseHeight = panelHeight.value || defaultHeight || resolvedMinHeight.value
+    // fit-content 状态下 panelHeight 存的是默认值而不是屏幕上真实高度，
+    // 直接拿来当基准会让面板在按下手柄的瞬间跳一下 ⇒ 先量真实高度。
+    const measuredHeight = autoHeight && !userResized.value ? (measureHeight?.() ?? null) : null
+    baseHeight = measuredHeight ?? (panelHeight.value || defaultHeight || resolvedMinHeight.value)
     baseResizeOffsetX = offsetX.value
     baseResizeOffsetY = offsetY.value
     window.addEventListener('pointermove', handleResizeMove)
@@ -515,6 +560,7 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
             ? snap.height
             : undefined
         const nextState: PersistedPanelState = {
+          version: LAYOUT_SCHEMA_VERSION,
           visible: visible.value,
           collapsed: visible.value ? collapsed.value : (snap?.collapsed ?? collapsed.value),
           offsetX: layoutOffsetX,
