@@ -134,6 +134,37 @@ let _isUnmounted = false
 const isMapInteractive = () =>
   mapReady.value && !_isUnmounted && isMapStyleAlive(state.resources.map)
 
+// ─── 地图初始化失败 / 超时提示 ──────────────────────────────────────────────
+/**
+ * 初始化失败或超时后必须给用户可见提示。
+ * 原实现只在 catch 里 console.error + 隐藏骨架屏，页面继续显示"正在加载地图"，
+ * 用户会无限等下去（外部测试报告 P0-1）。这里补一个错误态。
+ * 只影响提示层，不改变地图创建流程本身。
+ */
+const mapInitError = ref<string | null>(null)
+/** 初始化总超时：到点仍未 ready 即按失败处理（沿用通用经验值 30s，可按需调整） */
+const MAP_INIT_TIMEOUT_MS = 30_000
+let mapInitTimer: ReturnType<typeof globalThis.setTimeout> | null = null
+
+function clearMapInitTimer(): void {
+  if (mapInitTimer !== null) {
+    globalThis.clearTimeout(mapInitTimer)
+    mapInitTimer = null
+  }
+}
+
+function markMapInitFailed(reason: string): void {
+  clearMapInitTimer()
+  // 已经就绪的不要再被超时回调误判为失败
+  if (mapReady.value || _isUnmounted) return
+  mapInitError.value = reason
+  skeletonVisible.value = false
+}
+
+function handleReloadForMapInit(): void {
+  if (typeof globalThis.window !== 'undefined') globalThis.window.location.reload()
+}
+
 const teardownBinder = createMapCanvasTeardownBinder({
   getResources: () => state.resources,
   clearResources: state.clearResources,
@@ -162,15 +193,21 @@ const exposeBridge = createMapCanvasExposeBridge({
     zoom?: number
     duration?: number
     curve?: number
-  }) => {
+  }): boolean => {
+    // 地图未就绪时如实返回 false：调用方（Agent 定位命令）据此提示"地图未就绪"，
+    // 不再出现"嘴上说已定位、画面没动"（外部测试报告 P0-2）。
+    if (!isMapInteractive()) return false
     const duration =
       options.duration !== undefined ? (isReducedMotionActive() ? 0 : options.duration) : undefined
     state.resources.map?.flyTo({ ...options, duration, curve: options.curve ?? 1.42 })
+    return true
   },
   fitBounds: (
     bounds: [number, number, number, number],
     options?: { padding?: number; maxZoom?: number; duration?: number },
-  ) => {
+  ): boolean => {
+    // 同 flyTo：未就绪如实返回 false，供上位命令反馈真实结果
+    if (!isMapInteractive()) return false
     const [w, s, e, n] = bounds
     const baseOptions = options ?? { padding: 48, duration: 1000 }
     const duration =
@@ -186,6 +223,7 @@ const exposeBridge = createMapCanvasExposeBridge({
       ],
       { ...baseOptions, duration },
     )
+    return true
   },
 })
 
@@ -738,7 +776,17 @@ function applyNightHemisphere(
 // ─── Map init ────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  if (!mapContainer.value) return
+  if (!mapContainer.value) {
+    markMapInitFailed('地图容器未就绪，请刷新页面重试')
+    return
+  }
+
+  // 超时兜底：初始化卡住时也要给出可见提示，而不是一直"正在加载地图"
+  mapInitError.value = null
+  clearMapInitTimer()
+  mapInitTimer = globalThis.setTimeout(() => {
+    markMapInitFailed('地图加载超时（30 秒未完成），请检查网络或浏览器是否支持 WebGL2')
+  }, MAP_INIT_TIMEOUT_MS)
 
   try {
     const presentationModule = createMapStagePresentationModule({
@@ -932,6 +980,9 @@ onMounted(async () => {
       onMapLoad: async () => {
         moduleBundle.basemapModule.switchTileSource(props.tileSourceId)
         await moduleBundle.adminBoundaryModule.ensureLayers()
+        // 就绪即撤销初始化超时兜底（避免地图已好还被判超时）
+        clearMapInitTimer()
+        mapInitError.value = null
         mapReady.value = true
         actionBridge.syncAdminOverlay()
         moduleBundle.selectedLayerFocusModule.handleMapLoad()
@@ -956,7 +1007,8 @@ onMounted(async () => {
   } catch (err) {
     console.error('[MapCanvas] initialization failed:', err)
     logStore.logOperation('map-init-error', `地图初始化失败: ${err}`)
-    skeletonVisible.value = false
+    const detail = err instanceof Error ? err.message : String(err)
+    markMapInitFailed(`地图初始化失败：${detail}`)
   }
 })
 
@@ -983,6 +1035,7 @@ onBeforeUnmount(() => {
   }
   // 先掐断就绪态，避免 dispose / 异步 watcher 在 style 清空时继续 getLayer
   _isUnmounted = true
+  clearMapInitTimer()
   mapReady.value = false
   cancelPendingNightMask()
   unsubscribeMapChrome()
@@ -1269,9 +1322,36 @@ async function handleLocateMe() {
     <div v-if="!globeProjectionOn" class="grid-overlay"></div>
 
     <!-- Loading indicator -->
-    <div v-if="stageStatusModel.showLoading" class="map-loading">
+    <div v-if="stageStatusModel.showLoading && !mapInitError" class="map-loading">
       <span class="loading-dot"></span>
       <span>{{ stageStatusModel.loadingLabel }}</span>
+    </div>
+
+    <!-- Map init failed / timed out（失败态要说真话，并说明其它功能仍可用） -->
+    <div v-if="mapInitError" class="map-init-error" role="alert">
+      <span class="map-init-error-icon">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </span>
+      <span class="map-init-error-body">
+        <span class="map-init-error-title">{{ mapInitError }}</span>
+        <span class="map-init-error-hint">
+          图层面板、数据查询等功能不受影响；若反复失败，请刷新页面或更换支持 WebGL2 的浏览器。
+        </span>
+      </span>
+      <button class="map-init-retry-btn" @click="handleReloadForMapInit">刷新页面</button>
     </div>
 
     <!-- Tile error banner -->

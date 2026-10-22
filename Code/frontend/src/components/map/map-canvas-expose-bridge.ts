@@ -11,11 +11,20 @@ export interface MapCanvasExposeBridge {
   fitToLayerExtent?: (instanceId: string) => boolean
   /** 切换导入/科学 TS overlay 当前时刻 */
   setOverlayTime?: (layerId: string, time: string) => void | Promise<void>
-  flyTo?: (options: { center: [number, number]; zoom?: number; duration?: number }) => void
+  /**
+   * 飞到指定中心点。
+   * 返回 false 表示地图尚未就绪（初始化中/已失败/已卸载），调用方据此如实反馈，
+   * 避免"嘴上说已定位、屏幕上却没动"。
+   */
+  flyTo?: (options: {
+    center: [number, number]
+    zoom?: number
+    duration?: number
+  }) => void | boolean
   fitBounds?: (
     bounds: [number, number, number, number],
     options?: { padding?: number; maxZoom?: number; duration?: number },
-  ) => void
+  ) => void | boolean
 }
 
 interface CreateMapCanvasExposeBridgeOptions {
@@ -25,11 +34,15 @@ interface CreateMapCanvasExposeBridgeOptions {
   setWindAnimationPaused?: (paused: boolean) => void
   fitToLayerExtent?: (instanceId: string) => boolean
   setOverlayTime?: (layerId: string, time: string) => void | Promise<void>
-  flyTo?: (options: { center: [number, number]; zoom?: number; duration?: number }) => void
+  flyTo?: (options: {
+    center: [number, number]
+    zoom?: number
+    duration?: number
+  }) => void | boolean
   fitBounds?: (
     bounds: [number, number, number, number],
     options?: { padding?: number; maxZoom?: number; duration?: number },
-  ) => void
+  ) => void | boolean
   dependencies?: {
     warn?: (message?: unknown, ...optionalParams: unknown[]) => void
   }

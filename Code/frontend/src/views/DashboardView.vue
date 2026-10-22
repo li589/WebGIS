@@ -529,9 +529,12 @@ function handleFitChina(): boolean {
     logStore.logOperation('map-zoom', '缩放到中国全境范围(Cesium)')
     return true
   }
-  if (mapCanvasRef.value?.fitBounds) {
+  const canvas = mapCanvasRef.value
+  if (canvas?.fitBounds) {
     const duration = isReducedMotionActive() ? 0 : 1000
-    mapCanvasRef.value.fitBounds(chinaBounds, { padding: 40, duration })
+    // 未就绪时 fitBounds 返回 false，如实上报（同 P0-2 口径）
+    const ok = canvas.fitBounds(chinaBounds, { padding: 40, duration }) !== false
+    if (!ok) return false
     logStore.logOperation('map-zoom', '缩放到中国全境范围')
     return true
   }
@@ -542,17 +545,23 @@ function handleLocateCoordinate(lng: number, lat: number, zoom = 10): boolean {
   if (Number.isNaN(lng) || Number.isNaN(lat)) return false
   if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return false
   if (showCesiumHost.value) {
-    cesiumHostRef.value?.flyTo?.(lng, lat)
+    if (!cesiumHostRef.value?.flyTo) return false
+    cesiumHostRef.value.flyTo(lng, lat)
     logStore.logOperation('map-locate', `定位坐标(Cesium): ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
     return true
   }
-  if (mapCanvasRef.value?.flyTo) {
-    const duration = isReducedMotionActive() ? 0 : 1200
-    mapCanvasRef.value.flyTo({ center: [lng, lat], zoom, duration })
-    logStore.logOperation('map-locate', `定位坐标: ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
-    return true
+  const canvas = mapCanvasRef.value
+  if (!canvas?.flyTo) return false
+  const duration = isReducedMotionActive() ? 0 : 1200
+  // 地图未就绪（初始化中 / 失败 / 已卸载）时 flyTo 返回 false：如实上报，
+  // 避免 Agent 回复"已定位到经纬度"但画面没动（外部测试报告 P0-2）。
+  const ok = canvas.flyTo({ center: [lng, lat], zoom, duration }) !== false
+  if (!ok) {
+    logStore.logOperation('map-locate', '定位坐标失败：地图未就绪')
+    return false
   }
-  return false
+  logStore.logOperation('map-locate', `定位坐标: ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
+  return true
 }
 
 function handleSetBasemap(sourceId: string): boolean {

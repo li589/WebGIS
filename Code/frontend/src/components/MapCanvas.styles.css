@@ -517,6 +517,75 @@
   color: var(--text-strong);
 }
 
+/* 地图初始化失败 / 超时提示（居中卡片，含刷新按钮） */
+.map-init-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: min(26rem, calc(100% - 2rem));
+  padding: 0.85rem 0.95rem;
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-1);
+  border: 1px solid var(--danger-border);
+  color: var(--text-primary);
+  box-shadow: 0 8px 28px var(--shadow-ambient-strong);
+}
+
+.map-init-error-icon {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding-top: 0.1rem;
+  color: var(--danger);
+}
+
+.map-init-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.map-init-error-title {
+  color: var(--danger);
+  font-size: var(--font-size-body, 0.88rem);
+  font-weight: 600;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.map-init-error-hint {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+}
+
+.map-init-retry-btn {
+  flex: none;
+  align-self: center;
+  padding: 0.26rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--danger);
+  font-size: var(--font-size-caption);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard);
+}
+
+.map-init-retry-btn:hover {
+  background: var(--danger);
+  color: var(--text-strong);
+}
+
 /* 天气瓦片加载指示器 */
 .weather-loading {
   position: absolute;
