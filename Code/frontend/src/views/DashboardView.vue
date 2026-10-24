@@ -26,7 +26,12 @@ import DrawSessionExitModal from '../components/map/DrawSessionExitModal.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import { useGlobeRenderEngine } from '../components/map/globe-engine/use-globe-render-engine'
 import { resolveLayerExtentBounds } from '../components/map/globe-engine/layer-extent'
-import { resolveKnownTileSourceId, type TileSourceId } from '../services/api-config'
+import {
+  isTileSourceUsable,
+  resolveKnownTileSourceId,
+  TILE_SOURCE_MAP,
+  type TileSourceId,
+} from '../services/api-config'
 import {
   is3DViewExperimentalEnabled,
   isAgentCompanionEnabled,
@@ -42,6 +47,7 @@ import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/
 import { syncWorkspaceOnBoot, teardownWorkspaceSync } from '../stores/layers/workspace-sync'
 import { defaultPrimaryOverlayId, ensureDefaultLayers } from '../stores/layers/default-layers'
 import { useLogStore } from '../stores/log'
+import { useSettingsStore } from '../stores/settings'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
 import { useWeatherEngineStore } from '../stores/weather-engine'
@@ -80,6 +86,8 @@ const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const weatherEngine = useWeatherEngineStore()
 const workflowOutputStore = useWorkflowOutputLayersStore()
+/** 仅用于助手切底图前校验「该底图有没有可用密钥」 */
+const settingsStore = useSettingsStore()
 
 uiLoading.showImmediate('初始化地图数据...')
 void workspace.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
@@ -564,11 +572,40 @@ function handleLocateCoordinate(lng: number, lat: number, zoom = 10): boolean {
   return true
 }
 
-function handleSetBasemap(sourceId: string): boolean {
+/**
+ * 助手发起底图切换。返回 true=已切换；字符串=失败原因（直接给用户看）。
+ * 2026-10-22：手动底图菜单会禁用「缺密钥」的底图，助手这条路径原先没做同样的检查，
+ * 结果切到了需要密钥的卫星底图——界面回「已切换」，地图却是一片空白。
+ */
+function handleSetBasemap(sourceId: string): boolean | string {
   const resolved = resolveKnownTileSourceId(sourceId)
-  if (!resolved || resolved === 'none') return false
+  if (!resolved || resolved === 'none') {
+    return '没有这个底图，可用的有：天地图影像/街道、高德卫星/街道、Esri 影像、OSM 标准等'
+  }
+  const cfg = TILE_SOURCE_MAP.get(resolved)
+  if (!cfg) return '没有这个底图'
+  if (!isTileSourceUsable(cfg, (key) => settingsStore.isBasemapApiKeyAvailable(key))) {
+    return `「${cfg.label}」需要先在设置里配置地图密钥才能显示，当前不可用`
+  }
   handleTileSourceChange(resolved)
   return true
+}
+
+/**
+ * 助手状态问答用的「地图是否就绪」。
+ * 直接读 MapCanvas 已有的真源（isMapInteractive / mapInitError），不另造状态；
+ * 当前模式没有 MapCanvas（Cesium 实验 3D）时返回 undefined = 未知，不谎报未就绪。
+ */
+function handleIsMapReady(): boolean | undefined {
+  const fn = mapCanvasRef.value?.isMapReady
+  if (typeof fn !== 'function') return undefined
+  return fn()
+}
+
+function handleGetMapError(): string | null {
+  const fn = mapCanvasRef.value?.getMapError
+  if (typeof fn !== 'function') return null
+  return fn()
 }
 
 async function captureActiveMapCanvas(): Promise<string | null> {
@@ -812,6 +849,8 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         :fit-china="handleFitChina"
         :locate-coordinate="handleLocateCoordinate"
         :set-basemap="handleSetBasemap"
+        :is-map-ready="handleIsMapReady"
+        :get-map-error="handleGetMapError"
       />
     </section>
 

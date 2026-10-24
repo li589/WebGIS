@@ -35,7 +35,7 @@ import {
   COMPANION_SIZE_PX,
 } from '../../composables/useAgentCompanionPosition'
 import { renderAgentMarkdown } from '../../utils/agent-markdown'
-import { executeAgentUiIntent, executeAgentUiIntents } from './agent-ui-intent'
+import { executeAgentUiIntents } from './agent-ui-intent'
 import {
   buildAgentClientContextPayload,
   exportChatMarkdown,
@@ -70,7 +70,12 @@ const props = defineProps<{
   fitToLayerExtent?: (instanceId: string) => boolean
   fitChina?: () => boolean
   locateCoordinate?: (lng: number, lat: number, zoom?: number) => boolean
-  setBasemap?: (sourceId: string) => boolean
+  /** true=已切换；字符串=失败原因（直接展示）；false=未知原因失败 */
+  setBasemap?: (sourceId: string) => boolean | string
+  /** 地图是否已就绪；undefined = 当前模式没有 MapCanvas（如 Cesium 实验 3D） */
+  isMapReady?: () => boolean | undefined
+  /** 地图初始化失败原因（就绪时为 null） */
+  getMapError?: () => string | null
 }>()
 
 const emit = defineEmits<{
@@ -398,31 +403,6 @@ function downloadChatExport() {
   a.click()
   URL.revokeObjectURL(url)
   pushSystemHint(`已导出 Markdown（${exportable.length} 条消息）。`)
-}
-
-function runLayerCardAction(card: AgentLayerCard, action: 'open' | 'fit') {
-  const intent =
-    action === 'open'
-      ? {
-          name: 'set_layer_visibility' as const,
-          args: { catalog_id: card.catalog_id, visible: true },
-        }
-      : {
-          name: 'fit_layer' as const,
-          args: { catalog_id: card.catalog_id },
-        }
-  const result = executeAgentUiIntent(intent, {
-    fitToLayerExtent: props.fitToLayerExtent,
-    fitChina: props.fitChina,
-    locateCoordinate: props.locateCoordinate,
-    setBasemap: props.setBasemap,
-  })
-  messages.value.push({
-    id: `card-${Date.now()}`,
-    role: 'system',
-    text: result.ok ? `✓ ${result.message}` : `✗ ${result.message}`,
-  })
-  void scrollToBottom()
 }
 
 function startExpiryTick() {
@@ -782,6 +762,7 @@ function dominantTimeList(): string[] | null {
 }
 
 function buildClientContext() {
+  const selectedInstanceId = workspace.selectedInstanceId.value
   return buildAgentClientContextPayload({
     layers: workspace.activeLayers.value.map((l) => ({
       catalogId: l.catalogId,
@@ -789,6 +770,9 @@ function buildClientContext() {
       name: l.name || l.catalogId,
       isAdminBoundary: l.isAdminBoundary,
       overlayLayerId: l.importedRaster?.overlayLayerId ?? null,
+      // R04/R05：可见 / 选中是「实际显示的是哪些」与「选中的是哪个」的唯一依据
+      visible: l.visible !== false,
+      selected: !!selectedInstanceId && l.instanceId === selectedInstanceId,
     })),
     mapPoint: agentMapPoint.value,
     timeline: {
@@ -810,6 +794,8 @@ function buildClientContext() {
     },
     basemapId: uiStore.tileSourceId,
     dataRange: summarizeTimeRange(dominantTimeList()),
+    mapReady: props.isMapReady?.(),
+    mapError: props.getMapError?.() ?? null,
   })
 }
 
@@ -1033,9 +1019,8 @@ async function applyChatResult(
         finalizeAssistantHtml(target)
       }
     }
-    if (target.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result')) {
-      target.keepStepsOpen = true
-    }
+    // 2026-10-22：不再因为「用过工具」就保持执行流程展开——那会把回答顶出视野。
+    // 折叠条仍保留，用户点开可看完整步骤。
   }
 }
 
@@ -1061,9 +1046,9 @@ function synthesizeReplyFromSteps(steps: ChatMessage['steps']): string | null {
         const lines = layers
           .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
           .map((item) => {
-            const id = String(item.layer_id || '')
-            const name = String(item.display_name || id)
-            return `- ${name}（\`${id}\`）`
+            const name = String(item.display_name || '').trim()
+            // 2026-10-22：正文只给中文名，内部 layer_id 不外露（用户看不懂，且显得杂乱）
+            return `- ${name || '该图层'}`
           })
         return (
           (q
@@ -1230,15 +1215,14 @@ async function send() {
   } finally {
     sendAbort = null
     const msg = messages.value.find((m) => m.id === assistantId)
-    const keepStepsOpen = Boolean(
-      msg?.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result') || msg?.keepStepsOpen,
-    )
-    if (msg) msg.keepStepsOpen = keepStepsOpen
+    // 2026-10-22：回答结束后执行流程一律折叠。原先「用过工具就保持展开」会把
+    // 正文顶出视野，用户看不到回答。需要细节时点开折叠条即可。
+    if (msg) msg.keepStepsOpen = false
     sending.value = false
     streamingId.value = null
     streamPhase.value = 'idle'
     liveStatus.value = ''
-    stepsOpen.value = keepStepsOpen
+    stepsOpen.value = false
     stopSendTick()
     void scrollToBottom()
   }
@@ -1494,28 +1478,9 @@ function onKeydown(ev: KeyboardEvent) {
               </div>
             </div>
 
-            <div v-if="msg.layerCards?.length" class="agent-layer-cards">
-              <div v-for="card in msg.layerCards" :key="card.catalog_id" class="agent-layer-card">
-                <div class="agent-layer-card-title">{{ card.display_name }}</div>
-                <div class="agent-layer-card-id">{{ card.catalog_id }}</div>
-                <div class="agent-confirm-actions">
-                  <button
-                    type="button"
-                    class="agent-confirm-approve"
-                    @click="runLayerCardAction(card, 'open')"
-                  >
-                    打开
-                  </button>
-                  <button
-                    type="button"
-                    class="agent-confirm-reject"
-                    @click="runLayerCardAction(card, 'fit')"
-                  >
-                    定位
-                  </button>
-                </div>
-              </div>
-            </div>
+            <!-- 图层结果卡片已下线（2026-10-22）：正文已列中文名与显示状态，
+                 卡片会连带内部 ID 与大按钮占满面板、把回答顶出视野。
+                 需要打开/定位时用左侧图层面板或直接说「打开 XX 图层」。 -->
 
             <!-- Assistant Actions footer (Copy + tokens) -->
             <div

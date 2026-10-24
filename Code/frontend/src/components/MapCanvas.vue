@@ -180,6 +180,9 @@ const actionBridge = createMapCanvasActionBridge({
 const exposeBridge = createMapCanvasExposeBridge({
   getMapStageElement: () => mapStageRef.value,
   getMap: () => state.resources.map,
+  // Agent 状态问答：直接读既有真源，不另造状态
+  isMapReady: () => isMapInteractive(),
+  getMapError: () => mapInitError.value,
   selectHotspot: (pinId: string) => actionBridge.handleHotspotPinClick(pinId),
   setWindAnimationPaused: (paused: boolean) => {
     state.resources.weatherOverlayModule?.setAnimationPaused(paused)

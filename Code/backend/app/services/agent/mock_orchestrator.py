@@ -90,12 +90,12 @@ def _known_label(catalog_id: str) -> str | None:
     return None
 
 
-def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, str]]:
+def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not client_context:
         return []
     raw = client_context.get("active_layers")
     if isinstance(raw, list):
-        out: list[dict[str, str]] = []
+        out: list[dict[str, Any]] = []
         for item in raw:
             if not isinstance(item, dict):
                 continue
@@ -106,13 +106,17 @@ def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, s
             if not name or name == cid:
                 # 前端没给中文名（或直接拿 id 当名）时，不把 id 暴露给用户
                 name = _known_label(cid) or f"图层 {len(out) + 1}"
-            out.append(
-                {
-                    "catalog_id": cid,
-                    "instance_id": str(item.get("instance_id") or ""),
-                    "name": name,
-                }
-            )
+            entry: dict[str, Any] = {
+                "catalog_id": cid,
+                "instance_id": str(item.get("instance_id") or ""),
+                "name": name,
+            }
+            # 与真模型路径保持一致：可见 / 选中状态（原生 bool）
+            if item.get("visible") is not None:
+                entry["visible"] = bool(item.get("visible"))
+            if item.get("selected") is not None:
+                entry["selected"] = bool(item.get("selected"))
+            out.append(entry)
         return out
     ids = client_context.get("active_catalog_ids")
     if isinstance(ids, list):
@@ -133,7 +137,7 @@ def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, s
     return []
 
 
-def _display(layer: dict[str, str]) -> str:
+def _display(layer: dict[str, Any]) -> str:
     """活动图层列表项的中文名（``_normalize_layers`` 已保证不会是 id）。"""
     return str(layer.get("name") or "").strip() or "该图层"
 
@@ -161,7 +165,7 @@ def _name_keys(layer: dict[str, str]) -> list[str]:
 
 def _resolve_layer(
     message: str,
-    layers: list[dict[str, str]],
+    layers: list[dict[str, Any]],
     *,
     allow_demo_fallback: bool = True,
 ) -> LayerPick | None:
@@ -174,7 +178,7 @@ def _resolve_layer(
     lower = message.lower()
     # 最长命中优先；同长命中多个图层视为歧义 → 反问
     best_len = 0
-    best: dict[str, dict[str, str]] = {}
+    best: dict[str, dict[str, Any]] = {}
     for layer in layers:
         for key in _name_keys(layer):
             if key.lower() not in lower:
@@ -202,7 +206,7 @@ def _resolve_layer(
     return None
 
 
-def _layer_choices(layers: list[dict[str, str]]) -> str:
+def _layer_choices(layers: list[dict[str, Any]]) -> str:
     """「要操作哪个图层？当前有 A、B、C」的可选项文案。"""
     if not layers:
         return "当前地图上没有活动图层，请先在左侧图层面板添加。"
@@ -210,7 +214,7 @@ def _layer_choices(layers: list[dict[str, str]]) -> str:
     return f"请指明是哪个图层。当前有：{names}。"
 
 
-def _visible_layer_names(layers: list[dict[str, str]]) -> str:
+def _visible_layer_names(layers: list[dict[str, Any]]) -> str:
     return join_layer_names([layer["catalog_id"] for layer in layers], None)
 
 

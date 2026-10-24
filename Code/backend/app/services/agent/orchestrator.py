@@ -559,19 +559,31 @@ def sanitize_client_context(
     if "active_layers" in client_context:
         layers = client_context.get("active_layers")
         if isinstance(layers, list):
-            slim: list[dict[str, str]] = []
+            slim: list[dict[str, Any]] = []
             for item in layers[:_CLIENT_CONTEXT_MAX_LAYERS]:
                 if not isinstance(item, dict):
                     continue
-                entry: dict[str, str] = {}
+                entry: dict[str, Any] = {}
                 # overlay_layer_id 必留：运行时栅格（imported-*）点查只能靠它，
                 # 旧白名单把它砍掉，导致点查一直拿不到 overlay 图层。
                 for key in ("catalog_id", "instance_id", "name", "overlay_layer_id"):
                     if key in item and item[key] is not None:
                         entry[key] = str(item[key])[:256]
+                # R04/R05：可见 / 选中必须保留原生 bool（str(True) 会变 "True"，
+                # 模型读到字符串会判断失误）。
+                for key in ("visible", "selected"):
+                    if key in item and item[key] is not None:
+                        entry[key] = bool(item[key])
                 if entry:
                     slim.append(entry)
             cleaned["active_layers"] = slim
+    # R04/R05：地图是否就绪 —— 决定助手能不能描述画面内容
+    if "map_ready" in client_context:
+        cleaned["map_ready"] = bool(client_context.get("map_ready"))
+    if "map_error" in client_context:
+        err = str(client_context.get("map_error") or "").strip()[:200]
+        if err:
+            cleaned["map_error"] = err
     if "map_point" in client_context:
         mp = client_context.get("map_point")
         if isinstance(mp, dict):
@@ -719,7 +731,29 @@ def _build_system(
         "- Prefer fit_china for 中国全境/全国; locate_coordinate for explicit lng/lat or known cities; "
         "switch_basemap for 天地图影像/街道等底图切换; fit_layer only for a specific layer extent\n"
         "- Prefer search_layers before run_workflow; never claim a run was submitted "
-        "until confirmation is approved"
+        "until confirmation is approved\n"
+        "## 页面状态问答（必须逐项回答）\n"
+        "- 被问到“现在显示的是什么/选中哪个/什么日期/哪颗卫星/地图好了吗”这类状态问题时，"
+        "**必须基于 client_context 逐项回答**：已加载图层数、**可见**图层（visible=true）、"
+        "**选中**图层（selected=true）、时间轴日期（timeline.date/hour）、图层来源"
+        "（风云卫星 / SMAP / 地面站点 等，用 source_label）、地图是否就绪（map_ready）。"
+        "**不得只答“已加载 N 层”就结束**；每项一行，简短，不展开解释。\n"
+        "- 若 map_ready 为 false：必须明确说“地图尚未就绪/加载失败”（可带 map_error 的原因），"
+        "**不得描述画面内容、不得假装看得到图层**。\n"
+        "- 若 active_layers 里没有 visible=true 的图层，如实说“当前没有勾选显示的图层”，"
+        "不要拿已加载图层冒充可见图层。\n"
+        "## 来源与单位\n"
+        "- 来源只认工具/目录返回的 source_label（SMAP / 风云卫星 / 地面站点 / 多源融合 / 未标注来源），"
+        "**不要用图层名字去猜卫星**，也不要自己编造。返回 unknown 时如实说“未标注来源”。\n"
+        "- 单位只认 unit_label：土壤水分为 m³/m³，VOD 与等效散射 ω 为“无量纲”。"
+        '**不要把 SM / VOD / OMEGA 当单位念出来**；无量纲时 unit 字段是字符 "1"，'
+        "回答请说“无量纲”，不要说“单位是 1”。\n"
+        "## 覆盖口径\n"
+        "- 回答“某天有没有数据”必须用 get_layer_coverage 返回的 resolved.status "
+        "（available / unavailable / unknown）和 resolved.reason，"
+        "**不要直接念 local.count=0 就说没数据**。\n"
+        "- resolved.reason 说明“该日期落在某个时间块内”时，要如实告诉用户"
+        "“这几天取的是同一块的值，所以数值相同是正常的”，**不得说成日期切换失效**。"
     )
     return "\n\n".join(parts)
 

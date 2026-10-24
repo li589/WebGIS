@@ -25,6 +25,13 @@ export interface MapCanvasExposeBridge {
     bounds: [number, number, number, number],
     options?: { padding?: number; maxZoom?: number; duration?: number },
   ) => void | boolean
+  /**
+   * 地图是否已就绪（Agent 状态问答用：就绪=false 时不得描述画面内容）。
+   * 真源是 MapCanvas 的 isMapInteractive()，不为助手另造一套状态。
+   */
+  isMapReady?: () => boolean
+  /** 地图初始化失败原因（就绪时返回 null），供助手如实转述 */
+  getMapError?: () => string | null
 }
 
 interface CreateMapCanvasExposeBridgeOptions {
@@ -43,6 +50,8 @@ interface CreateMapCanvasExposeBridgeOptions {
     bounds: [number, number, number, number],
     options?: { padding?: number; maxZoom?: number; duration?: number },
   ) => void | boolean
+  isMapReady?: () => boolean
+  getMapError?: () => string | null
   dependencies?: {
     warn?: (message?: unknown, ...optionalParams: unknown[]) => void
   }
@@ -190,5 +199,7 @@ export function createMapCanvasExposeBridge(
     setOverlayTime: options.setOverlayTime,
     flyTo: options.flyTo,
     fitBounds: options.fitBounds,
+    isMapReady: options.isMapReady,
+    getMapError: options.getMapError,
   }
 }

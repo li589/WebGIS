@@ -113,12 +113,16 @@
     },
     {
       "name": "get_layer_coverage",
-      "description": "Get dual-channel data coverage for a catalog layer (online window + local dates).",
+      "description": "Get dual-channel data coverage for a catalog layer (online window + local dates). Pass `time` to get a decisive answer (`resolved.status` = available/unavailable) about whether that date has data, and `resolved.channel` to tell local products apart from online fetching.",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
         "properties": {
-          "catalog_id": { "type": "string" }
+          "catalog_id": { "type": "string" },
+          "time": {
+            "type": "string",
+            "description": "Optional date to resolve, e.g. 20251215 or 2025-12-15"
+          }
         }
       }
     },

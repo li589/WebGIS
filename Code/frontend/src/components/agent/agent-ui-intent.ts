@@ -23,7 +23,8 @@ export interface AgentUiIntentHandlers {
   fitToLayerExtent?: (instanceId: string) => boolean
   fitChina?: () => boolean
   locateCoordinate?: (lng: number, lat: number, zoom?: number) => boolean
-  setBasemap?: (sourceId: string) => boolean
+  /** 返回 true=已切换；返回字符串=失败原因（直接展示给用户）；false=未知原因失败 */
+  setBasemap?: (sourceId: string) => boolean | string
 }
 
 const ACTIVE_JOB = new Set(['queued', 'running', 'retry_pending', 'accepted'])
@@ -31,7 +32,7 @@ const ACTIVE_JOB = new Set(['queued', 'running', 'retry_pending', 'accepted'])
 function resolveInstanceId(
   catalogId: string | undefined,
   instanceId: string | undefined,
-): { instanceId: string | null; catalogId: string | null } {
+): { instanceId: string | null; catalogId: string | null; ambiguous?: string[] } {
   const workspace = useLayerWorkspace()
   const layers = workspace.activeLayers.value
   if (instanceId) {
@@ -41,6 +42,27 @@ function resolveInstanceId(
   if (catalogId) {
     const byCat = layers.find((l) => l.catalogId === catalogId)
     if (byCat) return { instanceId: byCat.instanceId, catalogId: byCat.catalogId }
+    // 2026-10-22：助手（大模型）常把「中文显示名」甚至「图层组名」当成 catalog_id 传过来，
+    // 精确匹配必然落空，用户看到的就是「隐藏/改透明度没反应」。这里按显示名兜底：
+    // 唯一命中才采纳；命中多个则回报候选，绝不猜。
+    const raw = catalogId.trim()
+    if (raw) {
+      const hits = layers.filter((l) => {
+        const name = String(l.name ?? '').trim()
+        if (!name || l.isAdminBoundary) return false
+        return name === raw || name.includes(raw) || raw.includes(name)
+      })
+      if (hits.length === 1) {
+        return { instanceId: hits[0].instanceId, catalogId: hits[0].catalogId }
+      }
+      if (hits.length > 1) {
+        return {
+          instanceId: null,
+          catalogId: null,
+          ambiguous: hits.map((l) => String(l.name ?? l.catalogId)),
+        }
+      }
+    }
   }
   return { instanceId: null, catalogId: catalogId ?? null }
 }
@@ -110,7 +132,21 @@ export function executeAgentUiIntent(
     if (!catalogId) return { ok: false, message: '缺少 catalog_id' }
 
     let resolved = resolveInstanceId(catalogId, undefined)
+    if (resolved.ambiguous?.length) {
+      return {
+        ok: false,
+        message: `「${catalogId}」匹配到多个图层（${resolved.ambiguous.join('、')}），请说得更具体一点`,
+      }
+    }
     if (!resolved.instanceId) {
+      // 2026-10-22 修正：隐藏一个当前不在地图上的图层时，绝不能「顺手把它加上」——
+      // 用户看到的是「已隐藏」，实际地图上反而多出一层。只有「显示」才允许自动添加。
+      if (!visible) {
+        return {
+          ok: false,
+          message: `当前地图上没有「${nameOf(catalogId, args.display_name)}」，无需隐藏`,
+        }
+      }
       const block = workspace.getCatalogAddBlockReason?.(catalogId) ?? null
       if (block) {
         return { ok: false, message: block }
@@ -142,6 +178,12 @@ export function executeAgentUiIntent(
       return { ok: false, message: '缺少 catalog_id 或 opacity' }
     }
     const resolved = resolveInstanceId(catalogId, undefined)
+    if (resolved.ambiguous?.length) {
+      return {
+        ok: false,
+        message: `「${catalogId}」匹配到多个图层（${resolved.ambiguous.join('、')}），请说得更具体一点`,
+      }
+    }
     if (!resolved.instanceId) {
       return { ok: false, message: `「${nameOf(catalogId, args.display_name)}」还没在图层列表里` }
     }
@@ -227,9 +269,12 @@ export function executeAgentUiIntent(
     if (!sourceId) {
       return { ok: false, message: '缺少底图标识 (basemap_id / source_id)' }
     }
-    const ok = handlers.setBasemap?.(sourceId) ?? false
-    // 底图 source id 是内部标识，正文不点名，后端回复会给出中文底图名
-    return ok ? { ok: true, message: '底图已切换' } : { ok: false, message: '底图切换失败' }
+    const result = handlers.setBasemap?.(sourceId)
+    // 底图 source id 是内部标识，正文不点名，后端回复会给出中文底图名。
+    // 2026-10-22：切换失败要说明原因（缺密钥 / 无此底图），不再一律回「切换失败」。
+    if (result === true) return { ok: true, message: '底图已切换' }
+    if (typeof result === 'string') return { ok: false, message: result }
+    return { ok: false, message: '底图切换失败' }
   }
 
   if (name === 'set_timeline') {

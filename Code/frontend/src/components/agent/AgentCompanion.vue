@@ -15,7 +15,12 @@ defineProps<{
   fitToLayerExtent?: (instanceId: string) => boolean
   fitChina?: () => boolean
   locateCoordinate?: (lng: number, lat: number, zoom?: number) => boolean
-  setBasemap?: (sourceId: string) => boolean
+  /** true=已切换；字符串=失败原因（直接展示）；false=未知原因失败 */
+  setBasemap?: (sourceId: string) => boolean | string
+  /** 地图是否已就绪；undefined = 当前模式没有 MapCanvas */
+  isMapReady?: () => boolean | undefined
+  /** 地图初始化失败原因 */
+  getMapError?: () => string | null
 }>()
 
 const open = ref(false)
@@ -327,6 +332,8 @@ watch(open, (v) => {
         :fit-china="fitChina"
         :locate-coordinate="locateCoordinate"
         :set-basemap="setBasemap"
+        :is-map-ready="isMapReady"
+        :get-map-error="getMapError"
         @close="open = false"
       />
     </div>

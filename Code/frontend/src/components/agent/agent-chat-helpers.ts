@@ -145,6 +145,10 @@ export function buildAgentClientContextPayload(input: {
     isAdminBoundary?: boolean
     /** 运行时栅格 overlay id（imported-*），供 Agent 点查采样 */
     overlayLayerId?: string | null
+    /** 当前是否勾选显示（侧栏复选框） */
+    visible?: boolean
+    /** 当前是否被选中（图层面板高亮那一个） */
+    selected?: boolean
   }>
   mapPoint?: { lng: number; lat: number } | null
   timeline: { hour: number; date: Date; playing: boolean }
@@ -156,6 +160,10 @@ export function buildAgentClientContextPayload(input: {
   basemapId: string
   /** 主导图层的可用时间范围，供后端判断「切到某天有没有数据」 */
   dataRange?: { start: string; end: string; frames: number } | null
+  /** 地图是否已就绪；undefined = 未知（例如 3D 实验模式没有 MapCanvas） */
+  mapReady?: boolean
+  /** 地图初始化失败原因（仅 mapReady=false 时有意义） */
+  mapError?: string | null
 }): {
   active_catalog_ids: string[]
   active_layers: Array<{
@@ -163,8 +171,12 @@ export function buildAgentClientContextPayload(input: {
     instance_id?: string
     name?: string
     overlay_layer_id?: string | null
+    visible: boolean
+    selected: boolean
   }>
   map_point?: { lng: number; lat: number }
+  map_ready?: boolean
+  map_error?: string
   timeline: {
     hour: number
     date: string
@@ -186,6 +198,9 @@ export function buildAgentClientContextPayload(input: {
       instance_id: l.instanceId,
       name: l.name || l.catalogId,
       overlay_layer_id: l.overlayLayerId || null,
+      // 缺省按「显示」处理，与侧栏默认勾选一致；selected 缺省 false
+      visible: l.visible !== false,
+      selected: l.selected === true,
     })),
     timeline: {
       hour: input.timeline.hour,
@@ -193,6 +208,11 @@ export function buildAgentClientContextPayload(input: {
       playing: input.timeline.playing,
     },
     basemap_id: input.basemapId,
+  }
+  if (typeof input.mapReady === 'boolean') {
+    ctx.map_ready = input.mapReady
+    const err = (input.mapError || '').trim()
+    if (!input.mapReady && err) ctx.map_error = err.slice(0, 200)
   }
   const range = input.dataRange
   if (range && range.start && range.end) {

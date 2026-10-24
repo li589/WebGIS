@@ -599,6 +599,19 @@ def _overlay_quality(spec: Any, raw: dict[str, Any]) -> tuple[str, str]:
     return "good", "有效"
 
 
+def _layer_identity_fields(
+    catalog_id: str, *, display: str | None = None
+) -> dict[str, Any]:
+    """R07：来源 / 变量 / 单位（失败降级为空 dict，绝不打断点查）。"""
+    try:
+        from app.services.agent.layer_identity import identity_fields
+
+        return identity_fields(catalog_id, display_name=display)
+    except Exception:  # pragma: no cover
+        logger.debug("layer identity unavailable for %s", catalog_id, exc_info=True)
+        return {}
+
+
 def _sample_one_layer(
     catalog_id: str,
     *,
@@ -620,21 +633,26 @@ def _sample_one_layer(
     # 运行时栅格图层：catalog_id 无 overlay spec，须用实际 overlay id 采样
     spec = get_overlay_spec(overlay_id or catalog_id)
     if spec is not None:
+        # R07：来源 / 变量 / 物理单位由身份证统一给出（spec.unit 可能是变量标签）
+        identity = _layer_identity_fields(catalog_id, display=display)
         try:
             raw = spec.resolve_value(lng, lat, time)
             quality, quality_label = _overlay_quality(spec, raw)
-            return {
+            payload = {
                 "ok": True,
                 "kind": "overlay",
                 "catalog_id": catalog_id,
                 "display_name": display,
                 "value": raw.get("value"),
-                "unit": raw.get("unit"),
                 "time": raw.get("time") or time,
                 "quality": quality,
                 "quality_label": quality_label,
                 "error": raw.get("error"),
+                **identity,
+                # 原始 unit 只留作排查线索，不再当成"单位"对外输出
+                "unit_raw": raw.get("unit"),
             }
+            return payload
         except Exception as exc:
             logger.exception("overlay sample failed for %s", catalog_id)
             return {
@@ -645,6 +663,7 @@ def _sample_one_layer(
                 "quality": "error",
                 "quality_label": "采样失败",
                 "error": f"overlay 采样失败: {exc}",
+                **identity,
             }
 
     if catalog_id in WEATHER_LAYER_SPECS:
@@ -711,6 +730,7 @@ def _sample_one_layer(
         "quality": "unsupported",
         "quality_label": "该图层暂不支持按点取数",
         "error": "该图层暂无 overlay/天气点采样能力",
+        **_layer_identity_fields(catalog_id, display=display),
     }
 
 
@@ -755,6 +775,7 @@ def _search_layers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
                     "display_name": display,
                     "category": str(getattr(item, "category", "") or ""),
                     "description": desc[:200],
+                    **_layer_identity_fields(lid, display=display),
                 }
             )
         if len(hits) >= limit:
@@ -812,12 +833,18 @@ def catalog_summary(*, cred: Any = None, limit: int = 40) -> list[dict[str, str]
         lid = str(getattr(item, "layer_id", "") or "")
         if lid not in accessible:
             continue
-        out.append(
-            {
-                "layer_id": lid,
-                "display_name": str(getattr(item, "display_name", "") or lid),
-            }
-        )
+        display = str(getattr(item, "display_name", "") or lid)
+        row: dict[str, str] = {"layer_id": lid, "display_name": display}
+        # R07：目录清单里也带来源，模型不必从名字猜卫星
+        identity = _layer_identity_fields(lid, display=display)
+        source = identity.get("source")
+        if source and source != "unknown":
+            row["source"] = str(source)
+            row["source_label"] = str(identity.get("source_label") or "")
+        variable = identity.get("variable")
+        if variable and variable != "unknown":
+            row["variable"] = str(variable)
+        out.append(row)
         if len(out) >= limit:
             break
     return out
@@ -910,10 +937,127 @@ def _get_workflow_run(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     }
 
 
+def _parse_date8(value: Any) -> str | None:
+    """把 '2025-12-15' / '20251215' / '2025/12/15' / '2017-01' 统一成 'YYYYMMDD'。"""
+    if value is None:
+        return None
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    if len(digits) >= 8:
+        return digits[:8]
+    if len(digits) == 6:  # 'YYYY-MM' → 当月第一天
+        return digits + "01"
+    if len(digits) == 4:  # 'YYYY' → 当年第一天
+        return digits + "0101"
+    return None
+
+
+def _resolve_coverage(
+    *,
+    requested: str | None,
+    local_dates: list[str],
+    online: dict[str, Any],
+) -> dict[str, Any]:
+    """把"在线通道 / 本地通道"两套互不相干的结果合并成一句"这天到底有没有数据"。
+
+    报告 R09/R10 的口径：不能只看 ``local.count=0`` 就说没数据，
+    也不能因为两个日期取值相同就判断"日期切换坏了" —— 后者通常是
+    两个日期命中了同一个时间块（如 ``20251203_20251231``）。
+    """
+    if not requested:
+        return {
+            "status": "unknown",
+            "channel": None,
+            "actual_time": None,
+            "reason": "未指定日期；下面只列出两通道的覆盖明细，请按实际日期再问一次",
+        }
+
+    # 1) 逐日帧精确命中
+    if requested in local_dates:
+        return {
+            "status": "available",
+            "channel": "local",
+            "actual_time": requested,
+            "reason": f"本地时序里有 {requested} 这一逐日帧",
+        }
+
+    # 2) 命中某个时间块（区间帧 / 月块）
+    for item in local_dates:
+        if "_" not in item:
+            continue
+        start, _, end = item.partition("_")
+        start8, end8 = _parse_date8(start), _parse_date8(end)
+        if start8 and end8 and start8 <= requested <= end8:
+            exact_day = start8 == end8
+            return {
+                "status": "available",
+                "channel": "local",
+                "actual_time": item,
+                "reason": (
+                    f"本地没有 {requested} 的独立逐日帧，该日期落在时间块 "
+                    f"{item} 内，取的是这一块的值"
+                    + (
+                        ""
+                        if exact_day
+                        else "（所以相邻日期取值相同是正常的，不是日期切换失效）"
+                    )
+                ),
+            }
+
+    # 3) 本地没有，但在线通道声明可获取
+    if online.get("available"):
+        start8 = _parse_date8(online.get("coverage_start"))
+        end8 = _parse_date8(online.get("coverage_end"))
+        in_range = (
+            start8
+            and end8
+            and (start8 <= requested <= end8)
+            or (start8 and end8 is None and requested >= start8)
+            or (end8 and start8 is None and requested <= end8)
+        )
+        if in_range:
+            return {
+                "status": "available",
+                "channel": "online",
+                "actual_time": None,
+                "reason": (
+                    f"本地暂无 {requested}，但在该图层的在线获取范围内"
+                    "（需要触发现场获取后才有结果，不是已经算好的成品）"
+                ),
+            }
+        return {
+            "status": "unavailable",
+            "channel": None,
+            "actual_time": None,
+            "reason": (
+                f"{requested} 不在该图层的覆盖范围内"
+                f"（在线可获取范围 {online.get('coverage_start')} ~ "
+                f"{online.get('coverage_end')}）"
+            ),
+        }
+
+    if local_dates:
+        return {
+            "status": "unavailable",
+            "channel": None,
+            "actual_time": None,
+            "reason": (
+                f"本地有 {len(local_dates)} 个时间点，但没有覆盖 {requested} 的帧，"
+                "且该图层未开放在线获取"
+            ),
+        }
+    return {
+        "status": "unavailable",
+        "channel": None,
+        "actual_time": None,
+        "reason": "本地没有任何已物化的时间帧，且该图层未开放在线获取",
+    }
+
+
 def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     catalog_id = str(args.get("catalog_id") or args.get("layer_id") or "").strip()
     if not catalog_id:
         return {"ok": False, "error": "catalog_id 不能为空"}
+    requested = _parse_date8(args.get("time") or args.get("date"))
     accessible = _filter_ids([catalog_id], cred)
     if catalog_id not in set(accessible):
         return {"ok": False, "error": f"无权访问图层: {catalog_id}"}
@@ -935,26 +1079,71 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
             "coverage_end": getattr(cap, "coverage_end", None),
             "native_step": getattr(cap, "native_step", None),
         }
+    # 本地时间帧：直接问 overlay 注册表（会按需从 <imports>/<id>/meta.json 惰性加载）。
+    # 注：旧实现调用 overlay_asset_workflow_service.get_overlay_state()，
+    # 但该方法不存在 ⇒ 异常被吞 ⇒ local 永远为空（报告 R09/R10 的根因）。
     local_dates: list[str] = []
     try:
-        from app.services.overlay_asset_workflow_service import (
-            overlay_asset_workflow_service,
-        )
+        from app.services.overlay_registry import get_overlay_spec
 
-        state = overlay_asset_workflow_service.get_overlay_state(catalog_id)
-        raw_dates = (state or {}).get("time_list") if isinstance(state, dict) else None
-        if isinstance(raw_dates, list):
-            local_dates = [str(d) for d in raw_dates[:366] if d is not None]
+        spec = get_overlay_spec(catalog_id)
+        if spec is not None:
+            local_dates = [
+                str(d) for d in (spec.time_list or [])[:366] if d is not None
+            ]
     except Exception:
         logger.debug("overlay time_list unavailable for %s", catalog_id, exc_info=True)
+    if not local_dates and catalog_id.startswith("imported-"):
+        # 兜底：直接读盘上 meta.json 的 time_list
+        try:
+            from app.data_io.services.paths import safe_import_child
+            import json as _json
+
+            meta_path = safe_import_child(catalog_id) / "meta.json"
+            if meta_path.is_file():
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+                raw = meta.get("time_list") if isinstance(meta, dict) else None
+                if isinstance(raw, list):
+                    local_dates = [str(d) for d in raw[:366] if d is not None]
+        except Exception:
+            logger.debug("meta time_list unavailable for %s", catalog_id, exc_info=True)
     return {
         "ok": True,
         "catalog_id": catalog_id,
+        "display_name": _layer_display_name(catalog_id),
+        "requested_time": requested,
+        # R09/R10：一句话回答"这天到底有没有"，channels 明细保留兼容旧调用
+        "resolved": _resolve_coverage(
+            requested=requested, local_dates=local_dates, online=online
+        ),
         "channels": {
             "online": online,
             "local": {"dates": local_dates, "count": len(local_dates)},
         },
+        **_layer_identity_fields(catalog_id),
     }
+
+
+def _layer_display_name(catalog_id: str) -> str | None:
+    """图层中文名；产物图层用身份证里的变量名，绝不回落成 id。"""
+    try:
+        from app.services.layer_catalog import get_layer_descriptor
+
+        desc = get_layer_descriptor(catalog_id)
+        if desc is not None:
+            name = str(getattr(desc, "display_name", "") or "").strip()
+            if name:
+                return name
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from app.services.agent.layer_identity import resolve_layer_identity
+        from app.services.agent.naming import UNKNOWN_LAYER_NAME
+
+        label = resolve_layer_identity(catalog_id).get("variable_label")
+        return str(label) if label else UNKNOWN_LAYER_NAME
+    except Exception:  # pragma: no cover
+        return None
 
 
 def _list_workflow_timers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
