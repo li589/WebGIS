@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import uuid
 from collections.abc import Callable
@@ -783,6 +784,12 @@ def _build_system(
         "- 用户要“整层/全图平均值、有效像元数、最大最小值”时，**直接调用 "
         "get_layer_statistics**（传 catalog_id + 可选 time），不要回答“没有统计能力”，"
         "也不要用 sample_layer_point 的点值冒充全图均值。\n"
+        "- **只要这句话里带统计动词（平均/均值/统计/像元数/最大/最小），就必须以"
+        "统计结果或明确失败原因结尾**：不能只列活动图层、不能只说明“打算怎么算”、"
+        "更不能列完图层就结束。“当前图层/活动图层”只是统计任务的**前置核对**，"
+        "核对完要继续调工具。\n"
+        "- 统计对象若说“当前选中图层”，就用 client_context 里 selected=true 的那一个；"
+        "唯一可见图层同理；只有存在多个候选且用户没指明时，才反问要统计哪一个。\n"
         "- 该工具只读：不建图层、不写产物、不跑工作流，因此不需要确认卡。\n"
         "- 回答时必须分开说清三件事：请求日期（requested_time）、**数据实际覆盖的时间块**"
         "（actual_time / period_start ~ period_end）、统计范围是整幅栅格而非当前视口；"
@@ -939,6 +946,63 @@ def refresh_models_for_profile(
             "manual": True,
             "error": f"刷新模型列表失败：{exc}",
         }
+
+
+_STATISTICS_WORDS = re.compile(r"平均|均值|统计|像元|mean|average|最大|最小", re.I)
+
+
+def _wants_statistics(message: str) -> bool:
+    """用户这句话是不是在要整层统计（报告第二轮 A06~A08 的判据）。"""
+    return bool(_STATISTICS_WORDS.search(message or ""))
+
+
+def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
+    """本轮是否真的调过 get_layer_statistics。"""
+    for step in steps:
+        if str(step.get("type") or "") != "tool":
+            continue
+        if "get_layer_statistics" in str(step.get("summary") or ""):
+            return True
+    return False
+
+
+def _statistics_fallback_reply(
+    message: str,
+    reply: str,
+    steps: "_EventSteps",
+    sid: str,
+    client_context: dict[str, Any] | None,
+) -> str:
+    """统计请求的确定性兜底：模型没调工具、也没给出数值时，用规则引擎补一次。
+
+    报告第二轮 P1：「统计请求即使包含『当前图层』也不能只列图层或说明计划，
+    核对来源、变量与日期后继续调用 get_layer_statistics，直到得到结果或明确报错」。
+    真模型对「当前选中图层」这类模糊主语约束力弱，光靠系统提示不可靠；
+    提示词已写死规则（## 整层统计），这里再加一道代码兜底。
+    **只补文本，不下发任何改变视图的意图。**
+    """
+    if not _wants_statistics(message) or _statistics_tool_called(list(steps)):
+        return reply
+    if "均值" in reply:
+        return reply
+    try:
+        fallback = mock_chat(message, session_id=sid, client_context=client_context)
+    except Exception:
+        logger.debug("statistics fallback failed", exc_info=True)
+        return reply
+    text = str(fallback.get("reply") or "").strip()
+    # 规则引擎的统计答复一定带「均值」；若它也只给了图层列表，说明目标选择没接上，
+    # 保留模型原文（宁可少说，也不要替换成另一种不准确的答复）。
+    if not text or "均值" not in text:
+        return reply
+    steps.append(
+        {
+            "type": "tool_result",
+            "summary": "服务端补调整层统计（模型本轮未调用工具）",
+            "detail": text[:800],
+        }
+    )
+    return text
 
 
 def _run_chat_impl(
@@ -1435,6 +1499,9 @@ def _run_chat_impl(
             if not reply and not intents:
                 reply = "（模型未返回文本）"
             reply = _ensure_visible_reply(reply, list(steps))
+            reply = _statistics_fallback_reply(
+                message, reply, steps, sid, client_context
+            )
             if not intents:
                 fallback = mock_chat(
                     message, session_id=sid, client_context=client_context
@@ -1592,6 +1659,7 @@ def _run_chat_impl(
         if not reply and not intents:
             reply = "（模型未返回文本）"
         reply = _ensure_visible_reply(reply, list(steps))
+        reply = _statistics_fallback_reply(message, reply, steps, sid, client_context)
         if not intents:
             fallback = mock_chat(message, session_id=sid, client_context=client_context)
             heur = fallback.get("ui_intents") or []

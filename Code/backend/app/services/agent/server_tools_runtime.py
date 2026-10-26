@@ -325,6 +325,40 @@ def _format_block_key(raw: Any) -> str | None:
     return key
 
 
+def _imported_raster_header(catalog_id: str, meta: dict[str, Any]) -> dict[str, Any]:
+    """只读栅格头（原生坐标系 + 宽高），用于补齐元数据。
+
+    报告第二轮 P2：「元数据仍缺原生坐标系和宽高，而统计工具已返回 EPSG:6933
+    与宽度；宜复用栅格头信息」。这里只 open 一下读 profile，不读像元；
+    任何异常都返回空 dict（由调用方给 None），**绝不编造坐标系**。
+    """
+    try:
+        from app.services.overlay_registry import get_overlay_spec
+
+        spec = get_overlay_spec(catalog_id)
+        if spec is None:
+            return {}
+        time_key = str(meta.get("default_time") or "").strip()
+        if time_key:
+            time_key = str(spec.resolve_time_key(time_key) or time_key)
+        path = spec.resolve_source_path(time_key or None)
+        if path is None:
+            return {}
+        import rasterio
+
+        with rasterio.open(path) as ds:
+            crs = ds.crs
+            return {
+                "crs": str(crs) if crs else None,
+                "epsg": crs.to_epsg() if crs else None,
+                "width": int(ds.width),
+                "height": int(ds.height),
+            }
+    except Exception:
+        logger.debug("raster header unavailable for %s", catalog_id, exc_info=True)
+        return {}
+
+
 def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
     """imported-* 产物的元数据（从产物目录的 meta.json / bounds.json 读，只读）。
 
@@ -402,6 +436,7 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
 
     # 时间事实走共用函数（与覆盖/统计三处同源，报告 优先2「共用解析逻辑」）
     facts = _temporal_facts(blocks)
+    header = _imported_raster_header(catalog_id, meta)
 
     return {
         "ok": True,
@@ -425,6 +460,12 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
             "supports_time": bool(blocks),
             "is_realtime": False,
             "temporal_coverage": coverage_text,
+            # 报告第二轮 P2：元数据缺「原生坐标系 / 宽高」。
+            # 复用同一条 overlay spec 只读栅格头（不读像元），失败给 None，绝不编造。
+            "crs": header.get("crs"),
+            "epsg": header.get("epsg"),
+            "width": header.get("width"),
+            "height": header.get("height"),
             "extent": extent_out,
             "tags": ["imported", "local"],
             # 与覆盖/取值两处对齐的来源与变量信息

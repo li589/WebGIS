@@ -262,10 +262,11 @@ function resetChat() {
     pushSystemHint('生成进行中——请先点输入框旁的「停止」，再开启新会话。')
     return
   }
-  if (!sessionId.value && messages.value.length <= 1) {
-    pushSystemHint('当前已是全新会话。')
-    return
-  }
+  // 报告第二轮 P2：点「开启新会话」后「未见消息或会话状态重置」。
+  // 原来在「无 sessionId 且只有欢迎语」时直接 return 只留一行小字，
+  // 用户看不出发生了什么。现在无论什么状态都执行清理，并如实说明做了什么。
+  const hadSession = Boolean(sessionId.value)
+  const hadMessages = messages.value.length > 1
   messages.value = [
     {
       id: 'welcome',
@@ -280,7 +281,11 @@ function resetChat() {
   liveStatus.value = ''
   sessionMenuOpen.value = false
   stopSendTick()
-  pushSystemHint('已开启新会话（服务端历史待下一次对话自动续写）。')
+  pushSystemHint(
+    hadSession || hadMessages
+      ? '已开启新会话：已清空本地消息与服务端会话绑定，下一次提问会自动新建会话。'
+      : '当前已是全新会话（还没有历史消息）。',
+  )
   void scrollToBottom()
 }
 

@@ -113,27 +113,69 @@ function withSource(
 }
 
 /**
- * 挑一个「主导的时间序列图层」：可见、帧数最多。
- * 用于核对「切到某天到底有没有数据」——时间轴本身不做吸附，
- * 吸附发生在渲染层，必须拿真实 time_list 才能算准。
+ * 挑一个「用来核对日期的时间序列图层」。
+ *
+ * 顺序（报告第二轮 A06：回执说切到 12-15、页面却停在 01-31，就是因为
+ * 回执拿「帧数最多的可见图层」算，而页面按「选中/目标图层」渲染）：
+ *   ① 指令里点名的目标图层 → ② 当前选中图层 → ③ 唯一可见带帧图层 → ④ 帧数最多
+ * 时间轴本身不做吸附，吸附发生在渲染层，必须拿真实 time_list 才能算准。
  */
-function pickDominantTimeseries(): { catalogId: string; name: string; list: string[] } | null {
+function pickDominantTimeseries(target?: {
+  catalogId?: string | null
+  instanceId?: string | null
+}): {
+  catalogId: string
+  name: string
+  list: string[]
+} | null {
   const workspace = useLayerWorkspace()
-  let best: { catalogId: string; name: string; list: string[] } | null = null
-  for (const layer of workspace.activeLayers.value) {
-    if (layer.visible === false) continue
-    if (layer.isAdminBoundary) continue
+  const layers = workspace.activeLayers.value
+  const asSeries = (layer: (typeof layers)[number]) => {
     const list = layer.importedRaster?.timeList
-    if (!Array.isArray(list) || !list.length) continue
-    if (!best || list.length > best.list.length) {
-      best = {
-        catalogId: layer.catalogId,
-        name: layerDisplayName(layer.catalogId, [{ catalogId: layer.catalogId, name: layer.name }]),
-        list: list.map((t) => String(t)),
-      }
+    if (!Array.isArray(list) || !list.length) return null
+    return {
+      catalogId: layer.catalogId,
+      name: layerDisplayName(layer.catalogId, [{ catalogId: layer.catalogId, name: layer.name }]),
+      list: list.map((t) => String(t)),
     }
   }
-  return best
+
+  const wantCatalog = String(target?.catalogId ?? '').trim()
+  const wantInstance = String(target?.instanceId ?? '').trim()
+  if (wantCatalog || wantInstance) {
+    const hit = layers.find(
+      (l) =>
+        (wantInstance && l.instanceId === wantInstance) ||
+        (wantCatalog && l.catalogId === wantCatalog),
+    )
+    if (hit) {
+      const series = asSeries(hit)
+      if (series) return series
+    }
+  }
+
+  const selectedId = String(workspace.selectedInstanceId.value ?? '').trim()
+  if (selectedId) {
+    const hit = layers.find((l) => l.instanceId === selectedId)
+    if (hit) {
+      const series = asSeries(hit)
+      if (series) return series
+    }
+  }
+
+  let best: ReturnType<typeof asSeries> = null
+  let visibleCount = 0
+  for (const layer of layers) {
+    if (layer.visible === false) continue
+    if (layer.isAdminBoundary) continue
+    const series = asSeries(layer)
+    if (!series) continue
+    visibleCount += 1
+    if (!best || series.list.length > best.list.length) best = series
+  }
+  // 只有一个可见带帧图层时直接用；多个才退化成「帧数最多」的近似
+  if (best && visibleCount >= 1) return best
+  return null
 }
 
 function parseDateArg(raw: unknown): Date | null {
@@ -384,7 +426,11 @@ function executeAgentUiIntentCore(
 
     // 时间轴只负责「选中某个时刻」，真正的帧是渲染层按切片挑的。
     // 这里提前算出会落到哪一帧，如实回报，避免「切到 12-15」实际放的是 12-03。
-    const dominant = pickDominantTimeseries()
+    // 目标是哪个图层：指令点名 → 当前选中 → 唯一可见（报告第二轮 A06）。
+    const dominant = pickDominantTimeseries({
+      catalogId: String(args.catalog_id ?? args.layer_id ?? '').trim() || null,
+      instanceId: String(args.instance_id ?? '').trim() || null,
+    })
     if (!dominant) {
       return {
         ok: true,
@@ -407,10 +453,17 @@ function executeAgentUiIntentCore(
     const dominantLabel = withSource(handlers, dominant.catalogId, dominant.name)
     const shownName = dominantLabel === dominant.name ? `「${dominant.name}」` : dominantLabel
     if (eff.nativeMatch) {
+      // 报告第二轮 P2：时间块 ≠ 逐日帧，回执必须说清是「落在块内」还是「真切到了那一天」。
+      const isBlock = String(eff.key ?? '').includes('_')
+      if (isBlock) {
+        return {
+          ok: true,
+          message: `${shownName}已切到 ${requested}，该日落在时间块 ${eff.label} 内（无独立逐日帧）`,
+        }
+      }
       // 报告优先4：动作成功也要给「图层 + 具体日期」的确定说法，
       // 不能只丢一个笼统的覆盖区间（否则用户不知道到底切到哪天）。
-      const frameHint =
-        eff.label && eff.label !== requested ? `（实际命中时间块 ${eff.label}）` : ''
+      const frameHint = eff.label && eff.label !== requested ? `（实际命中帧 ${eff.label}）` : ''
       return {
         ok: true,
         message: `${shownName}已切到 ${requested}${frameHint}`,

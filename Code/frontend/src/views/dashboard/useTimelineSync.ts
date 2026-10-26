@@ -22,7 +22,11 @@ import {
   dateHourToTileHour,
   findLatestValidCoverageInstant,
 } from '../../utils/weather-timeline'
-import { generateTimelineSegments } from '../../utils/layer-timeline'
+import {
+  BLOCK_DAY_READY_LABEL,
+  generateTimelineSegments,
+  isSingleCrossDayBlock,
+} from '../../utils/layer-timeline'
 import {
   referenceInstantFromTimeline,
   resolveLayerEffectiveTime,
@@ -658,7 +662,11 @@ export function useTimelineSync(
           onlineCap.coverage_end,
         )
       }
-      return generateTimelineSegments(currentDate.value, gran, map)
+      // 单块跨多天（如 20251201_20260201）时，日格子不能写「每日数据已就绪」——
+      // 该块内每一天都不是独立观测（报告第二轮 P2）。
+      const readyLabel =
+        gran === 'day' && isSingleCrossDayBlock(scienceTimes) ? BLOCK_DAY_READY_LABEL : undefined
+      return generateTimelineSegments(currentDate.value, gran, map, readyLabel)
     }
 
     const layer = activeLayer.value

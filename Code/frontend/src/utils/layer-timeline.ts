@@ -107,10 +107,28 @@ export function shiftTimelineDate(
  * 刻度 label 不再携带单位后缀（如 "1日" → "1"），
  * 单位信息由 granularityUnitLabel() 统一提供。
  */
+/**
+ * 只有一个时间块、且块跨多天（如 `20251201_20260201`）⇒ 该块内每一天都不是独立观测。
+ *
+ * 用途：报告第二轮 P2「时间轴仍写『每日数据已就绪』，应改为
+ * 『该日落在时间块内，无独立逐日帧』」。
+ */
+export function isSingleCrossDayBlock(timeList: string[] | null | undefined): boolean {
+  const list = (timeList ?? []).map((t) => String(t ?? '').trim()).filter(Boolean)
+  if (list.length !== 1) return false
+  const m = /^(\d{8})_(\d{8})$/.exec(list[0] ?? '')
+  if (!m) return false
+  return m[1] !== m[2]
+}
+
+/** 单块跨多天时，日粒度「就绪」格子的说明文案。 */
+export const BLOCK_DAY_READY_LABEL = '该日落在时间块内，无独立逐日帧'
+
 export function generateTimelineSegments(
   date: Date,
   granularity: TimeGranularity = 'hour',
   availabilityMap?: Record<number, 'empty' | 'partial' | 'ready' | 'error' | 'fetchable'>,
+  readyLabel?: string,
 ): TimelineAvailabilitySegment[] {
   if (granularity === 'static') {
     return [
@@ -185,7 +203,7 @@ export function generateTimelineSegments(
         state,
         availabilityLabel:
           state === 'ready'
-            ? '每日数据已就绪'
+            ? (readyLabel ?? '每日数据已就绪')
             : state === 'partial'
               ? '部分就绪 / 加载中'
               : state === 'error'
