@@ -39,6 +39,21 @@ if str(_PROVIDER_ROOT) not in sys.path:
     sys.path.append(str(_PROVIDER_ROOT))
 
 
+def split_block_key(key: str | None) -> tuple[str | None, str | None]:
+    """把时间片键拆成 ``(起, 止)`` 两个 ``YYYYMMDD``（不是时间片键则返回两个 None）。
+
+    ``20251201_20260201`` → ('20251201', '20260201')；单日键 ``20251215`` → 两个相同值。
+    点查要把"请求日期"和"实际命中的时间块"分开回报（外部测试报告 优先3），
+    这里只做纯字符串解析，不读盘、不抛异常。
+    """
+    raw = str(key or "").strip()
+    if len(raw) == 8 and raw.isdigit():
+        return raw, raw
+    if len(raw) == 17 and raw[8] == "_" and raw[:8].isdigit() and raw[9:].isdigit():
+        return raw[:8], raw[9:]
+    return None, None
+
+
 @dataclass
 class OverlaySpec:
     """单个叠加图层的配置。"""
@@ -147,6 +162,20 @@ class OverlaySpec:
                 f"Time {t} not available for overlay {self.layer_id}",
             )
         return t
+
+    def resolve_time_key(self, time: str | None = None) -> str | None:
+        """把请求时间解析成**实际命中**的时间片键（只读，失败返回 None）。
+
+        供点查 / 整层统计如实回报"请求日期"与"实际数据时间块"的区别：
+        例如请求 ``2025-12-15`` 而图层只有 ``20251201_20260201`` 一片时，
+        本方法返回 ``20251201_20260201``，调用方据此说明数据实为整块。
+        """
+        if self.category != "time-series":
+            return None
+        try:
+            return self._assert_time_available(time or self.default_time)
+        except Exception:
+            return None
 
     @staticmethod
     def _assert_no_path_traversal(path: Path) -> Path:
@@ -434,6 +463,19 @@ class OverlaySpec:
             "lng": lng,
             "lat": lat,
         }
+        # 请求时间 vs 实际命中的时间块（外部测试报告 优先3）：
+        # 地图点查（/overlay-value）与助手点查（sample_layer_point）都走本方法，
+        # 因此两边口径天然一致，不会出现"风云被写成 SMAP 的区间"。
+        # 只新增键，不动既有 `time`（仍为请求时间），保持向后兼容。
+        _actual_key = self.resolve_time_key(time)
+        _p_start, _p_end = split_block_key(_actual_key)
+        result["requested_time"] = time
+        result["actual_time"] = _actual_key
+        result["period_start"] = _p_start
+        result["period_end"] = _p_end
+        result["is_single_block"] = bool(
+            _actual_key and "_" in str(_actual_key) and _p_start != _p_end
+        )
         try:
             src_path = self.resolve_source_path(time)
             if src_path is None:

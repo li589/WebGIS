@@ -52,7 +52,7 @@
     },
     {
       "name": "sample_layer_point",
-      "description": "Sample raster/overlay (or weather) value at a map point. Uses args lng/lat, or client_context.map_point if omitted. Optional catalog_id; otherwise samples active layers from client_context.",
+      "description": "Sample raster/overlay (or weather) value at a map point. Uses args lng/lat, or client_context.map_point if omitted. Optional catalog_id; otherwise samples active layers from client_context. Each overlay sample returns requested_time plus actual_time / period_start / period_end, so report the data time block per layer instead of reusing one layer's period for another.",
       "args": {
         "type": "object",
         "properties": {
@@ -122,6 +122,26 @@
           "time": {
             "type": "string",
             "description": "Optional date to resolve, e.g. 20251215 or 2025-12-15"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_layer_statistics",
+      "description": "Read-only raster statistics for one local imported layer at one time slice: mean/min/max/std and valid pixel count, NoData excluded. Scope defaults to the full raster extent (never the current viewport); pass bbox only when the user explicitly asks for a sub-area. Use for requests like 'calculate the mean of the current layer'. Never creates layers, never writes products, never runs a workflow. Returns requested_time separately from actual_time / period_start / period_end, plus extent (WGS84 bbox actually analyzed) and temporal_summary; tell the user that the requested date is not necessarily an independent observation date, and use temporal_summary rather than native_step to describe the time step.",
+      "args": {
+        "type": "object",
+        "required": ["catalog_id"],
+        "properties": {
+          "catalog_id": { "type": "string", "description": "Imported layer id, e.g. imported-38993117b963" },
+          "time": {
+            "type": "string",
+            "description": "Optional date, e.g. 20251215 or 2025-12-15; omit to use the layer default time"
+          },
+          "bbox": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Optional WGS84 bounding box [west, south, east, north] in degrees. Omit for the whole raster. Only pass when the user names an area."
           }
         }
       }

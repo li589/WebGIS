@@ -973,7 +973,9 @@ async function applyChatResult(
         line: r.ok ? `✓ ${r.message}` : `✗ ${r.message}`,
       }))
     // 模型只调了 list_active_layers 等意图、正文为空时：把意图结果填进助手气泡，避免「吞回复」
-    if (target && !String(target.text || '').trim() && noteBodies.length) {
+    // ⚠ finalizeAssistantHtml 会先塞一句占位文案，所以这里必须把占位也当成「空」，
+    //   否则「已切到 2025-12-15」的动作说明永远进不了气泡（外部测试报告 优先4）。
+    if (target && isPlaceholderReply(target.text) && noteBodies.length) {
       target.text = noteBodies.map((n) => n.body).join('\n\n')
       finalizeAssistantHtml(target)
     } else if (noteBodies.length) {
@@ -1022,6 +1024,14 @@ async function applyChatResult(
     // 2026-10-22：不再因为「用过工具」就保持执行流程展开——那会把回答顶出视野。
     // 折叠条仍保留，用户点开可看完整步骤。
   }
+}
+
+/** 气泡里是后端/前端的占位文案（等于「没有真回复」），可被意图结果覆盖。 */
+const PLACEHOLDER_REPLY_RE = /^（(模型未返回文本|助手未返回可见文本|这次没有生成文字说明)/
+
+function isPlaceholderReply(text: unknown): boolean {
+  const trimmed = String(text ?? '').trim()
+  return !trimmed || PLACEHOLDER_REPLY_RE.test(trimmed)
 }
 
 function synthesizeReplyFromSteps(steps: ChatMessage['steps']): string | null {

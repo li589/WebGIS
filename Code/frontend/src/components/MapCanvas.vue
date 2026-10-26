@@ -142,6 +142,12 @@ const isMapInteractive = () =>
  * 只影响提示层，不改变地图创建流程本身。
  */
 const mapInitError = ref<string | null>(null)
+/**
+ * 失败的技术细节（原始异常信息，通常是英文）。
+ * 外部测试报告 优先4 后半：普通界面只留简洁中文原因，堆栈/外部网址收进「技术详情」折叠区，
+ * 不给用户糊一脸英文。
+ */
+const mapInitTechDetail = ref<string | null>(null)
 /** 初始化总超时：到点仍未 ready 即按失败处理（沿用通用经验值 30s，可按需调整） */
 const MAP_INIT_TIMEOUT_MS = 30_000
 let mapInitTimer: ReturnType<typeof globalThis.setTimeout> | null = null
@@ -153,11 +159,12 @@ function clearMapInitTimer(): void {
   }
 }
 
-function markMapInitFailed(reason: string): void {
+function markMapInitFailed(reason: string, techDetail?: string | null): void {
   clearMapInitTimer()
   // 已经就绪的不要再被超时回调误判为失败
   if (mapReady.value || _isUnmounted) return
   mapInitError.value = reason
+  mapInitTechDetail.value = techDetail ? String(techDetail) : null
   skeletonVisible.value = false
 }
 
@@ -786,6 +793,7 @@ onMounted(async () => {
 
   // 超时兜底：初始化卡住时也要给出可见提示，而不是一直"正在加载地图"
   mapInitError.value = null
+  mapInitTechDetail.value = null
   clearMapInitTimer()
   mapInitTimer = globalThis.setTimeout(() => {
     markMapInitFailed('地图加载超时（30 秒未完成），请检查网络或浏览器是否支持 WebGL2')
@@ -986,6 +994,7 @@ onMounted(async () => {
         // 就绪即撤销初始化超时兜底（避免地图已好还被判超时）
         clearMapInitTimer()
         mapInitError.value = null
+        mapInitTechDetail.value = null
         mapReady.value = true
         actionBridge.syncAdminOverlay()
         moduleBundle.selectedLayerFocusModule.handleMapLoad()
@@ -1011,7 +1020,8 @@ onMounted(async () => {
     console.error('[MapCanvas] initialization failed:', err)
     logStore.logOperation('map-init-error', `地图初始化失败: ${err}`)
     const detail = err instanceof Error ? err.message : String(err)
-    markMapInitFailed(`地图初始化失败：${detail}`)
+    // 面板只给简洁中文；英文原始信息放「技术详情」折叠区（报告 优先4 后半）
+    markMapInitFailed('地图初始化失败：浏览器未能创建 WebGL2 画布或底图资源加载失败', detail)
   }
 })
 
@@ -1353,6 +1363,11 @@ async function handleLocateMe() {
         <span class="map-init-error-hint">
           图层面板、数据查询等功能不受影响；若反复失败，请刷新页面或更换支持 WebGL2 的浏览器。
         </span>
+        <!-- 原始英文异常信息折叠收好：需要排查时再展开，平时不糊用户一脸 -->
+        <details v-if="mapInitTechDetail" class="map-init-error-tech">
+          <summary>技术详情</summary>
+          <pre>{{ mapInitTechDetail }}</pre>
+        </details>
       </span>
       <button class="map-init-retry-btn" @click="handleReloadForMapInit">刷新页面</button>
     </div>

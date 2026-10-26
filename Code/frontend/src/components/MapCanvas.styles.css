@@ -565,6 +565,39 @@
   line-height: 1.45;
 }
 
+/* 技术详情：默认收起，展开后展示原始异常（多半是英文 + 外部网址） */
+.map-init-error-tech {
+  margin-top: 0.15rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.map-init-error-tech > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  width: fit-content;
+}
+
+.map-init-error-tech > summary:hover {
+  color: var(--text-primary);
+}
+
+.map-init-error-tech > pre {
+  margin: 0.3rem 0 0;
+  padding: 0.4rem 0.5rem;
+  max-height: 7rem;
+  overflow: auto;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .map-init-retry-btn {
   flex: none;
   align-self: center;

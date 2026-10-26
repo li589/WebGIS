@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ _READ_TOOLS = frozenset(
         "list_workflow_runs",
         "get_workflow_run",
         "get_layer_coverage",
+        "get_layer_statistics",
         "list_workflow_timers",
     }
 )
@@ -56,6 +58,8 @@ def execute_server_tool(
         return _get_workflow_run(args, cred=cred)
     if tool == "get_layer_coverage":
         return _get_layer_coverage(args, cred=cred)
+    if tool == "get_layer_statistics":
+        return _get_layer_statistics(args, cred=cred)
     if tool == "list_workflow_timers":
         return _list_workflow_timers(args, cred=cred)
     if tool == "run_workflow":
@@ -305,6 +309,146 @@ def _list_workflows(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     return {"ok": True, "count": len(hits), "workflows": hits}
 
 
+def _format_block_key(raw: Any) -> str | None:
+    """`20251201_20260201` / `20251215` → 可读时间说明（失败返回 None）。"""
+    key = str(raw or "").strip()
+    if not key:
+        return None
+    block = re.fullmatch(r"(\d{4})(\d{2})(\d{2})_(\d{4})(\d{2})(\d{2})", key)
+    if block:
+        y1, m1, d1, y2, m2, d2 = block.groups()
+        return f"{y1}-{m1}-{d1} ~ {y2}-{m2}-{d2}"
+    single = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", key)
+    if single:
+        y, m, d = single.groups()
+        return f"{y}-{m}-{d}"
+    return key
+
+
+def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
+    """imported-* 产物的元数据（从产物目录的 meta.json / bounds.json 读，只读）。
+
+    与 get_layer_coverage / sample_layer_point 共用同一个来源判定
+    （layer_identity），保证「来源 / 变量 / 单位 / 时间块」三处口径一致。
+    不是 imported-* 或目录不存在时返回 None，由调用方继续走原来的错误分支。
+    """
+    if not catalog_id.startswith("imported-"):
+        return None
+    try:
+        import json as _json
+
+        from app.data_io.services.paths import safe_import_child
+
+        dest = safe_import_child(catalog_id)
+    except Exception:
+        logger.debug("imported meta dir unavailable for %s", catalog_id, exc_info=True)
+        return None
+    if not dest.is_dir():
+        return None
+
+    meta: dict[str, Any] = {}
+    meta_path = dest / "meta.json"
+    if meta_path.is_file():
+        try:
+            loaded = _json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+        except Exception:
+            logger.debug("bad meta.json for %s", catalog_id, exc_info=True)
+
+    bounds_meta: dict[str, Any] = {}
+    extent_out: dict[str, float] | None = None
+    bounds_path = dest / "bounds.json"
+    if bounds_path.is_file():
+        try:
+            blob = _json.loads(bounds_path.read_text(encoding="utf-8"))
+            if isinstance(blob, dict):
+                if isinstance(blob.get("meta"), dict):
+                    bounds_meta = blob["meta"]
+                bb = blob.get("bounds")
+                if isinstance(bb, list) and len(bb) == 4:
+                    extent_out = {
+                        "west": float(bb[0]),
+                        "south": float(bb[1]),
+                        "east": float(bb[2]),
+                        "north": float(bb[3]),
+                    }
+        except Exception:
+            logger.debug("bad bounds.json for %s", catalog_id, exc_info=True)
+
+    time_list = meta.get("time_list")
+    if not isinstance(time_list, list):
+        time_list = []
+    blocks = [str(t) for t in time_list if t]
+    first_block = blocks[0] if blocks else None
+    last_block = blocks[-1] if blocks else None
+    coverage_text: str | None = None
+    if first_block and last_block:
+        start = _format_block_key(first_block)
+        end = _format_block_key(last_block)
+        coverage_text = (
+            start
+            if start == end
+            else f"{start} 起，共 {len(blocks)} 个时间块，末块 {end}"
+        )
+
+    identity = _layer_identity_fields(catalog_id)
+    # 变量口径与覆盖/点查/统计对齐（外部测试报告 优先2 验收「返回一致的变量」）：
+    # 身份证给的是变量代号 sm/vod/omega，而 meta.json 的 label 常写成大写的 SM/VOD。
+    # 优先用身份证口径；身份证缺失时才回落到 label，并原样留一份备查。
+    raw_label = str(meta.get("label") or bounds_meta.get("variable_id") or "").strip()
+    variable = identity.get("variable") or raw_label
+    unit_raw = str(meta.get("unit") or "").strip()
+
+    # 时间事实走共用函数（与覆盖/统计三处同源，报告 优先2「共用解析逻辑」）
+    facts = _temporal_facts(blocks)
+
+    return {
+        "ok": True,
+        "layer": {
+            "layer_id": catalog_id,
+            "display_name": _layer_display_name(catalog_id) or catalog_id,
+            "description": "运行期产物图层（本地已物化的科学栅格）。"
+            + (
+                f" 源文件 {meta['source_filename']}"
+                if meta.get("source_filename")
+                else ""
+            ),
+            "category": "imported",
+            "status": "ready",
+            "workflow_id": str(meta.get("workflow_id") or ""),
+            "workflow_name": "",
+            "engine": "local",
+            "run_readiness": "ready",
+            "run_readiness_summary": "本地产物已注册为 overlay",
+            "run_readiness_notes": [],
+            "supports_time": bool(blocks),
+            "is_realtime": False,
+            "temporal_coverage": coverage_text,
+            "extent": extent_out,
+            "tags": ["imported", "local"],
+            # 与覆盖/取值两处对齐的来源与变量信息
+            "source": identity.get("source"),
+            "source_label": identity.get("source_label"),
+            "variable": variable,
+            "variable_label": identity.get("variable_label") or raw_label,
+            "raw_label": raw_label or None,
+            "unit": unit_raw or identity.get("unit"),
+            "unit_label": identity.get("unit_label"),
+            "time_blocks": facts["time_blocks"],
+            "block_count": facts["block_count"],
+            "period_start": facts["period_start"],
+            "period_end": facts["period_end"],
+            "native_step": str(meta.get("native_step") or "") or None,
+            # native_step 是「原始步长声明」，不等于「真有几帧」。
+            # 下面三项才是可以直接照着说的结论（外部测试报告 优先3）。
+            "is_single_block": facts["is_single_block"],
+            "time_span_days": facts["time_span_days"],
+            "temporal_summary": facts["temporal_summary"],
+        },
+    }
+
+
 def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     """Return safe metadata for one catalog layer (ACL filtered)."""
     catalog_id = str(args.get("catalog_id") or "").strip()
@@ -319,6 +463,11 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
 
     desc = get_layer_descriptor(catalog_id)
     if desc is None:
+        # imported-* 是运行期产物，不在 catalog_seeds 里（外部测试报告 优先2）：
+        # 旧实现只查描述符 ⇒ 同一个 ID 覆盖查询成功、元数据却回「未找到图层」。
+        imported = _imported_overlay_meta(catalog_id)
+        if imported is not None:
+            return imported
         return {"ok": False, "error": f"未找到图层: {catalog_id}"}
 
     tags = getattr(desc, "tags", None) or []
@@ -645,6 +794,13 @@ def _sample_one_layer(
                 "display_name": display,
                 "value": raw.get("value"),
                 "time": raw.get("time") or time,
+                # 每条样值自带"请求日期 / 实际时间块"（外部测试报告 优先3）：
+                # 六个图层各是一片不同区间时，模型不会再把上一层的区间套到下一层。
+                "requested_time": raw.get("requested_time", time),
+                "actual_time": raw.get("actual_time"),
+                "period_start": raw.get("period_start"),
+                "period_end": raw.get("period_end"),
+                "is_single_block": raw.get("is_single_block"),
                 "quality": quality,
                 "quality_label": quality_label,
                 "error": raw.get("error"),
@@ -1107,15 +1263,27 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
                     local_dates = [str(d) for d in raw[:366] if d is not None]
         except Exception:
             logger.debug("meta time_list unavailable for %s", catalog_id, exc_info=True)
+    resolved = _resolve_coverage(
+        requested=requested, local_dates=local_dates, online=online
+    )
+    # 时间事实与元数据/统计同源（报告 优先2「共用解析逻辑」）：
+    # period_* 描述「这次实际命中的那一片」，is_single_block/span 描述「整层只有几片」。
+    facts = _temporal_facts(local_dates)
+    hit_start, hit_end = _block_period(resolved.get("actual_time"))
     return {
         "ok": True,
         "catalog_id": catalog_id,
         "display_name": _layer_display_name(catalog_id),
         "requested_time": requested,
         # R09/R10：一句话回答"这天到底有没有"，channels 明细保留兼容旧调用
-        "resolved": _resolve_coverage(
-            requested=requested, local_dates=local_dates, online=online
-        ),
+        "resolved": resolved,
+        "period_start": hit_start,
+        "period_end": hit_end,
+        "block_count": facts["block_count"],
+        "time_blocks": facts["time_blocks"],
+        "is_single_block": facts["is_single_block"],
+        "time_span_days": facts["time_span_days"],
+        "temporal_summary": facts["temporal_summary"],
         "channels": {
             "online": online,
             "local": {"dates": local_dates, "count": len(local_dates)},
@@ -1144,6 +1312,319 @@ def _layer_display_name(catalog_id: str) -> str | None:
         return str(label) if label else UNKNOWN_LAYER_NAME
     except Exception:  # pragma: no cover
         return None
+
+
+def _block_period(key: str | None) -> tuple[str | None, str | None]:
+    """`20251201_20260201` → ('20251201', '20260201')；单日键两个值相同。"""
+    raw = str(key or "").strip()
+    block = re.fullmatch(r"(\d{8})_(\d{8})", raw)
+    if block:
+        return block.group(1), block.group(2)
+    single = re.fullmatch(r"(\d{8})", raw)
+    if single:
+        return single.group(1), single.group(1)
+    return None, None
+
+
+def _temporal_facts(blocks: Any) -> dict[str, Any]:
+    """时间片键列表 → 「可以直接照着说」的时间事实（外部测试报告 优先3）。
+
+    ★ 唯一真源：覆盖（get_layer_coverage）、元数据（get_layer_meta）、
+    统计（get_layer_statistics）三处都调本函数，保证同一图层在任何工具里
+    给出的片数 / 跨度 / 措辞逐字一致（报告 优先2 要求"共用解析逻辑"）。
+
+    为什么需要它：``native_step`` 只是**原始步长声明**，不代表真有几帧。
+    实测 SMAP 产物 ``native_step="1d"``、风云是 ``"1M"``，但两者都只有
+    **一片**、分别跨 63 / 31 天的整段合成 ⇒ 直接念 native_step 会得出
+    "每日 1 帧 / 每月 1 帧"的错误结论。
+    """
+    keys = [str(b) for b in (blocks or []) if b]
+    out: dict[str, Any] = {
+        "time_blocks": keys[:366],
+        "block_count": len(keys),
+        "period_start": None,
+        "period_end": None,
+        "is_single_block": False,
+        "time_span_days": None,
+        "temporal_summary": None,
+    }
+    if not keys:
+        return out
+    first_start, first_end = _block_period(keys[0])
+    last_start, last_end = _block_period(keys[-1])
+    out["period_start"] = first_start
+    out["period_end"] = last_end
+    if first_start and last_end:
+        try:
+            from datetime import date as _date
+
+            _d1 = _date(
+                int(first_start[:4]), int(first_start[4:6]), int(first_start[6:8])
+            )
+            _d2 = _date(int(last_end[:4]), int(last_end[4:6]), int(last_end[6:8]))
+            out["time_span_days"] = (_d2 - _d1).days + 1
+        except Exception:
+            out["time_span_days"] = None
+    # 「单片且这一片跨多天」才算时间块；单片单日仍是逐日帧，不能算块。
+    out["is_single_block"] = bool(
+        first_start and first_start != first_end and len(keys) == 1
+    )
+    span = out["time_span_days"]
+    if out["is_single_block"] and span:
+        out["temporal_summary"] = (
+            f"单幅时间块 {_format_block_key(keys[0])}（共 {span} 天，非逐日）："
+            "该图层只有这一片栅格，任何日期取到的都是这一整块的值"
+        )
+    elif len(keys) == 1:
+        out["temporal_summary"] = f"仅 1 个时间片：{_format_block_key(keys[0])}"
+    else:
+        out["temporal_summary"] = (
+            f"共 {len(keys)} 个时间片，{_format_block_key(keys[0])} 至 "
+            f"{_format_block_key(keys[-1])}"
+        )
+    return out
+
+
+def _parse_bbox(raw: Any) -> tuple[float, float, float, float] | None:
+    """``[西, 南, 东, 北]``（WGS84，度）→ 4 个 float；非法返回 None。"""
+    if raw is None or raw == "":
+        return None
+    vals: list[float] = []
+    try:
+        if isinstance(raw, str):
+            parts = [p for p in re.split(r"[,\s]+", raw.strip()) if p]
+        elif isinstance(raw, (list, tuple)):
+            parts = list(raw)
+        else:
+            return None
+        if len(parts) != 4:
+            return None
+        vals = [float(p) for p in parts]
+    except Exception:
+        return None
+    west, south, east, north = vals
+    if not all(abs(v) <= 1e6 for v in vals):
+        return None
+    if not (-180.0 <= west < east <= 180.0):
+        return None
+    if not (-90.0 <= south < north <= 90.0):
+        return None
+    return west, south, east, north
+
+
+def _wgs84_bbox_window(ds: Any, bbox: tuple[float, float, float, float]) -> Any:
+    """WGS84 经纬度框 → 栅格自身投影/像素下的读取窗口（越界自动裁剪）。
+
+    统计不能假设源栅格是经纬度网格：SMAP/FY 产物是 EASE-Grid（EPSG:6933），
+    直接拿 110°E/35°N 去 ``from_bounds`` 会得到错误的行列。这里先做
+    WGS84 → 栅格 CRS 的边界换算，再按像素窗口读取（只读该窗口，省内存）。
+    与栅格范围无交集时返回 None。
+    """
+    from rasterio.warp import transform_bounds
+    from rasterio.windows import Window, from_bounds
+
+    west, south, east, north = bbox
+    if ds.crs is not None and str(ds.crs).upper() not in {"EPSG:4326"}:
+        west, south, east, north = transform_bounds(
+            "EPSG:4326", ds.crs, west, south, east, north, densify_pts=21
+        )
+    win = from_bounds(west, south, east, north, transform=ds.transform)
+    win = win.round_offsets().round_lengths()
+    col0 = max(0, int(win.col_off))
+    row0 = max(0, int(win.row_off))
+    col1 = min(int(ds.width), int(win.col_off + win.width))
+    row1 = min(int(ds.height), int(win.row_off + win.height))
+    if col1 <= col0 or row1 <= row0:
+        return None
+    return Window(col0, row0, col1 - col0, row1 - row0)
+
+
+def _window_extent_wgs84(ds: Any, window: Any = None) -> dict[str, float] | None:
+    """读取窗口（默认整幅）覆盖的空间范围，换算回 WGS84 经纬度。"""
+    try:
+        from rasterio.warp import transform_bounds
+
+        box = ds.window_bounds(window) if window is not None else ds.bounds
+        left, bottom, right, top = (float(v) for v in box)
+        if ds.crs is not None and str(ds.crs).upper() not in {"EPSG:4326"}:
+            left, bottom, right, top = transform_bounds(
+                ds.crs, "EPSG:4326", left, bottom, right, top, densify_pts=21
+            )
+        return {
+            "west": round(float(left), 6),
+            "south": round(float(bottom), 6),
+            "east": round(float(right), 6),
+            "north": round(float(top), 6),
+        }
+    except Exception:
+        logger.debug("extent transform failed", exc_info=True)
+        return None
+
+
+def _raster_full_stats(
+    raster_path: Any, bbox: tuple[float, float, float, float] | None = None
+) -> dict[str, Any]:
+    """栅格只读统计（排除 NoData），可选只统计某个经纬度框。
+
+    用 ``masked=True`` 读取——rasterio 会按源文件 nodata 自动掩膜，
+    因此 NoData 不会进均值；不做任何写回、不生成新图层。
+    源文件不是 GeoTIFF（如 .mat / .nc）或读取失败时，返回中文原因而不是抛异常
+    ——工具异常会让整轮对话中断。
+    """
+    try:
+        import rasterio
+
+        with rasterio.open(raster_path) as ds:
+            window = None
+            if bbox is not None:
+                window = _wgs84_bbox_window(ds, bbox)
+                if window is None:
+                    return {
+                        "ok": False,
+                        "error": "bbox 与栅格实际范围没有交集（请检查经纬度顺序与数值）",
+                        "extent": _window_extent_wgs84(ds),
+                    }
+            data = ds.read(1, window=window, masked=True)
+            total = int(data.shape[0] * data.shape[1])
+            count = int(data.count())
+            extent = _window_extent_wgs84(ds, window)
+            if count == 0:
+                return {
+                    "ok": False,
+                    "error": "该范围内没有有效像元（全部为 NoData）",
+                    "valid_pixels": 0,
+                    "total_pixels": total,
+                    "valid_ratio": 0.0,
+                    "extent": extent,
+                }
+            return {
+                "ok": True,
+                "mean": float(data.mean()),
+                "min": float(data.min()),
+                "max": float(data.max()),
+                "std": float(data.std()) if count > 1 else None,
+                "valid_pixels": count,
+                "total_pixels": total,
+                "valid_ratio": round(count / total, 6) if total else None,
+                "crs": ds.crs.to_string() if ds.crs else None,
+                "width": int(ds.width),
+                "height": int(ds.height),
+                "analyzed_width": int(data.shape[1]),
+                "analyzed_height": int(data.shape[0]),
+                # 报告 优先1 要求"返回实际范围"：这里给出本次统计真正覆盖的经纬度框
+                "extent": extent,
+            }
+    except Exception as exc:
+        logger.debug("raster stats failed: %s", raster_path, exc_info=True)
+        return {"ok": False, "error": f"栅格读取失败（可能不是 GeoTIFF 源）：{exc}"}
+
+
+def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    """整层只读统计（mean/min/max/std/有效像元数）——不建图层、不跑工作流。
+
+    只统计「该图层该时间片的全范围有效像元」，**不是**点样本均值，
+    也**不会**默认缩到当前视口（外部测试报告 优先1）。
+    """
+    catalog_id = str(args.get("catalog_id") or args.get("layer_id") or "").strip()
+    if not catalog_id:
+        return {"ok": False, "error": "catalog_id 不能为空"}
+    accessible = _filter_ids([catalog_id], cred)
+    if catalog_id not in set(accessible):
+        return {"ok": False, "error": f"无权访问图层: {catalog_id}"}
+
+    requested = _parse_date8(args.get("time") or args.get("date"))
+    # 可选空间范围（报告 优先1「输入至少包括统计范围」）：缺省＝整幅，绝不默认缩到视口
+    bbox_raw = args.get("bbox")
+    bbox = _parse_bbox(bbox_raw)
+    if bbox is None and bbox_raw not in (None, ""):
+        return {
+            "ok": False,
+            "catalog_id": catalog_id,
+            "error": "bbox 需要 4 个数字 [西, 南, 东, 北]（WGS84 经纬度，"
+            "西<东、南<北，例如 [105, 30, 115, 40]）",
+        }
+    from app.services.overlay_registry import get_overlay_spec
+
+    try:
+        spec = get_overlay_spec(catalog_id)
+    except Exception:
+        logger.debug("overlay spec unavailable for %s", catalog_id, exc_info=True)
+        spec = None
+    if spec is None:
+        return {
+            "ok": False,
+            "error": "该图层不是本地栅格产物，暂不支持整层统计"
+            "（请给出已加载的 imported 图层 ID）",
+            "catalog_id": catalog_id,
+        }
+
+    # 只支持 GeoTIFF 源：catalog 里部分老图层是 .mat/.nc，rasterio 直接读会抛异常
+    reader = str(getattr(spec, "source_reader", "") or "").strip().lower()
+    if reader and reader != "geotiff":
+        return {
+            "ok": False,
+            "catalog_id": catalog_id,
+            "display_name": _layer_display_name(catalog_id),
+            "requested_time": requested,
+            "error": f"该图层的源文件是 {reader} 格式（非 GeoTIFF），暂不支持整层统计；"
+            "请改用已物化为栅格的 imported-* 图层。",
+        }
+
+    spec_time = requested or getattr(spec, "default_time", None)
+    actual_key = spec.resolve_time_key(spec_time)
+    if actual_key is None:
+        try:
+            blocks = [str(t) for t in (getattr(spec, "time_list", None) or [])][:366]
+        except Exception:
+            blocks = []
+        return {
+            "ok": False,
+            "catalog_id": catalog_id,
+            "display_name": _layer_display_name(catalog_id),
+            "requested_time": requested,
+            "error": "该日期没有对应的栅格时间片",
+            "available_blocks": blocks,
+        }
+
+    try:
+        src_path = spec.resolve_source_path(actual_key)
+    except Exception:
+        logger.debug("statistics source path failed for %s", catalog_id, exc_info=True)
+        src_path = None
+    if src_path is None:
+        return {
+            "ok": False,
+            "catalog_id": catalog_id,
+            "requested_time": requested,
+            "actual_time": actual_key,
+            "error": "找不到该时间片对应的栅格文件（产物可能已被清理）",
+        }
+
+    stats = _raster_full_stats(src_path, bbox=bbox)
+    facts = _temporal_facts(getattr(spec, "time_list", None) or [])
+    payload: dict[str, Any] = {
+        "ok": bool(stats.get("ok")),
+        "catalog_id": catalog_id,
+        "display_name": _layer_display_name(catalog_id),
+        "scope": "bbox" if bbox is not None else "full_extent",
+        "requested_bbox": list(bbox) if bbox is not None else None,
+        "statistic": "mean",
+        "requested_time": requested,
+        # 与请求日期区分开：这才是数据实际覆盖的时间块（优先3 的前置能力）
+        "actual_time": actual_key,
+        "period_start": facts["period_start"],
+        "period_end": facts["period_end"],
+        # 「整层只有一片且跨多天」——不能用 native_step 推（优先3）
+        "is_single_block": facts["is_single_block"],
+        "time_span_days": facts["time_span_days"],
+        "block_count": facts["block_count"],
+        "temporal_summary": facts["temporal_summary"],
+        **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
+        **stats,
+    }
+    if not stats.get("ok") and "error" not in stats:
+        payload["error"] = "统计失败"
+    return payload
 
 
 def _list_workflow_timers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:

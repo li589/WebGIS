@@ -372,14 +372,18 @@ function executeAgentUiIntentCore(
       dominant.list[dominant.list.length - 1],
     )}`
     if (eff.nativeMatch) {
+      // 报告优先4：动作成功也要给「图层 + 具体日期」的确定说法，
+      // 不能只丢一个笼统的覆盖区间（否则用户不知道到底切到哪天）。
+      const frameHint =
+        eff.label && eff.label !== requested ? `（实际命中时间块 ${eff.label}）` : ''
       return {
         ok: true,
-        message: `时间轴已切到 ${eff.label}（${dominant.name} 该日有数据）`,
+        message: `「${dominant.name}」已切到 ${requested}${frameHint}`,
       }
     }
     return {
       ok: true,
-      message: `${requested} 该日没有数据，实际显示的是 ${eff.label}\n（${dominant.name} 的可用范围是 ${span}，已自动对齐到最近可用帧）`,
+      message: `「${dominant.name}」已设为 ${requested}，但该日没有数据，实际显示的是 ${eff.label}\n（可用范围是 ${span}，已自动对齐到最近可用帧）`,
     }
   }
 

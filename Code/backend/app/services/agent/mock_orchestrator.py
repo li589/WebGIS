@@ -361,6 +361,112 @@ def _build_timeline_reply(
     ), True
 
 
+def _pick_stat_target(
+    layers: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """挑统计目标：优先「选中」，其次「唯一可见」，再次「仅一个图层」。
+
+    多个候选时返回需要反问的提示，绝不猜。
+    """
+    selected = [la for la in layers if la.get("selected")]
+    if len(selected) == 1:
+        return selected[0], None
+    visible = [la for la in layers if la.get("visible")]
+    if len(visible) == 1:
+        return visible[0], None
+    if len(layers) == 1:
+        return layers[0], None
+    if not layers:
+        return None, "当前地图上没有图层，先添加一个再统计。"
+    if len(selected) > 1:
+        return None, "当前选中了多个图层，请先只选中要统计的那一个。"
+    names = "、".join(f"「{_display(la)}」" for la in (visible or layers)[:5])
+    return None, f"当前可见（或已加载）的图层有多个：{names}。请指明要统计哪一个。"
+
+
+def _statistics_reply(
+    text: str,
+    layers: list[dict[str, Any]],
+    client_context: dict[str, Any] | None,
+    sid: str,
+    intents: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """整层只读统计（规则演示模式也能算，不再回答「没有统计能力」）。"""
+    target, why = _pick_stat_target(layers)
+    if target is None:
+        return {
+            "session_id": sid,
+            "reply": why or "请先指定一个图层。",
+            "ui_intents": intents,
+        }
+
+    from app.services.agent.server_tools_runtime import _get_layer_statistics
+
+    day = _parse_date_arg(text)
+    if not day and isinstance(client_context, dict):
+        timeline = client_context.get("timeline")
+        if isinstance(timeline, dict):
+            raw_date = str(timeline.get("date") or "").strip()
+            if raw_date:
+                day = raw_date
+    res = _get_layer_statistics(
+        {"catalog_id": target["catalog_id"], "time": day or None},
+        cred=None,
+    )
+
+    name = _display(target)
+    if not res.get("ok"):
+        reason = str(res.get("error") or "统计未成功")
+        if res.get("available_blocks"):
+            blocks = "、".join(str(b) for b in res["available_blocks"][:3])
+            reason = f"{reason}（该图层可用时间块：{blocks}）"
+        return {
+            "session_id": sid,
+            "reply": f"「{name}」整层统计没有完成：{reason}。未创建图层、未提交工作流。",
+            "ui_intents": intents,
+        }
+
+    source = str(res.get("source_label") or "").strip()
+    unit = str(res.get("unit_label") or res.get("unit") or "").strip()
+    period_start = str(res.get("period_start") or "").strip()
+    period_end = str(res.get("period_end") or "").strip()
+    if period_start and period_start != period_end:
+        block = f"{_readable_date(period_start)} 至 {_readable_date(period_end)}"
+    elif period_start:
+        block = _readable_date(period_start)
+    else:
+        block = str(res.get("actual_time") or "")
+    mean = res.get("mean")
+    pct = res.get("valid_ratio")
+    # 图层名里往往已含来源（「SMAP 土壤水分」），就别再补一个（SMAP）
+    suffix = f"（{source}）" if source and source not in name else ""
+    lines = [
+        f"「{name}」{suffix}整幅栅格的只读统计：",
+        f"- 均值：{float(mean):.4f} {unit}".rstrip()
+        if mean is not None
+        else "- 均值：—",
+        f"- 范围：{float(res['min']):.4f} ~ {float(res['max']):.4f}"
+        if res.get("min") is not None and res.get("max") is not None
+        else "- 范围：—",
+        f"- 有效像元：{res.get('valid_pixels')} / {res.get('total_pixels')}"
+        + (f"（占 {float(pct) * 100:.1f}%）" if pct is not None else ""),
+        f"- 实际数据时间块：{block}",
+    ]
+    requested = str(res.get("requested_time") or "").strip()
+    if requested and requested != str(res.get("actual_time") or ""):
+        lines.append(
+            f"- 你请求的日期是 {_readable_date(requested)}，它落在上面的时间块内，"
+            "该图层没有这一天的独立观测。"
+            if res.get("is_single_block")
+            else f"- 你请求的日期是 {_readable_date(requested)}，实际取的是上面那个时间块。"
+        )
+    lines.append(
+        "统计范围是整幅栅格的有效像元（已排除 NoData），不是点样本均值，也未按视口裁剪。"
+    )
+    lines.append("本次只读统计，未创建图层、未写入产物、未提交工作流。")
+    return {"session_id": sid, "reply": "\n".join(lines), "ui_intents": intents}
+
+
 def mock_chat(
     message: str,
     *,
@@ -391,6 +497,12 @@ def mock_chat(
             "reply": "请告诉我你想做什么，例如「打开降水图层」或「有哪些活动图层」。",
             "ui_intents": [],
         }
+
+    # 整层只读统计：必须排在「列图层」与「工作流」两个分支之前——
+    # ① 「列图层」的 `当前图层` 会误命中「只读计算当前图层全范围均值」；
+    # ② 「工作流」分支会把「不要运行任何工作流」当成工作流请求。
+    if re.search(r"平均|均值|统计|像元数|最大|最小|mean|average", text, re.I):
+        return _statistics_reply(text, layers, client_context, sid, intents)
 
     # List active layers
     if re.search(r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", text, re.I):

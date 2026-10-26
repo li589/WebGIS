@@ -18,14 +18,39 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const { requestInteractionMode } = useDrawSessionTransition()
 
+/**
+ * 地图是否可用（由 DashboardView 直接透传 MapCanvas 的真源，不另造状态）。
+ * 返回 undefined = 未知（如 3D 实验模式没有 MapCanvas），此时不拦用户。
+ */
+const props = defineProps<{
+  getMapReady?: () => boolean | undefined
+  getMapError?: () => string | null
+}>()
+
+function mapBlocked(): boolean {
+  return props.getMapReady?.() === false
+}
+
+function mapBlockedHint(): string {
+  const err = String(props.getMapError?.() ?? '').trim()
+  return err ? `地图未就绪：${err}` : '地图尚未初始化完成，暂不可用'
+}
+
 /** 「浏览」与「量算」两组，视觉上用一条淡灰实线分开 */
 const browseTools = [
-  { mode: 'move' as InteractionMode, label: '移动', desc: '拖动平移地图', icon: Move },
+  {
+    mode: 'move' as InteractionMode,
+    label: '移动',
+    desc: '拖动平移地图',
+    icon: Move,
+    needsMap: true,
+  },
   {
     mode: 'select' as InteractionMode,
     label: '点查',
     desc: '点击地图查询要素属性',
     icon: Crosshair,
+    needsMap: true,
   },
 ]
 
@@ -35,9 +60,25 @@ const measureTools = [
     label: '测量',
     desc: '点击打点，双击完成量算',
     icon: Ruler,
+    needsMap: true,
   },
-  { mode: 'draw' as InteractionMode, label: '绘制', desc: '点击加顶点，双击闭合成面', icon: Pen },
+  {
+    mode: 'draw' as InteractionMode,
+    label: '绘制',
+    desc: '点击加顶点，双击闭合成面',
+    icon: Pen,
+    needsMap: true,
+  },
 ]
+
+/** 依赖地图的工具在地图未就绪时置灰（报告优先4：不让用户进入无反馈的点查状态） */
+function toolDisabled(tool: { needsMap?: boolean }): boolean {
+  return Boolean(tool.needsMap) && mapBlocked()
+}
+
+function toolDesc(tool: { desc: string; needsMap?: boolean }): string {
+  return toolDisabled(tool) ? mapBlockedHint() : tool.desc
+}
 
 const hasMeasurePoints = computed(() => uiStore.measureState.points.length > 0)
 const currentMode = computed(() => uiStore.interactionMode)
@@ -52,6 +93,11 @@ const modeLabel = computed(
 
 async function pickMode(mode: InteractionMode, close: () => void) {
   close()
+  // 兜底：即使按钮状态没刷新，点到依赖地图的工具也要明确拒绝并留痕
+  if (mode !== 'move' && mapBlocked()) {
+    logStore.logOperation('map-tool-blocked', `${mode} 不可用：${mapBlockedHint()}`)
+    return
+  }
   const ok = await requestInteractionMode(mode)
   if (!ok) return
   const label =
@@ -78,14 +124,16 @@ function clearMeasure(close: () => void) {
         v-for="tool in browseTools"
         :key="tool.mode"
         class="tm-item"
-        :class="{ 'is-current': currentMode === tool.mode }"
+        :class="{ 'is-current': currentMode === tool.mode, 'is-disabled': toolDisabled(tool) }"
         type="button"
+        :disabled="toolDisabled(tool)"
+        :title="toolDisabled(tool) ? toolDesc(tool) : undefined"
         @click="pickMode(tool.mode, close)"
       >
         <component :is="tool.icon" :size="14" class="tm-item-icon" aria-hidden="true" />
         <span class="tm-item-body">
           <span class="tm-item-title">{{ tool.label }}</span>
-          <span class="tm-item-desc">{{ tool.desc }}</span>
+          <span class="tm-item-desc">{{ toolDesc(tool) }}</span>
         </span>
         <Check
           v-if="currentMode === tool.mode"
@@ -101,14 +149,16 @@ function clearMeasure(close: () => void) {
         v-for="tool in measureTools"
         :key="tool.mode"
         class="tm-item"
-        :class="{ 'is-current': currentMode === tool.mode }"
+        :class="{ 'is-current': currentMode === tool.mode, 'is-disabled': toolDisabled(tool) }"
         type="button"
+        :disabled="toolDisabled(tool)"
+        :title="toolDisabled(tool) ? toolDesc(tool) : undefined"
         @click="pickMode(tool.mode, close)"
       >
         <component :is="tool.icon" :size="14" class="tm-item-icon" aria-hidden="true" />
         <span class="tm-item-body">
           <span class="tm-item-title">{{ tool.label }}</span>
-          <span class="tm-item-desc">{{ tool.desc }}</span>
+          <span class="tm-item-desc">{{ toolDesc(tool) }}</span>
         </span>
         <Check
           v-if="currentMode === tool.mode"
@@ -134,7 +184,10 @@ function clearMeasure(close: () => void) {
         </span>
       </button>
 
-      <p class="tm-hint">提示：测量与绘制点完请双击结束；用完切回「移动」即可继续浏览地图</p>
+      <p v-if="mapBlocked()" class="tm-hint">
+        {{ mapBlockedHint() }}。点查 / 测量 / 绘制暂不可用；坐标查询仍可在助手对话框里用。
+      </p>
+      <p v-else class="tm-hint">提示：测量与绘制点完请双击结束；用完切回「移动」即可继续浏览地图</p>
     </template>
   </ToolbarMenu>
 </template>

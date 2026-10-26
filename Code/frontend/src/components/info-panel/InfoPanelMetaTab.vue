@@ -86,13 +86,40 @@ const productRoleText = computed(() => {
 })
 
 /**
+ * `20251201_20260201` → 跨度天数（含首尾）；单日键返回 1；解析失败返回 null。
+ * 用来判断「这一个时间片到底是单日，还是一段合成块」。
+ */
+function blockSpanDays(raw: string): number | null {
+  const key = raw.trim()
+  const block = /^(\d{4})(\d{2})(\d{2})_(\d{4})(\d{2})(\d{2})$/.exec(key)
+  const single = /^(\d{4})(\d{2})(\d{2})$/.exec(key)
+  const toMs = (y: string, m: string, d: string) => Date.UTC(Number(y), Number(m) - 1, Number(d))
+  if (block) {
+    const [, y1, m1, d1, y2, m2, d2] = block
+    const days = (toMs(y2, m2, d2) - toMs(y1, m1, d1)) / 86_400_000
+    return Number.isFinite(days) ? Math.round(days) + 1 : null
+  }
+  if (single) return 1
+  return null
+}
+
+/**
  * 原生步长的通俗说法。
  *
  * 只描述「多久一帧」，不断言是否为合成产品
  * （`1M` 也可能是月度快照，说成「月合成」会误导）。
+ * ⚠ 若该图层只有**一个时间片且跨多天**（如 SMAP 的 61 天块），
+ * `native_step` 写 `1d` 也不代表每天一帧——此时说「每日 1 帧」会误导，
+ * 应直接说「单幅时间块」（外部测试报告 优先3）。
  */
 const nativeStepText = computed(() => {
-  const raw = String(props.displayLayer.importedRasterNativeStep ?? '').trim()
+  const dl = props.displayLayer
+  const timeCount = Number(dl.importedRasterTimeCount ?? 0)
+  const spanDays = blockSpanDays(String(dl.importedRasterEffectiveTime ?? ''))
+  if (timeCount === 1 && spanDays !== null && spanDays > 1) {
+    return `单幅时间块（共 ${spanDays} 天，非逐日）`
+  }
+  const raw = String(dl.importedRasterNativeStep ?? '').trim()
   if (!raw) return ''
   const key = raw.toLowerCase()
   const hour = /^(\d+)h$/.exec(key)

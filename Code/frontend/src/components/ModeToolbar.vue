@@ -70,6 +70,10 @@ const mergedWorkflowSummary = computed(() => {
 
 const props = defineProps<{
   tileSourceId: TileSourceId
+  /** 地图是否可用（透传 MapCanvas 真源；undefined = 未知，不拦用户） */
+  getMapReady?: () => boolean | undefined
+  /** 地图初始化失败原因（中文），用于工具置灰时的说明 */
+  getMapError?: () => string | null
 }>()
 
 const emit = defineEmits<{
@@ -143,7 +147,7 @@ function handleWorkflowEditor() {
         <DataImportMenu />
 
         <!-- 地图工具：移动 / 点查 / 测量 / 绘制 收敛成一个下拉 -->
-        <MapToolMenu />
+        <MapToolMenu :get-map-ready="getMapReady" :get-map-error="getMapError" />
 
         <!-- 底图：来源 + 风格 收敛成一个下拉 -->
         <BasemapMenu

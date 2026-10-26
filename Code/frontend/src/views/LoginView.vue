@@ -318,7 +318,7 @@ async function enterAsGuest() {
           :disabled="submitting"
           block
         >
-          {{ submitting ? '登录中…' : '进入系统' }}
+          {{ submitting ? '登录中…' : '账号登录' }}
         </AppButton>
 
         <!-- 游客一键进入：仅当构建期配置了访客账号时出现；不做自动登录，管理员路径不受影响 -->
@@ -332,7 +332,7 @@ async function enterAsGuest() {
             block
             @click="enterAsGuest"
           >
-            {{ guestEntering ? '正在进入…' : '以游客身份进入' }}
+            {{ guestEntering ? '正在进入…' : '游客登录' }}
           </AppButton>
           <p class="guest-tip">游客可浏览产品、运行工作流；不能修改数据。</p>
         </template>
@@ -838,7 +838,7 @@ async function enterAsGuest() {
   color: var(--danger);
 }
 
-/* 游客一键进入：与上方「进入系统」之间的分隔线与说明 */
+/* 游客一键进入：与上方「账号登录」之间的分隔线与说明 */
 .guest-sep {
   display: flex;
   align-items: center;

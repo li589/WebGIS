@@ -712,6 +712,8 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       <div class="overlay overlay-top cgda-boot-reveal cgda-boot-reveal--1">
         <ModeToolbar
           :tile-source-id="tileSourceId"
+          :get-map-ready="handleIsMapReady"
+          :get-map-error="handleGetMapError"
           @change-tile-source="handleTileSourceChange"
           @open-screenshot="handleOpenScreenshot"
           @open-settings="handleOpenSettings"
