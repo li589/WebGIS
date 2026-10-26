@@ -791,8 +791,10 @@ def _build_system(
         "- 统计对象若说“当前选中图层”，就用 client_context 里 selected=true 的那一个；"
         "唯一可见图层同理；只有存在多个候选且用户没指明时，才反问要统计哪一个。\n"
         "- 该工具只读：不建图层、不写产物、不跑工作流，因此不需要确认卡。\n"
-        "- 回答时必须分开说清三件事：请求日期（requested_time）、**数据实际覆盖的时间块**"
-        "（actual_time / period_start ~ period_end）、统计范围是整幅栅格而非当前视口；"
+        "- 回答时必须分开说清三件事：**用户明确指定的日期**（用户没指定就说"
+        "“当前时间轴停在 X”，**不要说成“你请求的日期是 X”**，那会让人以为他指定过）、"
+        "数据实际覆盖的时间块（actual_time / period_start ~ period_end）、"
+        "统计范围是整幅栅格而非当前视口；"
         "并报出 mean 与有效像元数 valid_pixels，单位用 unit_label。\n"
         "- 返回里的 extent 是**本次真正统计到的经纬度框**，回答时一并说明；"
         "只有用户明确说“只算某个区域/经纬度框”时才传 bbox，**不要**用当前视口坐标"
@@ -874,6 +876,55 @@ def _intents_from_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def _server_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [c for c in calls if c.get("name") in _SERVER_TOOLS]
+
+
+# 一轮里模型可能同时下发「界面意图」和「服务端工具」（例如
+# “切到 X 图层、日期设为 Y，然后算均值”）。OpenAI / Anthropic 都要求
+# 每个 tool_call 都有配对的 tool 结果，否则第二次请求整轮直接 400：
+#   An assistant message with 'tool_calls' must be followed by tool messages
+#   responding to each 'tool_call_id'.
+# 所以界面意图也要回一条占位结果，不能只回服务端工具那几条。
+_UI_TOOL_ACK = json.dumps(
+    {"ok": True, "applied": "前端界面意图，由浏览器执行，服务端无需返回数据"},
+    ensure_ascii=False,
+)
+
+
+def _sanitize_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
+    """只保留 role/content/tool_calls。
+
+    部分服务（如带 reasoning_content 的推理模型）会回带额外字段，
+    原样回放可能被严格校验的服务端拒绝，这里做一次白名单裁剪。
+    """
+    out: dict[str, Any] = {"role": "assistant"}
+    content = message.get("content")
+    out["content"] = content if isinstance(content, str) else (content or "")
+    calls = message.get("tool_calls")
+    if isinstance(calls, list) and calls:
+        out["tool_calls"] = calls
+    return out
+
+
+def _anthropic_tool_uses(content: Any) -> list[dict[str, Any]]:
+    """取出一轮 content 里的全部 tool_use（界面意图与服务端工具都在内）。"""
+    if not isinstance(content, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if str(block.get("type") or "") != "tool_use":
+            continue
+        out.append(
+            {
+                "id": str(block.get("id") or "tool"),
+                "name": str(block.get("name") or ""),
+                "args": block.get("input")
+                if isinstance(block.get("input"), dict)
+                else {},
+            }
+        )
+    return out
 
 
 def _intents_from_anthropic_content(
@@ -1418,7 +1469,8 @@ def _run_chat_impl(
             confirmations: list[dict[str, Any]] = []
             max_hops = _max_tool_hops()
             for hop in range(1, max_hops + 1):
-                if not server_calls:
+                all_uses = _anthropic_tool_uses(data.get("content"))
+                if not all_uses:
                     break
                 steps.append(
                     {
@@ -1427,7 +1479,17 @@ def _run_chat_impl(
                     }
                 )
                 tool_result_blocks: list[dict[str, Any]] = []
-                for sc in server_calls:
+                for sc in all_uses:
+                    if sc["name"] not in _SERVER_TOOLS:
+                        # 界面意图：必须回一条占位结果凑齐配对，否则下一轮 400
+                        tool_result_blocks.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": sc["id"],
+                                "content": _UI_TOOL_ACK,
+                            }
+                        )
+                        continue
                     steps.append(
                         {
                             "type": "tool",
@@ -1455,10 +1517,11 @@ def _run_chat_impl(
                     tool_result_blocks.append(
                         {
                             "type": "tool_result",
-                            "tool_use_id": sc.get("id") or "tool",
+                            "tool_use_id": sc["id"],
                             "content": json.dumps(tres, ensure_ascii=False),
                         }
                     )
+                server_calls = [c for c in all_uses if c["name"] in _SERVER_TOOLS]
                 messages.append({"role": "assistant", "content": data.get("content")})
                 messages.append({"role": "user", "content": tool_result_blocks})
                 if budget:
@@ -1569,7 +1632,7 @@ def _run_chat_impl(
         oai_key = api_key or ("ollama" if provider_kind == "ollama" else None)
 
         for hop in range(1, max_hops + 1):
-            if not server_calls:
+            if not calls:
                 break
             hops_used = hop
             steps.append(
@@ -1578,8 +1641,19 @@ def _run_chat_impl(
                     "summary": f"工具跳 {hop}/{max_hops}",
                 }
             )
-            messages_oai.append(message_obj)
-            for sc in server_calls:
+            messages_oai.append(_sanitize_assistant_message(message_obj))
+            for sc in calls:
+                call_id = str(sc.get("id") or "call")
+                if sc.get("name") not in _SERVER_TOOLS:
+                    # 界面意图：补齐配对，否则下一次请求整轮 400
+                    messages_oai.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": _UI_TOOL_ACK,
+                        }
+                    )
+                    continue
                 tool_calls_done += 1
                 steps.append(
                     {
@@ -1608,7 +1682,7 @@ def _run_chat_impl(
                 messages_oai.append(
                     {
                         "role": "tool",
-                        "tool_call_id": sc.get("id") or "call",
+                        "tool_call_id": call_id,
                         "content": json.dumps(tres, ensure_ascii=False),
                     }
                 )
