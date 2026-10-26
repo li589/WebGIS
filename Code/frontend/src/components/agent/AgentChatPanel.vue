@@ -170,6 +170,8 @@ let pendingStreamText: { id: string; text: string } | null = null
 let stickToBottom = true
 /** 当前发送请求的 AbortController（停止生成） */
 let sendAbort: AbortController | null = null
+/** 由「开启新会话」触发的中止：不再往清空后的列表里补「已停止生成」 */
+let suppressStopHint = false
 
 const sessionTokenTotal = computed(() => sumSessionTokens(messages.value))
 
@@ -258,15 +260,19 @@ function pushSystemHint(text: string) {
 }
 
 function resetChat() {
+  // 2026-10-26：原来在「生成进行中」时只弹一句提示就 return，聊天记录一条都不清，
+  // 用户点了以为按钮坏了（提示说清空、实际没清）。现在改为：先中止当前生成，
+  // 再无条件清空，并如实报出清掉了几条。
+  const clearedCount = Math.max(0, messages.value.length - 1)
+  const hadHistory = clearedCount > 0 || Boolean(sessionId.value)
   if (sending.value) {
-    pushSystemHint('生成进行中——请先点输入框旁的「停止」，再开启新会话。')
-    return
+    // 中止会走 send() 的「已停止生成」分支，那条提示不能插进新会话里
+    suppressStopHint = true
+    stopGenerating()
   }
   // 报告第二轮 P2：点「开启新会话」后「未见消息或会话状态重置」。
   // 原来在「无 sessionId 且只有欢迎语」时直接 return 只留一行小字，
   // 用户看不出发生了什么。现在无论什么状态都执行清理，并如实说明做了什么。
-  const hadSession = Boolean(sessionId.value)
-  const hadMessages = messages.value.length > 1
   messages.value = [
     {
       id: 'welcome',
@@ -279,11 +285,13 @@ function resetChat() {
   errorText.value = null
   streamPhase.value = 'idle'
   liveStatus.value = ''
+  streamingId.value = null
+  stepsOpen.value = false
   sessionMenuOpen.value = false
   stopSendTick()
   pushSystemHint(
-    hadSession || hadMessages
-      ? '已开启新会话：已清空本地消息与服务端会话绑定，下一次提问会自动新建会话。'
+    hadHistory
+      ? `已开启新会话：已清空 ${clearedCount} 条聊天记录，服务端会话也一并解绑，下一次提问会新建会话。`
       : '当前已是全新会话（还没有历史消息）。',
   )
   void scrollToBottom()
@@ -1194,26 +1202,31 @@ async function send() {
     }
     flushStreamText()
     if (isUserInitiatedStop(abortSignal)) {
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (msg) finalizeAssistantHtml(msg)
-      messages.value.push({
-        id: `stop-${Date.now()}`,
-        role: 'system',
-        text: '已停止生成。已输出内容保留。',
-      })
+      // 由「开启新会话」触发的中止：列表已清空，别再补一条「已停止生成」
+      if (!suppressStopHint) {
+        const msg = messages.value.find((m) => m.id === assistantId)
+        if (msg) finalizeAssistantHtml(msg)
+        messages.value.push({
+          id: `stop-${Date.now()}`,
+          role: 'system',
+          text: '已停止生成。已输出内容保留。',
+        })
+      }
       return
     }
     await applyChatResult(res, assistantId, { skipIntents: abortSignal.aborted })
   } catch (err) {
     flushStreamText()
     if (isUserInitiatedStop(abortSignal)) {
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (msg) finalizeAssistantHtml(msg)
-      messages.value.push({
-        id: `stop-${Date.now()}`,
-        role: 'system',
-        text: '已停止生成。已输出内容保留。',
-      })
+      if (!suppressStopHint) {
+        const msg = messages.value.find((m) => m.id === assistantId)
+        if (msg) finalizeAssistantHtml(msg)
+        messages.value.push({
+          id: `stop-${Date.now()}`,
+          role: 'system',
+          text: '已停止生成。已输出内容保留。',
+        })
+      }
     } else if (isTimeoutAbortError(err)) {
       errorText.value = '请求超时'
       messages.value.push({
@@ -1235,6 +1248,7 @@ async function send() {
     }
   } finally {
     sendAbort = null
+    suppressStopHint = false
     const msg = messages.value.find((m) => m.id === assistantId)
     // 2026-10-22：回答结束后执行流程一律折叠。原先「用过工具就保持展开」会把
     // 正文顶出视野，用户看不到回答。需要细节时点开折叠条即可。
