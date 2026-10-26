@@ -36,6 +36,8 @@ const props = defineProps<{
   jobEventNotes: string[]
   jobReportSummary: string
   hasLayerStyleSection: boolean
+  /** 变量角色代号（SM / VOD / OMEGA），非反演产品时为空串 */
+  productRole: string
   workflowError: string | null
   interactionMode: string
   importActionHint: string
@@ -61,6 +63,55 @@ const simplifyMetaForActiveJob = computed(() => {
   if (!props.jobLayer) return false
   const status = props.jobLayer.status
   return status === 'running' || status === 'queued' || status === 'failed'
+})
+
+/** 变量角色代号 → 展示名（报告第七节：变量行要显示 SM / VOD / ω） */
+const PRODUCT_ROLE_NAMES: Record<string, string> = {
+  SM: '土壤水分',
+  VOD: '植被光学厚度',
+  OMEGA: '等效散射 ω',
+}
+
+/**
+ * 「变量」行文案：只在识别到角色码（SM / VOD / OMEGA）时才非空，
+ * 普通导入图层不占位、不显示「未提供」噪音。
+ */
+const productRoleText = computed(() => {
+  const role = String(props.productRole ?? '')
+    .trim()
+    .toUpperCase()
+  if (!role) return ''
+  const name = PRODUCT_ROLE_NAMES[role]
+  return name ? `${name}（${role}）` : role
+})
+
+/**
+ * 原生步长的通俗说法。
+ *
+ * 只描述「多久一帧」，不断言是否为合成产品
+ * （`1M` 也可能是月度快照，说成「月合成」会误导）。
+ */
+const nativeStepText = computed(() => {
+  const raw = String(props.displayLayer.importedRasterNativeStep ?? '').trim()
+  if (!raw) return ''
+  const key = raw.toLowerCase()
+  const hour = /^(\d+)h$/.exec(key)
+  if (hour) return `每 ${hour[1]} 小时 1 帧`
+  const day = /^(\d+)d$/.exec(key)
+  if (day) return Number(day[1]) === 1 ? '每日 1 帧' : `每 ${day[1]} 天 1 帧`
+  if (/^(\d+)m$/.test(key)) return '每月 1 帧'
+  if (/^(\d+)yr$/.test(key)) return '每年 1 帧'
+  return raw
+})
+
+/** 有效时刻：`20251201_20251231` 这类区间块展开成可读区间 */
+const effectiveTimeText = computed(() => {
+  const raw = String(props.displayLayer.importedRasterEffectiveTime ?? '').trim()
+  if (!raw) return ''
+  const block = /^(\d{4})(\d{2})(\d{2})_(\d{4})(\d{2})(\d{2})$/.exec(raw)
+  if (!block) return raw
+  const [, y1, m1, d1, y2, m2, d2] = block
+  return `${y1}-${m1}-${d1} ~ ${y2}-${m2}-${d2}`
 })
 
 const layerMetadata = computed(() => {
@@ -178,15 +229,15 @@ function enterInspectTools() {
       </div>
       <div v-if="displayLayer.isImportedRaster">
         <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
-        <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
+        <dd>{{ displayLayer.importedRasterSourceCrs || '未提供' }}</dd>
       </div>
-      <div v-if="displayLayer.isImportedRaster && displayLayer.importedRasterNativeStep">
+      <div v-if="displayLayer.isImportedRaster && nativeStepText">
         <dt>{{ ANALYSIS_COPY.metaNativeStep }}</dt>
-        <dd>{{ displayLayer.importedRasterNativeStep }}</dd>
+        <dd>{{ nativeStepText }}</dd>
       </div>
-      <div v-if="displayLayer.isImportedRaster && displayLayer.importedRasterEffectiveTime">
+      <div v-if="displayLayer.isImportedRaster && effectiveTimeText">
         <dt>{{ ANALYSIS_COPY.metaEffectiveTime }}</dt>
-        <dd>{{ displayLayer.importedRasterEffectiveTime }}</dd>
+        <dd>{{ effectiveTimeText }}</dd>
       </div>
       <div v-if="displayLayer.isImportedRaster && (displayLayer.importedRasterTimeCount ?? 0) > 0">
         <dt>{{ ANALYSIS_COPY.metaTimeSlices }}</dt>
@@ -205,6 +256,10 @@ function enterInspectTools() {
         <dd>
           {{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}
         </dd>
+      </div>
+      <div v-if="displayLayer.isImportedRaster && productRoleText">
+        <dt>{{ ANALYSIS_COPY.metaVariable }}</dt>
+        <dd>{{ productRoleText }}</dd>
       </div>
       <div>
         <dt>{{ ANALYSIS_COPY.metaSource }}</dt>

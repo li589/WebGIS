@@ -160,6 +160,7 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
             vmin: meta.vmin ?? null,
             vmax: meta.vmax ?? null,
             unit: meta.unit,
+            label: meta.label,
             opacity: meta.opacity,
             supports_recolor: Boolean(meta.supports_recolor),
           },

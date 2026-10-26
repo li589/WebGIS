@@ -8,6 +8,8 @@ export type AgentScope = 'global' | 'personal'
 export interface AgentUiIntent {
   name: string
   args: Record<string, unknown>
+  /** 后端为每条指令分配的编号（`cmd-xxxxxxxx`），用于把「命令」和「实际执行结果」串起来 */
+  command_id?: string
 }
 
 export interface AgentTokenUsage {

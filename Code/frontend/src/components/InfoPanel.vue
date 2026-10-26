@@ -334,6 +334,7 @@ function queryDefaultOverlaySeries() {
               :job-event-notes="wf.jobEventNotes.value"
               :job-report-summary="wf.jobReportSummary.value"
               :has-layer-style-section="symbology.hasLayerStyleSection.value"
+              :product-role="symbology.productRole.value"
               :workflow-error="workflowError ?? null"
               :interaction-mode="uiStore.interactionMode"
               :import-action-hint="impExp.importActionHint.value"

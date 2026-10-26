@@ -324,9 +324,27 @@ export function useLayerSymbology(
   /** 图例区域的归一化单位标签 */
   const normalizedUnitLabel = computed(() => normalizeUnit(styleRenderHint.value?.unit_label))
 
+  /**
+   * 变量角色代号（`SM` / `VOD` / `OMEGA`），非角色码时为空串。
+   *
+   * 后端 `meta.unit` 里装的实际是角色码（见 `layer-symbology.ts` 顶部说明），
+   * 元数据 Tab 的「变量」行要用原始代号，不能走 `normalizeUnit`（那会把它
+   * 换成物理单位或空串，代号就丢了）。
+   */
+  const productRole = computed(() => {
+    const meta = overlayStyleMeta.value
+    const explicit = String(meta?.label ?? '')
+      .trim()
+      .toUpperCase()
+    if (explicit) return explicit
+    const raw = String(meta?.unit ?? '').trim()
+    return isProductRoleCode(raw) ? raw.toUpperCase() : ''
+  })
+
   return {
     weatherRenderHint,
     overlayStyleMeta,
+    productRole,
     styleSymbology,
     styleRenderHint,
     normalizedUnitLabel,

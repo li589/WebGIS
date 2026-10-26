@@ -9,6 +9,8 @@ export interface OverlaySymbologyMeta {
   vmin?: number | null
   vmax?: number | null
   unit?: string
+  /** 变量代号（SM / VOD / OMEGA）。后端 2026-10-26 起与 `unit` 分开返回 */
+  label?: string
   opacity?: number
   /** 有可读源时可服务端重着色 */
   supports_recolor?: boolean

@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from app.core.logging import get_request_id
 from app.services.agent.clients import anthropic_compat, openai_compat
 from app.services.agent.clients.openai_compat import LlmClientError
 from app.services.agent.config_service import (
@@ -926,6 +927,11 @@ def _run_chat_impl(
         raise ValueError(f"消息过长（上限约 {max_chars} 字符，受配置档上下文窗口限制）")
 
     history = load_history(user_id=user_id, session_id=sid)
+    # R06 排查指标：模型为什么没给出好回复，靠这三个值定位
+    # （finish_reason 取自 choices[0]，不在 message 对象上）
+    finish_reason = ""
+    tool_calls_done = 0
+    hops_used = 0
     steps: list[dict[str, Any]] = _EventSteps(on_event)
     steps.append(
         {
@@ -1182,6 +1188,16 @@ def _run_chat_impl(
             assistant_message=reply,
         )
         ui_intents = result.get("ui_intents") or []
+        logger.info(
+            "agent.reply request_id=%s provider=demo finish_reason=%s reply_chars=%d"
+            " tool_calls=%d hops=%d intents=%d",
+            get_request_id() or "-",
+            finish_reason or "-",
+            len(reply),
+            tool_calls_done,
+            hops_used,
+            len(ui_intents),
+        )
         out = {
             "session_id": str(result["session_id"]),
             "reply": reply,
@@ -1435,8 +1451,10 @@ def _run_chat_impl(
         message_obj: dict[str, Any] = {}
         if isinstance(choices, list) and choices:
             first = choices[0]
-            if isinstance(first, dict) and isinstance(first.get("message"), dict):
-                message_obj = first["message"]
+            if isinstance(first, dict):
+                finish_reason = str(first.get("finish_reason") or "") or finish_reason
+                if isinstance(first.get("message"), dict):
+                    message_obj = first["message"]
 
         calls = _parse_openai_tool_calls(message_obj)
         intents = _intents_from_tool_calls(calls)
@@ -1449,6 +1467,7 @@ def _run_chat_impl(
         for hop in range(1, max_hops + 1):
             if not server_calls:
                 break
+            hops_used = hop
             steps.append(
                 {
                     "type": "thought",
@@ -1457,6 +1476,7 @@ def _run_chat_impl(
             )
             messages_oai.append(message_obj)
             for sc in server_calls:
+                tool_calls_done += 1
                 steps.append(
                     {
                         "type": "tool",
@@ -1511,8 +1531,12 @@ def _run_chat_impl(
             message_obj = {}
             if isinstance(choices, list) and choices:
                 first = choices[0]
-                if isinstance(first, dict) and isinstance(first.get("message"), dict):
-                    message_obj = first["message"]
+                if isinstance(first, dict):
+                    finish_reason = (
+                        str(first.get("finish_reason") or "") or finish_reason
+                    )
+                    if isinstance(first.get("message"), dict):
+                        message_obj = first["message"]
             reply = str(message_obj.get("content") or reply).strip()
             calls = _parse_openai_tool_calls(message_obj)
             more_intents = _intents_from_tool_calls(calls)
@@ -1547,6 +1571,17 @@ def _run_chat_impl(
             user_message=message,
             assistant_message=reply,
         )
+        logger.info(
+            "agent.reply request_id=%s provider=%s finish_reason=%s reply_chars=%d"
+            " tool_calls=%d hops=%d intents=%d",
+            get_request_id() or "-",
+            provider_kind,
+            finish_reason or "-",
+            len(reply),
+            tool_calls_done,
+            hops_used,
+            len(intents),
+        )
         out = {
             "session_id": sid,
             "reply": reply,
@@ -1564,6 +1599,26 @@ def _run_chat_impl(
     except Exception as exc:
         logger.exception("Agent LLM call failed profile=%s", profile_id)
         raise LlmClientError(f"模型调用失败：{exc}") from exc
+
+
+def _attach_command_ids(result: dict[str, Any]) -> dict[str, Any]:
+    """给每条 UI 指令补一个可追溯的 ``command_id``（R02）。
+
+    放在 ``run_chat`` 出口统一处理，一处覆盖 demo（mock）与真模型两条返回，
+    避免只改 ``_normalize_intents`` 时漏掉 mock 路径。
+
+    只在缺失时补，重复调用不会换号；任何异常都吞掉，绝不因为加编号
+    影响正常回复。
+    """
+    try:
+        intents = result.get("ui_intents")
+        if isinstance(intents, list):
+            for item in intents:
+                if isinstance(item, dict) and not item.get("command_id"):
+                    item["command_id"] = f"cmd-{uuid.uuid4().hex[:8]}"
+    except Exception:  # pragma: no cover - 兜底，编号失败不该影响对话
+        logger.debug("attach command_id failed", exc_info=True)
+    return result
 
 
 def run_chat(
@@ -1597,13 +1652,15 @@ def run_chat(
             on_event=on_event,
         )
     try:
-        return _run_chat_impl(
-            message,
-            session_id=session_id,
-            client_context=client_context,
-            user_id=user_id,
-            cred=cred,
-            on_event=on_event,
+        return _attach_command_ids(
+            _run_chat_impl(
+                message,
+                session_id=session_id,
+                client_context=client_context,
+                user_id=user_id,
+                cred=cred,
+                on_event=on_event,
+            )
         )
     except ValueError:
         # 参数/配置类错误（消息过长、无配置档）仍交给路由转 422，

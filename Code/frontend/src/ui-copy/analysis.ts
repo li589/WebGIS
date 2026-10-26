@@ -80,6 +80,7 @@ export const ANALYSIS_COPY = {
 
   metaLayer: '图层',
   metaSource: '来源',
+  metaVariable: '变量',
   metaTime: '时间',
   metaMode: '显示',
   metaCrs: '坐标系',

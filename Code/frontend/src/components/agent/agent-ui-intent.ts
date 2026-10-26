@@ -3,6 +3,7 @@
  */
 import type { AgentUiIntent } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { safeLog } from '../../stores/log'
 import { useUiStore } from '../../stores/ui'
 import { isMapLinkedPalette, resolveCanonicalPaletteIdStrict } from '../map/layer-symbology'
 import {
@@ -17,6 +18,8 @@ export interface AgentUiIntentResult {
   message: string
   /** Optional structured cards for UI (list/search results) */
   cards?: Array<{ catalog_id: string; title: string }>
+  /** 后端分配的命令编号，与对话里的同一条指令对应（R02 可追溯） */
+  commandId?: string
 }
 
 export interface AgentUiIntentHandlers {
@@ -118,6 +121,54 @@ function parseDateArg(raw: unknown): Date | null {
 }
 
 export function executeAgentUiIntent(
+  intent: AgentUiIntent,
+  handlers: AgentUiIntentHandlers = {},
+): AgentUiIntentResult {
+  const result = executeAgentUiIntentCore(intent, handlers)
+  const commandId = String(intent.command_id ?? '').trim()
+  const enriched: AgentUiIntentResult = commandId ? { ...result, commandId } : result
+  // R02：命令与其「实际执行结果」用同一个编号串起来，失败也要记
+  safeLog(
+    'agent-cmd',
+    `${commandId || 'cmd-?'} ${intent.name} → ${enriched.ok ? '成功' : '失败'}`,
+    JSON.stringify({
+      target: describeIntentTarget(intent),
+      message: enriched.message,
+    }).slice(0, 400),
+    enriched.ok ? 'info' : 'warn',
+  )
+  return enriched
+}
+
+/** 指令目标的可读摘要（只用于日志，不参与执行） */
+function describeIntentTarget(intent: AgentUiIntent): string {
+  const args = intent.args ?? {}
+  const pick = (keys: string[]): string => {
+    for (const k of keys) {
+      const v = args[k]
+      if (v != null && String(v).trim() !== '') return String(v).trim()
+    }
+    return ''
+  }
+  const hit = pick([
+    'lng',
+    'lon',
+    'longitude',
+    'latitude',
+    'lat',
+    'catalog_id',
+    'layer_id',
+    'name',
+    'date',
+    'time',
+    'source_id',
+  ])
+  if (hit) return hit
+  const raw = JSON.stringify(args)
+  return raw && raw !== '{}' ? raw.slice(0, 80) : '-'
+}
+
+function executeAgentUiIntentCore(
   intent: AgentUiIntent,
   handlers: AgentUiIntentHandlers = {},
 ): AgentUiIntentResult {

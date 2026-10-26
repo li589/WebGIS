@@ -76,6 +76,16 @@ class OverlaySpec:
     vmin: float | None = None
     vmax: float | None = None
     unit: str = ""
+    """物理单位文案（如 ``m³/m³``）。历史上可能被写成变量代号，保持原样不动。"""
+
+    label: str = ""
+    """变量代号（``SM`` / ``VOD`` / ``OMEGA``）。
+
+    与 ``unit`` 分开保存，供前端元数据面板显示「变量」行。历史数据里
+    ``meta.json`` 的 ``unit`` 常为空、变量代号落在 ``label`` 上，
+    早期实现把它折叠进了 ``unit``；这里独立保留一份，避免改变既有语义。
+    """
+
     opacity: float = 0.7
 
     # ── 坐标系（用于 bounds 解释）──────────────────────────────────────────
@@ -185,6 +195,7 @@ class OverlaySpec:
             "vmin": self.vmin,
             "vmax": self.vmax,
             "unit": self.unit,
+            "label": self.label,
             "opacity": self.opacity,
             "crs": self.crs,
             "time_list": list(self.time_list),
@@ -770,6 +781,7 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         if isinstance(meta.get("vmax"), (int, float))
         else None,
         unit=str(meta.get("unit") or meta.get("label") or ""),
+        label=label,
         opacity=float(meta.get("opacity") or 0.7),
         crs=str(meta.get("crs") or "EPSG:4326"),
         source_path=source_path if category != "time-series" else None,
