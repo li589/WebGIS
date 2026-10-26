@@ -7,6 +7,7 @@ import type { ActiveLayerDisplay, JobLayerItem } from '../../stores/layers/types
 import type { ResultDisplayModel } from './result-adapter'
 import { ANALYSIS_COPY, DATA_COPY, LAYERS_COPY } from '../../ui-copy'
 import { openDataWorkspace } from '../../data-manager/core/workspace-store'
+import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import AppButton from '../ui/AppButton.vue'
 import { filterDisplayableNodeProgress } from '../../stores/layers/workflow-progress'
 import {
@@ -42,6 +43,9 @@ const props = defineProps<{
   interactionMode: string
   importActionHint: string
 }>()
+
+// 来源标签缓存（/overlay-bounds 的 meta.source_label）
+const overlaySymbology = useOverlaySymbologyStore()
 
 const emit = defineEmits<{
   setActiveTab: [tab: string]
@@ -141,10 +145,23 @@ const effectiveTimeText = computed(() => {
   return `${y1}-${m1}-${d1} ~ ${y2}-${m2}-${d2}`
 })
 
+/**
+ * 数据源：优先用后端来源标签（SMAP / 风云卫星）。
+ *
+ * 本地导入类图层的 displayLayer.sourceLabel 取的是文件名
+ * （`source_20251201_20260201.tif`），对用户没有意义；/overlay-bounds 的
+ * meta.source_label 才是人能看的来源，所以前者优先。
+ */
+const sourceText = computed(() => {
+  const catalogId = String(props.displayLayer.catalogId || '')
+  const fromMeta = overlaySymbology.getSourceLabel(catalogId)
+  return fromMeta || props.displayLayer.sourceLabel || '—'
+})
+
 const layerMetadata = computed(() => {
   const dl = props.displayLayer
   const meta: { label: string; value: string }[] = [
-    { label: '数据源', value: dl.sourceLabel || '—' },
+    { label: '数据源', value: sourceText.value },
     { label: '更新频率', value: dl.updateLabel || '—' },
     { label: '观测时间', value: dl.observationTimeLabel || '—' },
     { label: '可用性', value: dl.availabilityLabel || '—' },

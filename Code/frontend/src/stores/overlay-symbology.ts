@@ -40,6 +40,22 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
     return metaByCatalogId.value.get(catalogId)?.meta ?? null
   }
 
+  /**
+   * 图层来源中文标签（SMAP / 风云卫星 / 地面站点…），拿不到返回 null。
+   *
+   * 用途：同名图层区分（两个「土壤水分」）与日期提示的来源前缀
+   * （报告优先4 的固定模板「SMAP · 土壤水分已切到 2025-12-15」）。
+   * 只有 status=ok 才算数，避免把 miss 的空 meta 当来源。
+   */
+  function getSourceLabel(catalogId: string | null | undefined): string | null {
+    const id = String(catalogId || '').trim()
+    if (!id) return null
+    const entry = metaByCatalogId.value.get(id)
+    if (!entry || entry.status !== 'ok') return null
+    const label = String(entry.meta.source_label || '').trim()
+    return label || null
+  }
+
   function getEntry(catalogId: string): CacheEntry | null {
     return metaByCatalogId.value.get(catalogId) ?? null
   }
@@ -72,6 +88,10 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
         unit: meta.unit,
         opacity: meta.opacity,
         supports_recolor: meta.supports_recolor,
+        source: meta.source,
+        source_label: meta.source_label,
+        variable_label: meta.variable_label,
+        unit_label: meta.unit_label,
       },
       fetchedAt: Date.now(),
     })
@@ -163,6 +183,11 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
             label: meta.label,
             opacity: meta.opacity,
             supports_recolor: Boolean(meta.supports_recolor),
+            // 来源/变量/单位的中文标签：同名图层区分与日期提示前缀依赖它
+            source: meta.source,
+            source_label: meta.source_label,
+            variable_label: meta.variable_label,
+            unit_label: meta.unit_label,
           },
           fetchedAt: Date.now(),
         })
@@ -184,6 +209,7 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
     metaByCatalogId,
     version,
     getMeta,
+    getSourceLabel,
     getEntry,
     shouldSkipFetch,
     peekHasMeta,

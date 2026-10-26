@@ -28,6 +28,7 @@ import {
   type AgentUiIntent,
 } from '../../services/agent-api'
 import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
+import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import { useUiStore } from '../../stores/ui'
 import {
   AGENT_CHAT_PANEL_MAX_HEIGHT_PX,
@@ -117,6 +118,8 @@ const WELCOME_TEXT = '你好，我是地图助手。试试「打开 CMFD 降水�
 const workspace = useLayerWorkspace()
 const viewport = useLayerViewport()
 const uiStore = useUiStore()
+// 图层来源标签（SMAP/风云卫星）：意图文案的来源前缀从这里取
+const overlaySymbology = useOverlaySymbologyStore()
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -964,6 +967,9 @@ async function applyChatResult(
       fitChina: props.fitChina,
       locateCoordinate: props.locateCoordinate,
       setBasemap: props.setBasemap,
+      // 报告优先4：日期提示与图层列表要带来源（SMAP · 土壤水分），
+      // 来源来自 /overlay-bounds 的 meta.source_label，已缓存在符号化 store。
+      resolveSourceLabel: (catalogId: string) => overlaySymbology.getSourceLabel(catalogId),
     })
     const noteBodies = results
       .filter((r) => r.message)

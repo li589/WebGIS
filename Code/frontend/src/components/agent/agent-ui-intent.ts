@@ -28,6 +28,13 @@ export interface AgentUiIntentHandlers {
   locateCoordinate?: (lng: number, lat: number, zoom?: number) => boolean
   /** 返回 true=已切换；返回字符串=失败原因（直接展示给用户）；false=未知原因失败 */
   setBasemap?: (sourceId: string) => boolean | string
+  /**
+   * 图层来源中文标签（SMAP / 风云卫星…），拿不到返回空。
+   *
+   * 用途：报告优先4 要求日期提示写成「SMAP · 土壤水分已切到 2025-12-15」，
+   * 同时让「有哪些活动图层」不出现两个无法区分的同名图层。
+   */
+  resolveSourceLabel?: (catalogId: string) => string | null | undefined
 }
 
 const ACTIVE_JOB = new Set(['queued', 'running', 'retry_pending', 'accepted'])
@@ -84,13 +91,35 @@ function nameOf(catalogId: string | null | undefined, explicit?: unknown): strin
 }
 
 /**
+ * 「来源 · 图层名」的写法（报告优先4 的固定模板：SMAP · 土壤水分）。
+ *
+ * 拿不到来源就原样返回图层名——绝不编造，也不把内部 id 顶上去；
+ * 图层名本身已含来源（如「风云卫星 土壤水分」）时不重复加前缀。
+ */
+function withSource(
+  handlers: AgentUiIntentHandlers,
+  catalogId: string | null | undefined,
+  title: string,
+): string {
+  let source: string
+  try {
+    source = String(handlers.resolveSourceLabel?.(String(catalogId || '')) || '').trim()
+  } catch {
+    return title
+  }
+  if (!source || source === '未标注来源' || !title) return title
+  if (title.includes(source)) return title
+  return `${source} · ${title}`
+}
+
+/**
  * 挑一个「主导的时间序列图层」：可见、帧数最多。
  * 用于核对「切到某天到底有没有数据」——时间轴本身不做吸附，
  * 吸附发生在渲染层，必须拿真实 time_list 才能算准。
  */
-function pickDominantTimeseries(): { name: string; list: string[] } | null {
+function pickDominantTimeseries(): { catalogId: string; name: string; list: string[] } | null {
   const workspace = useLayerWorkspace()
-  let best: { name: string; list: string[] } | null = null
+  let best: { catalogId: string; name: string; list: string[] } | null = null
   for (const layer of workspace.activeLayers.value) {
     if (layer.visible === false) continue
     if (layer.isAdminBoundary) continue
@@ -98,6 +127,7 @@ function pickDominantTimeseries(): { name: string; list: string[] } | null {
     if (!Array.isArray(list) || !list.length) continue
     if (!best || list.length > best.list.length) {
       best = {
+        catalogId: layer.catalogId,
         name: layerDisplayName(layer.catalogId, [{ catalogId: layer.catalogId, name: layer.name }]),
         list: list.map((t) => String(t)),
       }
@@ -276,10 +306,11 @@ function executeAgentUiIntentCore(
       title: (l.name || l.catalogId || '').trim() || l.catalogId,
     }))
     // 正文只列中文名 + 显示状态；catalog_id 只留在 cards 里供点击复用
+    // 来源前缀用于区分同名图层（两个「土壤水分」分属 SMAP 与风云卫星）。
     const lines = layers.map((l) => {
       const title = layerDisplayName(l.catalogId, [{ catalogId: l.catalogId, name: l.name }])
       const vis = l.visible === false ? '已隐藏' : '显示中'
-      return `- ${title}（${vis}）`
+      return `- ${withSource(handlers, l.catalogId, title)}（${vis}）`
     })
     return {
       ok: true,
@@ -371,6 +402,10 @@ function executeAgentUiIntentCore(
     const span = `${readableFrameLabel(dominant.list[0])} 至 ${readableFrameLabel(
       dominant.list[dominant.list.length - 1],
     )}`
+    // 报告优先4：成功提示用固定模板「来源 · 图层名已切到 YYYY-MM-DD」，
+    // 有来源就写成 `SMAP · 土壤水分已切到 2025-12-15`，没来源退回「土壤水分」。
+    const dominantLabel = withSource(handlers, dominant.catalogId, dominant.name)
+    const shownName = dominantLabel === dominant.name ? `「${dominant.name}」` : dominantLabel
     if (eff.nativeMatch) {
       // 报告优先4：动作成功也要给「图层 + 具体日期」的确定说法，
       // 不能只丢一个笼统的覆盖区间（否则用户不知道到底切到哪天）。
@@ -378,12 +413,12 @@ function executeAgentUiIntentCore(
         eff.label && eff.label !== requested ? `（实际命中时间块 ${eff.label}）` : ''
       return {
         ok: true,
-        message: `「${dominant.name}」已切到 ${requested}${frameHint}`,
+        message: `${shownName}已切到 ${requested}${frameHint}`,
       }
     }
     return {
       ok: true,
-      message: `「${dominant.name}」已设为 ${requested}，但该日没有数据，实际显示的是 ${eff.label}\n（可用范围是 ${span}，已自动对齐到最近可用帧）`,
+      message: `${shownName}已设为 ${requested}，但该日没有数据，实际显示的是 ${eff.label}\n（可用范围是 ${span}，已自动对齐到最近可用帧）`,
     }
   }
 

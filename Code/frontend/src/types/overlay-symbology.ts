@@ -14,4 +14,12 @@ export interface OverlaySymbologyMeta {
   opacity?: number
   /** 有可读源时可服务端重着色 */
   supports_recolor?: boolean
+  /** 来源代号（smap / fy / station…）。后端 /overlay-bounds 的 meta 直接给出 */
+  source?: string
+  /** 来源中文标签（SMAP / 风云卫星）。用于区分同名图层与日期提示前缀 */
+  source_label?: string
+  /** 变量中文标签（土壤水分 / 植被光学厚度） */
+  variable_label?: string
+  /** 单位中文写法（m³/m³ / 无量纲） */
+  unit_label?: string
 }

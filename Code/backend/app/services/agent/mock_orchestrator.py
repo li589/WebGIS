@@ -512,7 +512,21 @@ def mock_chat(
                 "或直接说「打开 CMFD 降水」让我帮你打开一个示例图层。"
             )
         else:
-            lines = [f"- {_display(layer)}" for layer in layers]
+            # 来源前缀：两个「土壤水分」分属 SMAP 与风云卫星，只有名字分不清
+            # （报告优先4 的同一条根因）。拿不到来源就只写图层名。
+            from app.services.agent.server_tools_runtime import _layer_identity_fields
+
+            lines = []
+            for layer in layers:
+                title = _display(layer)
+                try:
+                    ident = _layer_identity_fields(str(layer.get("catalog_id") or ""))
+                    source = str(ident.get("source_label") or "").strip()
+                except Exception:
+                    source = ""
+                if source and source != "未标注来源" and source not in title:
+                    title = f"{source} · {title}"
+                lines.append(f"- {title}")
             reply = f"当前有 {len(layers)} 个活动图层：\n" + "\n".join(lines)
         return {"session_id": sid, "reply": reply, "ui_intents": intents}
 

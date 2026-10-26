@@ -1252,9 +1252,30 @@ def get_overlay_bounds(
     time: str | None = Query(default=None),
     cred=Depends(get_request_user),
 ) -> dict[str, Any]:
-    """返回图层的地理边界信息 + 元数据，供前端 MapLibre image source 定位与时间控制使用。"""
+    """返回图层的地理边界信息 + 元数据，供前端 MapLibre image source 定位与时间控制使用。
+
+    额外补一层"身份证"字段（来源 / 变量 / 单位的中文标签）：前端据此区分
+    「SMAP 土壤水分」与「风云 土壤水分」这类同名图层，并在日期提示里带上来源。
+    只补 meta 里缺失的键，绝不覆盖已有的 ``unit`` / ``label`` 语义（前者是
+    角色码 SM/VOD/OMEGA，图例依赖它）。
+    """
     check_resource_access(cred, "layer", layer_id)
-    return read_bounds(layer_id, time)
+    data = read_bounds(layer_id, time)
+    try:
+        from app.services.agent.layer_identity import identity_fields
+
+        ident = identity_fields(layer_id)
+    except Exception:  # 身份识别失败不影响边界返回
+        ident = {}
+    if ident:
+        meta = data.get("meta")
+        if isinstance(meta, dict):
+            for key in ("source", "source_label", "variable_label", "unit_label"):
+                if ident.get(key):
+                    meta.setdefault(key, ident[key])
+        data.setdefault("source", ident.get("source"))
+        data.setdefault("source_label", ident.get("source_label"))
+    return data
 
 
 @router.get("/overlays", tags=["overlay"])
