@@ -612,7 +612,12 @@ function flushDragFrame() {
 function onHeaderPointerDown(ev: PointerEvent) {
   if (ev.button !== 0) return
   const t = ev.target as HTMLElement | null
-  if (t?.closest('.agent-chat-close')) return
+  // 头部同时是拖拽把手（title「拖动移动对话框」）。若在按钮上按下也走
+  // setPointerCapture，指针捕获会把 pointerup 与随后的 click 一起派发到
+  // header 上，按钮自己的 @click 永远不触发 —— 表现就是「点了没反应」，
+  // 当年只放行了关闭按钮，历史会话 / 导出 / 开启新会话三个按钮全中招。
+  // ⇒ 所有可交互元素都不参与拖拽。
+  if (t?.closest('button, a, input, select, textarea, [role="button"], .agent-session-menu')) return
   const el = ev.currentTarget as HTMLElement
   dragPtrId = ev.pointerId
   dragStartX = ev.clientX
