@@ -12,6 +12,7 @@ import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { useUiStore } from '../../stores/ui'
 import { useTimelineActionBannerStore } from '../../stores/timeline-action-banner'
 import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
+import { useOnDemandFrameStore, toCompactDate } from '../../stores/layers/ondemand-frame'
 import type { useLogStore } from '../../stores/log'
 import type { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { WeatherCoverage } from '../../services/runtime-api'
@@ -27,6 +28,9 @@ import {
   generateTimelineSegments,
   isSingleCrossDayBlock,
 } from '../../utils/layer-timeline'
+
+/** 按需补帧图层的日格子说明（替代「无独立逐日帧」）。 */
+const ONDEMAND_DAY_READY_LABEL = '拖到这一天会取该日单日图'
 import {
   referenceInstantFromTimeline,
   resolveLayerEffectiveTime,
@@ -98,6 +102,8 @@ export function useTimelineSync(
   // ── Domain selectors ─────────────────────────────────────────────────
   const workspace = useLayerWorkspace()
   const workflowRun = useWorkflowRun()
+  /** 按需补帧：登记表 + 「当前显示哪一天」覆盖（见 stores/layers/ondemand-frame.ts） */
+  const ondemand = useOnDemandFrameStore()
 
   // ── 基础 computed ─────────────────────────────────────────────────────
 
@@ -195,12 +201,22 @@ export function useTimelineSync(
           }
         }
       }
+      /**
+       * 按需补帧（2026-10-27）：用户拖到某天后，那张单日帧**不在** time_list 里
+       * （在 time_list 里会让默认落点变成单日帧，勾选/添加图层就不再是长序列）。
+       * 所以这里优先认前端那层「当前显示哪一天」的覆盖，
+       * 取不到才回落 time_list 的常规解析。
+       */
+      const ondemandTag = ondemand.displayedDayTag(
+        layer.catalogId,
+        toCompactDate(currentDate.value),
+      )
       const resolved = resolveLayerEffectiveTime(layer, tRef)
-      if (!resolved?.slice) continue
-      const sliceLabel = formatSliceLabel(resolved.slice)
+      const sliceLabel = ondemandTag ?? (resolved?.slice ? formatSliceLabel(resolved.slice) : null)
+      if (!sliceLabel) continue
       layer.importedRaster.effectiveTimeLabel = sliceLabel
       const overlayId = layer.importedRaster.overlayLayerId
-      if (sliceLabel && overlayId) {
+      if (overlayId) {
         void mapCanvasRef.value?.setOverlayTime?.(overlayId, sliceLabel)
       }
     }
@@ -514,6 +530,17 @@ export function useTimelineSync(
 
   const activeLayerGranularity = computed<TimeGranularity>(() => {
     const layer = selectedActiveLayer.value
+    /**
+     * 按需补帧图层（2026-10-27）：时间轴刻度必须按「天」，
+     * 否则日历控件被设成月份选择器，物理上选不到 17 号 —— 用户反馈的
+     * 「只能选月份不能选单日」就是这个原因。
+     *
+     * 只改**时间轴刻度**：不改该层 meta.json 的 native_step，
+     * 也不改 snapTargetFromLayer 的落点算法 ⇒ 打开页面仍是原来的长序列。
+     */
+    if (layer?.importedRaster?.timeList?.length && ondemand.isOnDemandLayer(layer.catalogId)) {
+      return 'day'
+    }
     const scienceSpec = temporalSpecFromActiveLayer(layer)
     if (scienceSpec) {
       return timeStepToLegacyGranularity(scienceSpec.nativeStep)
@@ -664,8 +691,14 @@ export function useTimelineSync(
       }
       // 单块跨多天（如 20251201_20260201）时，日格子不能写「每日数据已就绪」——
       // 该块内每一天都不是独立观测（报告第二轮 P2）。
+      // 按需补帧图层例外：它的日格子确实能换来单日图（拖到那天就去 NAS 取），
+      // 所以文案换成「拖到该日可取单日图」，不再说「无独立逐日帧」。
       const readyLabel =
-        gran === 'day' && isSingleCrossDayBlock(scienceTimes) ? BLOCK_DAY_READY_LABEL : undefined
+        gran === 'day' && isSingleCrossDayBlock(scienceTimes)
+          ? ondemand.isOnDemandLayer(selectedCatalogId.value)
+            ? ONDEMAND_DAY_READY_LABEL
+            : BLOCK_DAY_READY_LABEL
+          : undefined
       return generateTimelineSegments(currentDate.value, gran, map, readyLabel)
     }
 

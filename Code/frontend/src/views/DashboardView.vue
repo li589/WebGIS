@@ -65,6 +65,8 @@ import { useTimelineSync } from './dashboard/useTimelineSync'
 import { useMapInspect } from './dashboard/useMapInspect'
 import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
 import { useTimelineControls } from './dashboard/useTimelineControls'
+import { useOnDemandFrame } from './dashboard/useOnDemandFrame'
+import { useOnDemandFrameStore } from '../stores/layers/ondemand-frame'
 import { useFileDrop } from './dashboard/useFileDrop'
 import { useWorkflowEditorRun } from './dashboard/useWorkflowEditorRun'
 import { useOnlineTemporalIntegration } from './dashboard/useOnlineTemporalIntegration'
@@ -214,6 +216,7 @@ const {
   timelineObservationLabel,
   activeLayerGranularity,
   timelineSegments,
+  refreshImportedRasterEffectiveTimes,
 } = useTimelineSync(
   uiStore,
   logStore,
@@ -232,6 +235,30 @@ const {
   workflowProgressTimeSeek,
   analysisPanelRef,
 )
+
+/**
+ * 按需补帧：**只有用户自己拖时间轴**才去 NAS 取那一天的单日图。
+ * 打开页面 / 勾选图层 / 添加图层 / 切图层都不会触发（见 useOnDemandFrame 头注释），
+ * 所以「一进来还是整月合成」这条不变。
+ *
+ * 没点选图层时（时间轴顶部写「未选择图层」）要动的是**地图上当前可见的**补帧层：
+ * 用户勾了几个层再改日期，期望这几层都跟着变。
+ */
+const onDemandFrameStore = useOnDemandFrameStore()
+const visibleOnDemandCatalogIds = computed(() =>
+  workspace.activeLayers.value
+    .filter((l) => l.visible && onDemandFrameStore.isOnDemandLayer(l.catalogId))
+    .map((l) => l.catalogId),
+)
+
+const { notifyUserDateChange } = useOnDemandFrame({
+  selectedCatalogId,
+  visibleOnDemandIds: visibleOnDemandCatalogIds,
+  currentDate,
+  isPlaying,
+  onFrameReady: refreshImportedRasterEffectiveTimes,
+  logOperation: (tag, message) => logStore.logOperation(tag, message),
+})
 
 // ── 图层平台子系统：选中图层生命周期（时间轴徽标数据源） ──
 const selectedLayerLifecycle = computed(() => {
@@ -373,6 +400,7 @@ const {
   hourLabel,
   unifiedTimeLock,
   isPlaying,
+  notifyUserDateChange,
 )
 
 const dataImportFlow = useDataImportFlow()

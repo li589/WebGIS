@@ -38,6 +38,7 @@ from app.api.routers.workflow_definition_router import (
 )
 from app.api.routers.workflow_timer_router import router as workflow_timer_router
 from app.api.routers.cleanup_router import router as cleanup_router
+from app.api.routers.nas_ondemand_routes import router as nas_ondemand_router
 from app.api.routers.auth_router import router as auth_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
@@ -461,6 +462,7 @@ def create_app() -> FastAPI:
     app.include_router(workflow_definition_router)
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)
+    app.include_router(nas_ondemand_router)
     app.include_router(zonal_stats_router)
     app.include_router(workspace_router)
     app.include_router(agent_router)

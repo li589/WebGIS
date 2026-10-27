@@ -132,6 +132,32 @@ class OverlaySpec:
     source_reader: str = "auto"
     """auto | mat | netcdf | geotiff | hdf5。auto 按文件扩展名判断。"""
 
+    def _has_ondemand_frame(self, t: str) -> bool:
+        """按需补帧（2026-10-27）：图层目录里是否真有一张 ``preview_<t>.png``。
+
+        「手动拖到某一天 ⇒ 补取那一天」的帧由 ``nas_ondemand`` 直接写进**原有
+        图层目录**，但**不写进 meta.time_list**（否则一进页面默认落点就变成
+        单日帧，「勾选/添加图层仍显示长序列」这条就破了）。
+
+        既然不能靠 time_list 白名单，就靠「文件确实存在」兜住 —— 这比白名单
+        更不容易说谎：能取到图，才放行。``t`` 只认 ``YYYYMMDD`` 与
+        ``YYYYMMDD_YYYYMMDD`` 两种纯数字形态，不含 ``.``/``/``/``\\``，
+        从形态上就堵死了路径穿越，不需要额外前缀判断。
+        """
+        raw = str(t or "").strip()
+        if len(raw) == 8 and raw.isdigit():
+            pass
+        elif (
+            len(raw) == 17 and raw[8] == "_" and raw[:8].isdigit() and raw[9:].isdigit()
+        ):
+            pass
+        else:
+            return False
+        try:
+            return (self.overlay_dir / f"preview_{raw}.png").is_file()
+        except OSError:  # 目录不可读时按「没有」处理，别把 500 抛给前端
+            return False
+
     def _assert_time_available(self, t: str | None) -> str | None:
         """校验时序图层的时间值在 time_list 白名单内。
 
@@ -148,6 +174,11 @@ class OverlaySpec:
                 return t
             t_compact = t.replace("-", "").strip()
             if t_compact in self.time_list:
+                return t_compact
+            # 按需补帧优先：目录里真有 preview_<单日>.png 就按单日取，
+            # 不能被下面的「块区间容错」折回整月那张（那正是用户反馈
+            # 「拖到哪天都是整月」的根因）。
+            if self._has_ondemand_frame(t_compact):
                 return t_compact
             # 容错匹配：单日 8 位与时序块匹配
             for item in self.time_list:

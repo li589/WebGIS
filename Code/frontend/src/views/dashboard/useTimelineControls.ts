@@ -3,6 +3,10 @@
  *
  * 从 DashboardView.vue 提取：step / changeHour / changeDate /
  * togglePlay / changePlayInterval / toggleUnifiedTime / toggleLayerLock。
+ *
+ * `onUserDateChange` 是「用户自己动了日期」的唯一上报口：按需补帧
+ * （拖到某天才去 NAS 取那一天）只认这里，程序自己挪时间轴
+ * （snap / 记忆恢复 / 快照还原）不会经过本文件，因此不会误触发取数。
  */
 import type { ComputedRef, Ref } from 'vue'
 import type { useUiStore } from '../../stores/ui'
@@ -16,15 +20,21 @@ export function useTimelineControls(
   hourLabel: Ref<string>,
   unifiedTimeLock: Ref<boolean>,
   isPlaying: Ref<boolean>,
+  onUserDateChange?: (date: Date) => void,
 ) {
   function handleTimelineStep(delta: number) {
     if (!Number.isFinite(delta) || delta === 0) return
+    const before = uiStore.currentDate.getTime()
     uiStore.stepHour(delta)
     if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
     logStore.logOperation(
       'timeline-step',
       `时间轴${delta > 0 ? '前进' : '后退'} ${Math.abs(delta)} 小时`,
     )
+    // 跨日（23→0 / 0→23）也算"用户改了日期"
+    if (uiStore.currentDate.getTime() !== before) {
+      onUserDateChange?.(uiStore.currentDate)
+    }
   }
 
   function handleTimelineChange(hour: number) {
@@ -41,6 +51,7 @@ export function useTimelineControls(
     const m = String(date.getMonth() + 1).padStart(2, '0')
     const d = String(date.getDate()).padStart(2, '0')
     logStore.logOperation('timeline-date-change', `日期切换到 ${y}-${m}-${d}`)
+    onUserDateChange?.(date)
   }
 
   function handleTimelineTogglePlay() {
