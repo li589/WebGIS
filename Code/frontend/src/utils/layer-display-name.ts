@@ -88,8 +88,8 @@ export function inversionFamilyKey(raw: string | null | undefined): string {
  * 靠文案猜必然漏掉。id 里的 `avg` / `fenkuai` 才是硬事实。
  */
 export const GROUP_METHOD_LABEL = {
-  mean: '平均散射约束',
-  dynamic: '动态散射约束',
+  mean: '平均散射约束模型',
+  dynamic: '动态散射约束模型',
 } as const
 
 export function runGroupMethodLabel(group: {

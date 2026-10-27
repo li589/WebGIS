@@ -90,6 +90,45 @@ function loadCollapsedDefaultGroups(): Set<string> {
 }
 
 /**
+ * 展开形态的**版本号**（2026-10-27 新增）。
+ *
+ * 为什么需要它：`isGroupExpanded` 的默认值只在「本地没有任何记录」时生效。
+ * 而这两个集合会被工作区快照、跨设备同步、以及用户以前的点击长期写满——
+ * 已经打开过的浏览器里，`expandedGroups` 往往记着「四个组都展开」或
+ * 「风云平均被折叠过」。光改默认值对这些浏览器**完全无效**，用户看到的仍然
+ * 不是「只展开第一个」。
+ *
+ * 做法：本版本**首次**打开时清空两份记忆、只留默认形态（＝只有风云平均展开），
+ * 然后写版本号；之后用户的每一次点开/收起都照常记忆，不再被重置。
+ * 以后若再改默认形态，把版本号 +1 即可让所有设备再对齐一次。
+ */
+const EXPANSION_SCHEMA_KEY = 'cgda.sidebar.expansionSchema'
+const EXPANSION_SCHEMA_VERSION = '2'
+
+function loadExpansionState(): { expanded: Set<string>; collapsed: Set<string> } {
+  let stored: string
+  try {
+    stored = window.localStorage.getItem(EXPANSION_SCHEMA_KEY) ?? ''
+  } catch {
+    // localStorage 不可用 ⇒ 本次会话用默认形态，不报错
+    return { expanded: new Set(), collapsed: new Set() }
+  }
+  if (stored === EXPANSION_SCHEMA_VERSION) {
+    return { expanded: loadExpandedGroups(), collapsed: loadCollapsedDefaultGroups() }
+  }
+  // 旧版本（含「从未写过版本号」的历史浏览器）：一次性对齐为默认形态。
+  // 清空即可让 isGroupExpanded 走默认分支（只有 PRIMARY_EXPANDED_GROUP_ID 展开）。
+  try {
+    window.localStorage.removeItem(EXPANDED_GROUPS_KEY)
+    window.localStorage.removeItem(COLLAPSED_DEFAULT_GROUPS_KEY)
+    window.localStorage.setItem(EXPANSION_SCHEMA_KEY, EXPANSION_SCHEMA_VERSION)
+  } catch {
+    // 写不进去就只影响刷新后是否再次对齐，不影响本次会话
+  }
+  return { expanded: new Set(), collapsed: new Set() }
+}
+
+/**
  * Extracts drag/drop reordering logic from LayerSidebar.vue.
  *
  * Manages drag state for both individual layers and run groups, computes the
@@ -110,10 +149,12 @@ export function useSidebarDragReorder(
   const dragOverInstanceId = ref<string | null>(null)
   const dragOverGroupId = ref<string | null>(null)
 
+  const initialExpansion = loadExpansionState()
+
   /** 用户手动展开过的组（未命中的组一律按折叠渲染） */
-  const expandedGroups = ref<Set<string>>(loadExpandedGroups())
+  const expandedGroups = ref<Set<string>>(initialExpansion.expanded)
   /** 用户显式折叠过的预置组（其余预置组默认展开） */
-  const collapsedDefaultGroups = ref<Set<string>>(loadCollapsedDefaultGroups())
+  const collapsedDefaultGroups = ref<Set<string>>(initialExpansion.collapsed)
 
   function isGroupExpanded(groupId: string): boolean {
     if (expandedGroups.value.has(groupId)) return true

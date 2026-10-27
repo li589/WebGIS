@@ -260,6 +260,17 @@ ONDEMAND_TARGETS: dict[str, dict[str, str]] = {
     # SMAP · 平均散射约束（2026-10-27 追加）
     "imported-38993117b963": {"product": "smap_avg", "variable": "SM"},
     "imported-bce85323670f": {"product": "smap_avg", "variable": "VOD"},
+    # 动态散射约束（2026-10-27 追加）
+    # NAS 实测：fy_raw_smvod / smap_raw_smvod 各 4018 个严格逐日 .mat
+    # （20150101~20251231），与平均组同规格，故 SM / VOD 可直接按天取。
+    # 目录映射来源：meta.run_id → workflow_runs.layer_id
+    #   风云动态 = method-fy-omega-doy-dynamic，SMAP 动态 = method-smap-omega-doy-dynamic。
+    # ⚠ 动态组的 OMEGA 源是 8 天块（*_raw_ω 里 YYYYMMDD_YYYYMMDD_exp0_…mat），
+    #   块内所有天共用同一个 ω，与「取某一天」语义不完全等价，暂未登记。
+    "imported-fa303afda71e": {"product": "fy_raw", "variable": "SM"},
+    "imported-731b37b59c97": {"product": "fy_raw", "variable": "VOD"},
+    "imported-a8940443fd6d": {"product": "smap_raw", "variable": "SM"},
+    "imported-5427e1020d63": {"product": "smap_raw", "variable": "VOD"},
 }
 
 # NAS 成果的实际覆盖范围（前端据此提前拦掉明显不可能的日期，省一次往返）
