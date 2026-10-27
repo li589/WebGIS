@@ -44,10 +44,11 @@ const DEFAULT_GROUP_PREFIX = 'run-group-default-'
  * **唯一默认展开**的预置组：风云平均散射约束（= `DEFAULT_LAYERS[0]`，
  * `default-layers.ts` 里 `catalogId: 'method-fy-omega-doy-avg'`）。
  *
- * 2026-10-27 用户定稿的四组形态：
+ * 2026-10-27 用户定稿的四组形态（顺序见 `default-layers.ts::DEFAULT_GROUP_DISPLAY_ORDER`，
+ * 由 `alignDefaultGroupOrder` 每次打开对齐）：
  *   ① 风云平均 —— 展开（一进页面看到的就是它的「土壤水分」）
- *   ② 风云动态 —— 折叠
- *   ③ SMAP平均 —— 折叠
+ *   ② SMAP平均 —— 折叠
+ *   ③ 风云动态 —— 折叠
  *   ④ SMAP动态 —— 折叠
  * 折叠的三个点开即展开，展开状态照常记忆；折叠状态也照常记忆，不会被这里重置。
  */

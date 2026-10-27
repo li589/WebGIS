@@ -95,6 +95,25 @@ interface DefaultLayerEntry {
  * 默认显隐：风云只显示「土壤水分」（VOD / ω 不显示）；SMAP 三个都不显示。
  */
 /**
+ * 侧栏四组的**显示顺序**（2026-10-27 用户定稿）：两个「平均」在上、两个「动态」在下。
+ *
+ * 为什么不直接调整 `DEFAULT_LAYERS` 数组顺序：
+ * 数组顺序只决定**首次挂载**的先后（进而决定 `order` 初始值）；而 `order` 会随
+ * 工作区快照持久化，已经打开过的浏览器（含老师和其它电脑）永远停在旧顺序 ⇒
+ * 光改数组等于没改。故顺序单独抽成这份常量，由 `alignDefaultGroupOrder` 在
+ * **每次打开**时对齐（幂等：已对齐则一次写盘都不做）。
+ *
+ * 与数组顺序解耦后请注意：**新增默认组时两处都要看**——数组里加条目（决定挂载与
+ * 落轴），这里加一行（决定侧栏位置）。常量里漏写的条目会被自动追加在末尾。
+ */
+const DEFAULT_GROUP_DISPLAY_ORDER: readonly string[] = [
+  'method-fy-omega-doy-avg', // ① 风云平均（唯一默认展开、决定时间轴落点）
+  'method-smap-season-mean', // ② SMAP平均（整段季均）
+  'method-fy-omega-doy-dynamic', // ③ 风云动态（8 天块）
+  'method-smap-omega-doy-dynamic', // ④ SMAP动态（8 天块）
+]
+
+/**
  * 默认图层成员显示名（**唯一权威来源**，每次打开由 `applyDefaultNames` 对齐）。
  *
  * 2026-10-15 用户报障「换电脑后侧栏变成『土壤水分（风云 平均）』，不要有」：
@@ -493,6 +512,75 @@ async function attachByStableOverlayIds(
 }
 
 /**
+ * 把四个默认组的**显示顺序**对齐成「平均在上、动态在下」（2026-10-27）。
+ *
+ * 侧栏「已添加图层」是按 `ActiveLayer.order` 升序渲染的，组头出现在它**第一个成员**
+ * 所在位置（见 `useSidebarDragReorder.ts::activeTocRows`）⇒ 想让组换位置，只能动
+ * 成员的 order。
+ *
+ * 做法刻意保守：先取出「这四个组的成员原本占着的那些 order 槽位」，再把成员按
+ * 名单顺序**填回同样的槽位**。效果是：
+ * - 四个组之间的先后被纠正 ✔
+ * - 其它图层（用户自己加的、手动拖到中间的）位置一点不动 ✔
+ * - 用户把某个默认组拖到别处后，下次打开会被拉回定稿顺序（符合「默认布局固定」的口径，
+ *   与 `enforceVisibility` 每次打开都对成员显隐的做法一致）✔
+ *
+ * 幂等：已经符合顺序时直接 return，不写快照、不触发渲染。
+ */
+function alignDefaultGroupOrder(workspace: WorkspaceApi): void {
+  const layers = workspace.activeLayers.value.slice().sort((a, b) => a.order - b.order)
+  // overlayId → 图层（默认层的 catalogId 可能被改写成 imported-<instanceId>，只能用产物编号认）
+  const byOverlayId = new Map<string, ActiveLayer>()
+  for (const layer of layers) {
+    const overlayId = layer.importedRaster?.overlayLayerId
+    if (overlayId) byOverlayId.set(overlayId, layer)
+  }
+
+  const declaredIds = DEFAULT_LAYERS.map((entry) => entry.catalogId)
+  const orderedIds = [
+    ...DEFAULT_GROUP_DISPLAY_ORDER.filter((id) => declaredIds.includes(id)),
+    // 常量里没写到的条目按数组顺序补在末尾，避免以后新增组时被漏掉
+    ...declaredIds.filter((id) => !DEFAULT_GROUP_DISPLAY_ORDER.includes(id)),
+  ]
+
+  const blocks: ActiveLayer[][] = []
+  const isDefaultMember = new Set<string>()
+  for (const catalogId of orderedIds) {
+    const entry = DEFAULT_LAYERS.find((item) => item.catalogId === catalogId)
+    if (!entry) continue
+    const members = entry.members
+      .map((member) => byOverlayId.get(member.overlayId))
+      .filter((layer): layer is ActiveLayer => Boolean(layer))
+    if (!members.length) continue
+    blocks.push(members)
+    for (const layer of members) isDefaultMember.add(layer.instanceId)
+  }
+  // 少于两组就没有「组间顺序」可谈（例如首次打开时只挂上一组）
+  if (blocks.length < 2) return
+
+  const slotPositions: number[] = []
+  layers.forEach((layer, index) => {
+    if (isDefaultMember.has(layer.instanceId)) slotPositions.push(index)
+  })
+  const slotOrders = slotPositions.map((index) => layers[index]!.order).sort((a, b) => a - b)
+  const desired = blocks.flat()
+  if (slotOrders.length !== desired.length) return
+
+  const current = slotPositions.map((index) => layers[index]!.instanceId)
+  if (current.every((instanceId, index) => instanceId === desired[index]!.instanceId)) return
+
+  let changed = false
+  desired.forEach((layer, index) => {
+    const nextOrder = slotOrders[index]!
+    if (layer.order !== nextOrder) {
+      layer.order = nextOrder
+      changed = true
+    }
+  })
+  if (changed) workspace.scheduleWorkspacePersist()
+}
+
+/**
  * 摘除已退役的默认图层（幂等）。
  *
  * 只对**本地导入栅格**且 overlay 编号命中名单的图层生效：
@@ -629,6 +717,18 @@ export async function ensureDefaultLayers(): Promise<void> {
       } catch (err) {
         console.warn('[default-layers] 跳过', entry.catalogId, err)
       }
+    }
+
+    /**
+     * 四组显示顺序：两个「平均」在上、两个「动态」在下（2026-10-27 用户定稿）。
+     * 必须放在上面挂载循环**之后**（组得先存在才谈得上排序），
+     * 放在时间轴落点**之前**（落轴只认 `controlsTimeline` 的条目，与 order 无关，
+     * 但顺序先定下来可以让落轴那一步看到的列表是稳定的）。
+     */
+    try {
+      alignDefaultGroupOrder(workspace)
+    } catch (err) {
+      console.warn('[default-layers] 分组顺序对齐失败', err)
     }
 
     /**
