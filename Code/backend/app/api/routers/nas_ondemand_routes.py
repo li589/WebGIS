@@ -137,6 +137,14 @@ def post_layer_frame(
     payload: LayerFrameRequest,
     _user=Depends(require_workflow_run_access),
 ) -> FrameResponse:
+    # 访问日志只记路径，看不出"打给哪个图层的哪一天"。补一行，省掉以后靠猜：
+    # 2026-10-27 排查 SMAP 不生效时，就是因为分不清那几次 200 到底属于哪一层。
+    logger.info(
+        "按需补帧请求 layer=%s date=%s force=%s",
+        payload.layer_id,
+        payload.date,
+        payload.force,
+    )
     return _run_frame(
         ensure_layer_frame, payload.layer_id, payload.date, force=payload.force
     )

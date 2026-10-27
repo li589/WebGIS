@@ -150,9 +150,16 @@ export type NasOndemandLayers = {
  * 哪些图层支持「拖时间轴补单日帧」+ 数据覆盖范围。
  *
  * 纯读、不连 NAS。前端据此决定：这次拖动要不要发请求、超出范围就直接拦。
+ *
+ * 每次带时间戳，故意绕过浏览器/中间层缓存：2026-10-27 的现场事故是后端刚把
+ * SMAP 两个图层加进登记表并重启，前端却仍在用页面首次拿到的**旧清单**（只有
+ * 风云两层），于是「选中 SMAP 拖日期」被当成"不支持"静默跳过 —— 界面上既没有
+ * 请求、也没有任何提示。这份清单很小，每次真读一次不会有性能问题。
  */
 export async function fetchNasOndemandLayers(): Promise<NasOndemandLayers> {
-  return requestJson<NasOndemandLayers>('/nas-ondemand/layers', { silent: true })
+  return requestJson<NasOndemandLayers>(`/nas-ondemand/layers?ts=${Date.now()}`, {
+    silent: true,
+  })
 }
 
 /**

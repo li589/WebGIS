@@ -62,6 +62,12 @@ export function useOnDemandFrame(deps: {
   let busy = false
   /** 登记表读不到时只提示一次，别每次拖日期都弹 */
   let permissionNotified = false
+  /** 已经为哪些图层「强制重拉过登记表」：每层只试一次，别每次拖都打接口 */
+  const reloadTried = new Set<string>()
+  /** 本次页面生命周期是否已刷新过登记表（首次拖动刷一次，防页面开在后端重启之前） */
+  let registryRefreshed = false
+  /** 已经提示过「该图层没接入按天取数」的图层：每层只提示一次 */
+  const unsupportedNotified = new Set<string>()
   /** 待取的帧（同一图层只保留最后一次落点，避免拖动时堆积） */
   const queue: Array<{ layerId: string; tag: string }> = []
 
@@ -177,6 +183,28 @@ export function useOnDemandFrame(deps: {
   }
 
   /**
+   * 选中了「没登记按天取数」的图层时，把沉默换成一句人话。
+   *
+   * 之前这里直接 `return`，界面上既不取数也没有任何提示，用户只会觉得"拖了没反应"。
+   * 现在明确说清「这个层没接」+ 哪些接了，并写进操作日志便于回溯。
+   */
+  function explainUnsupported(layerId: string) {
+    if (unsupportedNotified.has(layerId)) return
+    unsupportedNotified.add(layerId)
+    banner.showNotice({
+      message:
+        '当前选中的图层没有接入按天取数，拖日期它不会变。' +
+        '已接入的是「风云 / SMAP」平均散射约束的 土壤水分 SM 与 植被光学厚度 VOD；' +
+        '等效散射 ω 的 NAS 源是年内日序气候态，尚未接入。',
+      tone: 'info',
+    })
+    deps.logOperation(
+      'ondemand-frame',
+      `图层 ${layerId} 未登记为按需补帧目标，已跳过（不取数、不改图层）`,
+    )
+  }
+
+  /**
    * 用户手动改了日期（唯一入口：`useTimelineControls.handleTimelineDateChange`）。
    * 程序自己挪时间轴（snap / 记忆恢复 / 快照还原）**不会**走到这里。
    */
@@ -212,6 +240,53 @@ export function useOnDemandFrame(deps: {
       })
       return
     }
+    const selected = deps.selectedCatalogId.value
+    /**
+     * 首次拖动先把登记表刷一遍（每页面一次）。
+     *
+     * 页面若是在「后端加完登记层、重启完成」**之前**打开的，浏览器内存里的清单就
+     * 永远是旧的（只有风云两层），于是勾选 SMAP 拖日期时连"选中层不支持"这条分支
+     * 都不会走到 —— 直接静默无反应。刷一次只要几百字节，比让用户靠猜划算得多。
+     */
+    if (!registryRefreshed) {
+      registryRefreshed = true
+      void store.reload().then(() => notifyUserDateChange(date))
+      return
+    }
+
+    if (selected && !store.isOnDemandLayer(selected)) {
+      /**
+       * 选中的图层不在登记表里。两种可能，必须分开处理：
+       *  1. 登记表是**旧的**（后端刚加登记、页面没重开）⇒ 强制重拉一次就能救回来；
+       *  2. 真的没接入（如等效散射 ω 的 doy 气候态源）⇒ 明确告诉用户，别再静默。
+       * 每层只重拉一次、只提示一次，避免每次拖动都打接口或反复弹条。
+       */
+      if (!reloadTried.has(selected)) {
+        reloadTried.add(selected)
+        void store.reload().then(() => {
+          if (store.isOnDemandLayer(selected)) {
+            notifyUserDateChange(date)
+            return
+          }
+          // 重拉本身失败（登录过期 / 网关 / 网络）：说清是"读不到清单"，不是"没接入"
+          if (!store.loaded) {
+            banner.showNotice({
+              message:
+                '按需取数没启用：读不到图层登记表 —— ' +
+                (store.lastError || '原因未知') +
+                '。截图给管理员即可定位。',
+              tone: 'error',
+            })
+            return
+          }
+          explainUnsupported(selected)
+        })
+        return
+      }
+      explainUnsupported(selected)
+      return
+    }
+
     const targets = targetsForDateChange()
     if (targets.length === 0) return
 

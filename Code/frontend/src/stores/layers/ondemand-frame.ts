@@ -181,6 +181,21 @@ export const useOnDemandFrameStore = defineStore('ondemand-frame', () => {
     return inflight
   }
 
+  /**
+   * 强制重拉一次登记表（忽略 `loaded` 与失败冷却）。
+   *
+   * 为什么需要：`ensureLoaded` 一个页面生命周期只成功读一次。后端加了新登记层并
+   * 重启之后，已经打开的页面仍然拿着旧清单 ⇒「选中新图层拖日期」会被判成"不支持"
+   * 而完全静默（2026-10-27 现场：SMAP 两层已登记，浏览器里还是只有风云两层）。
+   * 所以拖日期时一旦发现选中的图层不在清单里，就先强制重拉一次再下结论。
+   */
+  async function reload(): Promise<void> {
+    if (inflight) return inflight
+    loaded.value = false
+    loadFailed.value = false
+    return ensureLoaded()
+  }
+
   return {
     specs,
     coverage,
@@ -200,5 +215,6 @@ export const useOnDemandFrameStore = defineStore('ondemand-frame', () => {
     displayedDayTag,
     coversDate,
     ensureLoaded,
+    reload,
   }
 })
