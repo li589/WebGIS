@@ -37,7 +37,13 @@ const MAX_DISMISSED = 240
  *   非空快照随即推送覆盖远端分桶 ⇒ 两端一起对齐。
  * 用户自己拖的布局会重置一次，但**后端数据目录与产物一概不动**。
  */
-export const WORKSPACE_SCHEMA_VERSION = 2
+/**
+ * 版本变更记录：
+ * - 2：2026-10-21，图层透明度统一 0.9 + 默认勾选口径调整；
+ * - 3：2026-10-27，**默认图层由 2 组扩到 4 组**（新增风云动态 / SMAP动态），
+ *      侧栏默认只展开「风云平均」一组，组头新增「平均/动态散射约束」小字。
+ */
+export const WORKSPACE_SCHEMA_VERSION = 3
 
 export interface PersistedActiveLayer {
   instanceId: string

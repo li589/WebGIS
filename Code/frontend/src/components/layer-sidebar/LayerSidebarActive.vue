@@ -153,9 +153,15 @@ const emit = defineEmits<{
             <span class="group-icon" aria-hidden="true">
               <Layers :size="13" :stroke-width="2" />
             </span>
-            <strong class="group-title">{{
-              toRunGroupDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
-            }}</strong>
+            <!-- 2026-10-27 用户要求：标题下补一行小字「平均散射约束」/「动态散射约束」。
+                 原因：`toRunGroupDisplayName` 把平均与动态归一成同一个平台名，
+                 侧栏会出现两行一模一样的「风云卫星微波反演产品」，guest 分不出来。 -->
+            <span class="group-title-wrap">
+              <strong class="group-title">{{
+                toRunGroupDisplayName(runGroupOf(row.groupId)?.title) || LAYERS_COPY.computingGroup
+              }}</strong>
+              <span v-if="row.methodLabel" class="group-subtitle">{{ row.methodLabel }}</span>
+            </span>
             <span
               v-if="groupStatusLabel(row.groupId)"
               class="group-status-chip"

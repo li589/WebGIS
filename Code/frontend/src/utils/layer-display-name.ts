@@ -75,6 +75,44 @@ export function inversionFamilyKey(raw: string | null | undefined): string {
   return ''
 }
 
+/**
+ * 分组头的**方法副标题**（2026-10-27 用户要求）。
+ *
+ * 起因：`toRunGroupDisplayName` 把「平均」与「动态」两组都归一成**同一个平台名**
+ * （都叫「风云卫星微波反演产品」/「SMAP卫星反演产品」），侧栏于是出现两行一模一样
+ * 的组标题，guest 根本看不出哪一行是平均、哪一行是动态。⇒ 在标题底下补一行小字。
+ *
+ * 判定**优先看工作流 / 目录 id，标题文案只作兜底**：
+ * 同一个组的标题有四个来源（见 `toRunGroupDisplayName` 注释），而工作流定义里的
+ * 文案五花八门——`风云 散射约束产品产物（本地）` 这种压根不含「平均」二字，
+ * 靠文案猜必然漏掉。id 里的 `avg` / `fenkuai` 才是硬事实。
+ */
+export const GROUP_METHOD_LABEL = {
+  mean: '平均散射约束',
+  dynamic: '动态散射约束',
+} as const
+
+export function runGroupMethodLabel(group: {
+  title?: string | null
+  workflowId?: string | null
+  sourceLayerId?: string | null
+}): string {
+  const workflow = String(group.workflowId ?? '').toLowerCase()
+  if (workflow) {
+    if (/fenkuai|block|dynamic/.test(workflow)) return GROUP_METHOD_LABEL.dynamic
+    if (/avg|mean/.test(workflow)) return GROUP_METHOD_LABEL.mean
+  }
+  const source = String(group.sourceLayerId ?? '').toLowerCase()
+  if (source) {
+    if (/dynamic|fenkuai/.test(source)) return GROUP_METHOD_LABEL.dynamic
+    if (/-avg|mean/.test(source)) return GROUP_METHOD_LABEL.mean
+  }
+  const title = String(group.title ?? '')
+  if (/动态|分块/.test(title)) return GROUP_METHOD_LABEL.dynamic
+  if (/平均/.test(title)) return GROUP_METHOD_LABEL.mean
+  return ''
+}
+
 export function toLayerDisplayName(raw: string | null | undefined): string {
   let name = String(raw ?? '').trim()
   if (!name) return ''

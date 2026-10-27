@@ -1341,18 +1341,43 @@ h2 {
   flex-shrink: 0;
 }
 
+/* 标题两行容器（2026-10-27）：标题 + 方法小字「平均散射约束 / 动态散射约束」。
+   flex:1 从 .group-title 挪到这一层 —— 否则小字会被挤到标题右边而不是下面。 */
+.group-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
 .group-title {
   /* 2026-10-20 字号层级（用户要求「图层字号比日期大」）：
      组标题 14px > 图层名 13px > 色带刻度 / 日期 10.5px */
   font-size: var(--font-size-title);
   font-weight: 600;
   color: var(--text-strong);
-  flex: 1;
+  flex: none;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   /* 2026-10-19：整行点击即折叠，标题不再允许文本选择，避免拖选误触 */
+  user-select: none;
+  cursor: pointer;
+}
+
+/* 方法小字（2026-10-27）：与「N 层」胶囊同一档字号，弱化到 --text-muted，
+   只做区分、不与标题争层级。 */
+.group-subtitle {
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   user-select: none;
   cursor: pointer;
 }

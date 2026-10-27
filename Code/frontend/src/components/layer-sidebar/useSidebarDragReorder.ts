@@ -2,10 +2,20 @@ import { computed, ref, type Ref } from 'vue'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { SidebarDragDeps } from './sidebar-layers-deps'
 import { LAYERS_COPY } from '../../ui-copy'
-import { inversionFamilyKey } from '../../utils/layer-display-name'
+import { inversionFamilyKey, runGroupMethodLabel } from '../../utils/layer-display-name'
 
 export type ActiveTocRow =
-  | { kind: 'group'; groupId: string; key: string; collapsed: boolean }
+  | {
+      kind: 'group'
+      groupId: string
+      key: string
+      collapsed: boolean
+      /**
+       * 组标题下的小字（2026-10-27）：`平均散射约束` / `动态散射约束`。
+       * 空串＝该组不是反演产品组，不渲染这一行。
+       */
+      methodLabel: string
+    }
   | {
       kind: 'layer'
       layer: ActiveLayerDisplay
@@ -31,6 +41,19 @@ const COLLAPSED_DEFAULT_GROUPS_KEY = 'cgda.sidebar.collapsedDefaultGroups'
 const DEFAULT_GROUP_PREFIX = 'run-group-default-'
 
 /**
+ * **唯一默认展开**的预置组：风云平均散射约束（= `DEFAULT_LAYERS[0]`，
+ * `default-layers.ts` 里 `catalogId: 'method-fy-omega-doy-avg'`）。
+ *
+ * 2026-10-27 用户定稿的四组形态：
+ *   ① 风云平均 —— 展开（一进页面看到的就是它的「土壤水分」）
+ *   ② 风云动态 —— 折叠
+ *   ③ SMAP平均 —— 折叠
+ *   ④ SMAP动态 —— 折叠
+ * 折叠的三个点开即展开，展开状态照常记忆；折叠状态也照常记忆，不会被这里重置。
+ */
+const PRIMARY_EXPANDED_GROUP_ID = `${DEFAULT_GROUP_PREFIX}method-fy-omega-doy-avg`
+
+/**
  * 组展开记忆（2026-10-19）：默认折叠，只记住用户手动展开过的组。
  * 存「展开集合」而非「折叠集合」，这样从没见过的组（新跑完的工作流）天然是收起的。
  * 写入时剔除已消失的 groupId，避免 localStorage 无限增长。
@@ -39,6 +62,10 @@ const DEFAULT_GROUP_PREFIX = 'run-group-default-'
  * 侧栏一进来就只看到两个组头、成员全收起，对演示是纯损失——预置组的内容是固定的，
  * 不存在「新跑完的组太多会糊屏」的问题。工作流跑出来的临时组仍保持默认收起。
  * 用户若手动折叠预置组，记到 `collapsedDefaultGroups` 里，下次刷新保持折叠。
+ *
+ * 2026-10-27 再改（用户：四个组只有风云平均那个不折叠）：默认图层从 2 组扩到 4 组
+ * （风云平均 / 风云动态 / SMAP平均 / SMAP动态），若沿用「预置组全展开」，一进页面
+ * 12 个成员铺满侧栏、四组区域互相挤压。现改为只展开 `PRIMARY_EXPANDED_GROUP_ID`。
  */
 function loadStringSet(key: string): Set<string> {
   try {
@@ -90,8 +117,12 @@ export function useSidebarDragReorder(
   function isGroupExpanded(groupId: string): boolean {
     if (expandedGroups.value.has(groupId)) return true
     if (collapsedDefaultGroups.value.has(groupId)) return false
-    // 出厂预置组（风云 / SMAP）默认展开，其余（工作流跑出来的）默认收起
-    return groupId.startsWith(DEFAULT_GROUP_PREFIX)
+    // 2026-10-27：**只有风云平均组**默认展开；其余三个预置组（风云动态 / SMAP平均 /
+    // SMAP动态）与工作流跑出来的临时组一律默认折叠。四个组标题共占约 200px，
+    // 折叠后侧栏一屏放得下、互不遮挡。
+    // 注意：这条默认值只在「本地没有显式记录」时生效——用户点开过的仍然展开、
+    // 折叠过的仍然折叠，不需要清 localStorage。
+    return groupId === PRIMARY_EXPANDED_GROUP_ID
   }
 
   function toggleGroupCollapsed(groupId: string) {
@@ -164,11 +195,13 @@ export function useSidebarDragReorder(
         const collapsed = !isGroupExpanded(layer.runGroupId)
         if (!seen.has(layer.runGroupId)) {
           seen.add(layer.runGroupId)
+          const group = runGroupOf(layer.runGroupId)
           rows.push({
             kind: 'group',
             groupId: layer.runGroupId,
             key: `g-${layer.runGroupId}`,
             collapsed,
+            methodLabel: group ? runGroupMethodLabel(group) : '',
           })
         }
         // 折叠组的成员行不渲染；activeLayersDisplay 本身不动，拖拽落点仍按完整列表计算

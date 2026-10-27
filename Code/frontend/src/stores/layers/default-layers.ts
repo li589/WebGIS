@@ -144,6 +144,51 @@ export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
     ],
   },
   {
+    /**
+     * 风云**动态**散射约束（2026-10-27 用户要求：老师希望动态的也默认加载）。
+     *
+     * 产物早就跑出来了，只是从来没进过这份名单——编号按后端规则复算，并与
+     * `Data\ProjectOutput\imports` 里的实际目录逐一核对：
+     *   sha1('method-fy-omega-doy-dynamic|SM|SM')[:12]       = fa303afda71e
+     *   sha1('method-fy-omega-doy-dynamic|VOD|VOD')[:12]     = 731b37b59c97
+     *   sha1('method-fy-omega-doy-dynamic|OMEGA|OMEGA')[:12] = c6c55b8a9f4e
+     * 时间结构：8 天块，`20251101_20251108` ~ `20251227_20251231`（8 片），
+     * default_time = `20251227_20251231`。
+     *
+     * 三处刻意的设定：
+     * - 成员**全部不勾选**：四个组盖的是同一片区域，叠在一起只看得到最上面一层；
+     * - `controlsTimeline: false`：动态帧也是「包含 12-31 的区间片」，若它也落轴，
+     *   会把轴从整月合成帧拽到动态块的收尾日，风云平均那层匹配范围变窄；
+     * - `enforceVisibility: true`：保证"一进页面仍然是风云平均的土壤水分"这个口径
+     *   在任何浏览器上都成立（否则历史快照里勾过的动态层会把平均层盖住）。
+     */
+    catalogId: 'method-fy-omega-doy-dynamic',
+    groupTitle: '风云 动态散射约束产品反演（本地）',
+    workflowId: 'omega_sf_fenkuai_fy_single',
+    enforceVisibility: true,
+    controlsTimeline: false,
+    members: [
+      {
+        role: 'SM',
+        overlayId: 'imported-fa303afda71e',
+        label: '土壤水分',
+        visible: false,
+      },
+      {
+        role: 'VOD',
+        overlayId: 'imported-731b37b59c97',
+        label: '植被光学厚度',
+        visible: false,
+      },
+      {
+        role: 'OMEGA',
+        overlayId: 'imported-c6c55b8a9f4e',
+        label: '等效散射 ω',
+        visible: false,
+      },
+    ],
+  },
+  {
     // 编号复核：sha1('method-smap-omega-doy-avg|SM|SM')[:12]       = 136c60293bbf
     //           sha1('method-smap-omega-doy-avg|VOD|VOD')[:12]     = 169f6402583c
     //           sha1('method-smap-omega-doy-avg|OMEGA|OMEGA')[:12] = 9a7cf36832cd
@@ -187,6 +232,44 @@ export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
       {
         role: 'OMEGA',
         overlayId: 'imported-49101c3674f8',
+        label: '等效散射 ω',
+        visible: false,
+      },
+    ],
+  },
+  {
+    /**
+     * SMAP **动态**散射约束（2026-10-27 用户要求）。
+     *
+     * 编号复核（与盘上目录一致）：
+     *   sha1('method-smap-omega-doy-dynamic|SM|SM')[:12]       = a8940443fd6d
+     *   sha1('method-smap-omega-doy-dynamic|VOD|VOD')[:12]     = 5427e1020d63
+     *   sha1('method-smap-omega-doy-dynamic|OMEGA|OMEGA')[:12] = 94501b455dcd
+     * 时间结构：8 天块共 11 片（多出 `20251227_20251231` 之后的 `20260101`、
+     * `20260125_20260201`、`20260202_20260208` 三个零散块），default_time =
+     * `20260125_20260201`。同风云动态：不勾选、不落轴、每次打开对齐成不勾。
+     */
+    catalogId: 'method-smap-omega-doy-dynamic',
+    groupTitle: 'SMAP 动态散射约束产品反演（本地）',
+    workflowId: 'omega_sf_fenkuai_smap_single',
+    enforceVisibility: true,
+    controlsTimeline: false,
+    members: [
+      {
+        role: 'SM',
+        overlayId: 'imported-a8940443fd6d',
+        label: '土壤水分',
+        visible: false,
+      },
+      {
+        role: 'VOD',
+        overlayId: 'imported-5427e1020d63',
+        label: '植被光学厚度',
+        visible: false,
+      },
+      {
+        role: 'OMEGA',
+        overlayId: 'imported-94501b455dcd',
         label: '等效散射 ω',
         visible: false,
       },
