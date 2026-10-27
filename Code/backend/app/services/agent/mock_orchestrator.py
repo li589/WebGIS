@@ -163,6 +163,42 @@ def _name_keys(layer: dict[str, str]) -> list[str]:
     return sorted((k for k in keys if k), key=len, reverse=True)
 
 
+#: 用户口语 → 图层名里可能出现的写法。
+#: 图层名各产品写法不同（「土壤水分」「VOD 植被光学厚度」「等效散射 ω」），
+#: 但用户只会说「VOD」「土壤水分」「散射」——不做这层映射，
+#: 「VOD 的均值是多少」就会落到「当前选中图层」上，算成土壤水分（2026-10-26 实测缺陷 ①）。
+_LAYER_ALIASES: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
+    (re.compile(r"vod|植被光学厚度|光学厚度", re.I), ("vod", "植被光学厚度")),
+    (
+        re.compile(r"土壤水|土壤湿|含水量|墒情|(?<![a-z])sm(?![a-z])", re.I),
+        ("土壤水", "含水量", "墒情"),
+    ),
+    (re.compile(r"omega|ω|散射", re.I), ("散射", "ω", "omega")),
+]
+
+_STAT_VERB = re.compile(r"平均|均值|统计|像元数|最大|最小|mean|average", re.I)
+#: 界面动作动词（用于从复合指令里挑出「顺带要做的界面动作」）
+_SIDE_VERB = re.compile(
+    r"打开|显示|隐藏|移除|删除|去掉|切换|缩放|定位|飞到|置顶|置底|透明度", re.I
+)
+#: 复合指令切句：标点 + 常见连接词；「并」只在后面紧跟动词时切开，避免误伤「并且/并行」以外的情况
+_CLAUSE_SPLIT = re.compile(
+    r"[，,；;。]|然后|接着|同时|并且|再(?=把|将|打开|显示|隐藏|移除|切换|缩放|定位)|"
+    r"并(?=把|将|打开|显示|隐藏|移除|切换|缩放|定位|算|统计)"
+)
+
+
+def _side_clauses(text: str) -> str:
+    """抽出复合指令里「与统计无关、但用户想顺带做」的子句。
+
+    「计算选中图层的均值，并把 VOD 图层打开」——统计分支原实现直接 return，
+    后半句被丢掉，界面纹丝不动（2026-10-26 实测缺陷 ②）。
+    """
+    parts = [p.strip() for p in _CLAUSE_SPLIT.split(text) if p and p.strip()]
+    keep = [p for p in parts if _SIDE_VERB.search(p) and not _STAT_VERB.search(p)]
+    return "，".join(keep)
+
+
 def _resolve_layer(
     message: str,
     layers: list[dict[str, Any]],
@@ -194,6 +230,23 @@ def _resolve_layer(
         return LayerPick(only["catalog_id"], _display(only))
     if len(best) > 1:
         return None
+
+    # 口语别名（VOD / 土壤水分 / 散射）：全名对不上时按产品口径再试一次
+    alias_hits: dict[str, dict[str, Any]] = {}
+    for pattern, terms in _LAYER_ALIASES:
+        if not pattern.search(message):
+            continue
+        for layer in layers:
+            name_low = _display(layer).lower()
+            if any(term.lower() in name_low for term in terms):
+                alias_hits[layer["catalog_id"]] = layer
+    if len(alias_hits) == 1:
+        only = next(iter(alias_hits.values()))
+        return LayerPick(only["catalog_id"], _display(only))
+    if len(alias_hits) > 1:
+        # 「土壤水分」同时命中风云与 SMAP 两个图层，且用户没点名来源 ⇒ 不猜
+        return None
+
     if not allow_demo_fallback:
         return None
     for pattern, catalog_id, label in _DEMO_FALLBACKS:
@@ -392,7 +445,17 @@ def _statistics_reply(
     intents: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """整层只读统计（规则演示模式也能算，不再回答「没有统计能力」）。"""
-    target, why = _pick_stat_target(layers)
+    # 先看用户在句子里点了哪个图层（「VOD 的均值」不能说成土壤水分），
+    # 点不出来才回落到「当前选中 / 唯一可见」。
+    picked = _resolve_layer(text, layers, allow_demo_fallback=False)
+    target: dict[str, Any] | None = None
+    why: str | None = None
+    if picked is not None:
+        target = next(
+            (la for la in layers if la.get("catalog_id") == picked.catalog_id), None
+        )
+    if target is None:
+        target, why = _pick_stat_target(layers)
     if target is None:
         return {
             "session_id": sid,
@@ -472,8 +535,13 @@ def mock_chat(
     *,
     session_id: str | None = None,
     client_context: dict[str, Any] | None = None,
+    _allow_stats: bool = True,
 ) -> dict[str, Any]:
-    """Return reply + optional ui_intents from keyword rules."""
+    """Return reply + optional ui_intents from keyword rules.
+
+    ``_allow_stats=False`` 仅供内部递归调用（处理复合指令的第二个子句）使用，
+    避免子句里再出现「均值」二字时又跳回统计分支造成死循环。
+    """
     sid = (session_id or "").strip() or str(uuid.uuid4())
     text = (message or "").strip()
     layers = _normalize_layers(client_context)
@@ -501,8 +569,53 @@ def mock_chat(
     # 整层只读统计：必须排在「列图层」与「工作流」两个分支之前——
     # ① 「列图层」的 `当前图层` 会误命中「只读计算当前图层全范围均值」；
     # ② 「工作流」分支会把「不要运行任何工作流」当成工作流请求。
-    if re.search(r"平均|均值|统计|像元数|最大|最小|mean|average", text, re.I):
-        return _statistics_reply(text, layers, client_context, sid, intents)
+    #
+    # 2026-10-27：复合指令（「算均值，并把 VOD 打开」）原来在这里直接 return，
+    # 后半句被吞掉、界面纹丝不动。现在把非统计子句交给下一个分支递归执行，
+    # 意图合并返回，正文另起一段说明。
+    if _allow_stats and _STAT_VERB.search(text):
+        result = _statistics_reply(text, layers, client_context, sid, intents)
+        side = _side_clauses(text)
+        if side and side.strip() != text.strip():
+            follow = mock_chat(
+                side,
+                session_id=sid,
+                client_context=client_context,
+                _allow_stats=False,
+            )
+            extra = list(follow.get("ui_intents") or [])
+            if extra:
+                result["ui_intents"] = list(result.get("ui_intents") or []) + extra
+                head = str(result.get("reply") or "").rstrip()
+                tail = str(follow.get("reply") or "").strip()
+                if tail:
+                    result["reply"] = f"{head}\n\n另外：{tail}"
+        return result
+
+    # 「当前选中是哪个图层」——必须给出真名。
+    # 原来这句落到通用兜底，答案只有「该图层」（2026-10-26 实测缺陷 ④）。
+    if re.search(
+        r"当前选中|选中了?哪|哪个图层.*选中|选中的(图层|是)|selected\s*layer",
+        text,
+        re.I,
+    ):
+        sel = [la for la in layers if la.get("selected")]
+        if len(sel) == 1:
+            reply = f"当前选中的是「{_display(sel[0])}」。"
+        elif not sel:
+            vis = [la for la in layers if la.get("visible")]
+            if vis:
+                names = "、".join(f"「{_display(la)}」" for la in vis[:5])
+                reply = f"当前没有选中任何图层，正在显示的图层是：{names}。"
+            elif layers:
+                names = "、".join(f"「{_display(la)}」" for la in layers[:5])
+                reply = f"当前没有选中任何图层，已加载的图层是：{names}。"
+            else:
+                reply = "当前地图上没有图层，也没有选中项。"
+        else:
+            names = "、".join(f"「{_display(la)}」" for la in sel[:5])
+            reply = f"当前选中了 {len(sel)} 个图层：{names}。"
+        return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
     # List active layers
     if re.search(r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", text, re.I):
@@ -545,7 +658,19 @@ def mock_chat(
         }
 
     # Switch basemap
-    if re.search(r"底图|basemap|切换.*(图|影像|街道)|换成", text, re.I):
+    #
+    # 原来条件是 `切换.*(图|影像|街道)`，「切换到 VOD 图层」里的「图层」含「图」
+    # 就被当成切底图，回「请说明要切换的底图」（2026-10-26 实测缺陷 ③）。
+    # 现在必须出现真正的底图词（或明确的底图服务名），且句子里没有「图层/时间」。
+    _basemap_words = re.search(
+        r"底图|basemap|天地图|高德|esri|osm|openstreetmap", text, re.I
+    )
+    _basemap_swap = re.search(r"切换|换成|改为|换到", text, re.I) and re.search(
+        r"影像|街道|地形|卫星|矢量|电子", text, re.I
+    )
+    if (_basemap_words or _basemap_swap) and not re.search(
+        r"图层|时间轴|日期|帧", text, re.I
+    ):
         for pattern, source_id, label in _BASEMAP_HINTS:
             if pattern.search(text):
                 intents.append(
@@ -727,7 +852,12 @@ def mock_chat(
         }
 
     # Show / open
-    if re.search(r"打开|显示|开启|show|enable|可见", text, re.I):
+    #
+    # 2026-10-27：补「切换到 / 切到 / 换到」——用户说「切换到 VOD 图层」时既不是
+    # 打开也不是显示，原来会掉到通用兜底；底图分支加了排除后它能走到这里。
+    if re.search(
+        r"打开|显示|开启|show|enable|可见|切换到|切到|换到|转到|切换到", text, re.I
+    ):
         pick = _resolve_layer(text, layers)
         if not pick:
             if layers:
