@@ -196,7 +196,17 @@ const exposeBridge = createMapCanvasExposeBridge({
   },
   fitToLayerExtent: (instanceId: string) => fitToLayerExtent(instanceId),
   setOverlayTime: (layerId: string, time: string) => {
-    void overlayImageModule?.setOverlayTime(layerId, time)
+    /**
+     * 这里原本是 `void setOverlayTime(...)`，异常被彻底吞掉：地图侧一旦报错
+     * （源删不干净 / bounds 不合法 / WebGL 状态异常），界面上什么都不会说，
+     * 用户只看到「拖了日期，图没变」。至少留一条可见记录 + 控制台原文。
+     */
+    const pending = overlayImageModule?.setOverlayTime(layerId, time)
+    void Promise.resolve(pending).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`[Overlay] 切换时间失败 ${layerId}@${time}`, err)
+      useLogStore().logOperation('overlay-time', `切换时间失败 ${layerId}@${time}：${msg}`)
+    })
   },
   flyTo: (options: {
     center: [number, number]

@@ -138,6 +138,20 @@ export function useOnDemandFrame(deps: {
           result?.cached ? '本地已有' : 'NAS 取数'
         } · ${result?.elapsed_ms ?? '?'}ms`,
       )
+      /**
+       * 成功也要给反馈。
+       *
+       * 原来只有「超过 700ms 才提示正在取」，而本地命中的帧是毫秒级返回——
+       * 慢提示根本来不及出现，成功后又被立刻关掉，用户看到的就是「拖完什么都没发生」。
+       * 这里补一条短提示：既确认切到了哪一天，也顺带说明是本地还是 NAS 取的。
+       */
+      banner.showNotice({
+        message: `已切到 ${formatTag(applied)} 的单日图${
+          result?.cached ? '（本地已有）' : '（刚从 NAS 取回）'
+        }`,
+        catalogId: layerId,
+        tone: 'info',
+      })
     } catch (err) {
       if (noticeTimer) {
         clearTimeout(noticeTimer)

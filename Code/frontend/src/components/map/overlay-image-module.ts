@@ -340,8 +340,27 @@ export function createOverlayImageModule(
     string,
     { bounds: [number, number, number, number]; meta: OverlayBoundsMeta }
   >()
-  /** bounds 404 负缓存：缺资产的注册层（如 aridity-cn）不要反复打 404 */
-  const boundsMissCache = new Set<string>()
+  /**
+   * bounds 404 负缓存：缺资产的注册层（如 aridity-cn）不要反复打 404。
+   *
+   * ⚠ 必须带过期时间。2026-10-27 现场：这里原本是**永不过期**的裸 Set，
+   * 某个单日 key（`layer@20251119`）只要 404 过一次，这个页面生命周期里
+   * `_fetchTimedBounds` 就永远返回 null ⇒ `setOverlayTime` 静默回退到别的时刻。
+   * 表现出来就是「拖到 11-19 什么也没发生 / 偶尔放大才出来」，重开页面才好。
+   * 单日帧是**边用边生成**的，第一次 404 很可能几秒后就有图了，绝不能记死。
+   */
+  const BOUNDS_MISS_TTL_MS = 30_000
+  const boundsMissCache = new Map<string, number>()
+  function _markBoundsMiss(key: string) {
+    boundsMissCache.set(key, Date.now())
+  }
+  function _hasBoundsMiss(key: string): boolean {
+    const at = boundsMissCache.get(key)
+    if (at == null) return false
+    if (Date.now() - at < BOUNDS_MISS_TTL_MS) return true
+    boundsMissCache.delete(key)
+    return false
+  }
 
   function _ids(layerId: string) {
     const safe = layerId.replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -470,14 +489,14 @@ export function createOverlayImageModule(
     time: string | null,
   ): Promise<[number, number, number, number] | null> {
     const cacheKey = time ? `${layerId}@${time}` : layerId
-    if (boundsMissCache.has(cacheKey) || boundsMissCache.has(layerId)) return null
+    if (_hasBoundsMiss(cacheKey) || _hasBoundsMiss(layerId)) return null
     const cached = boundsCache.get(cacheKey)
     if (cached) return cached.bounds
     try {
       const qs = time ? `?time=${encodeURIComponent(time)}` : ''
       const resp = await fetch(`/overlay-bounds/${layerId}${qs}`)
       if (!resp.ok) {
-        if (resp.status === 404) boundsMissCache.add(cacheKey)
+        if (resp.status === 404) _markBoundsMiss(cacheKey)
         return null
       }
       const data = (await resp.json()) as {
@@ -638,6 +657,13 @@ export function createOverlayImageModule(
       },
       options.map.getLayer('admin-fill') ? 'admin-fill' : undefined,
     )
+    /**
+     * 切时间走的是「删旧源 → 建新源 → 重加图层」。MapLibre 在样式没被标记为
+     * 待更新时不一定会立刻为新源调度瓦片，要等镜头变化（拖动/缩放）才去拉，
+     * 用户看到的就是「拖完日期不出图，放大一下才出来」（2026-10-27 实测）。
+     * 这里主动触发一次重绘，让它当场就为新源排瓦片。
+     */
+    options.map.triggerRepaint()
   }
 
   async function _switchRenderMode(loaded: LoadedOverlay, mode: 'image' | 'raster-xyz') {
@@ -764,7 +790,7 @@ export function createOverlayImageModule(
       // 已有加载在飞：只更新 desiredVisibility / style，完成后应用
       return
     }
-    if (boundsMissCache.has(layerId)) return
+    if (_hasBoundsMiss(layerId)) return
     const { sourceId } = _ids(layerId)
     if (options.map.getSource(sourceId)) return
     loadingOverlays.add(layerId)
@@ -773,7 +799,7 @@ export function createOverlayImageModule(
       // 先取根 meta（time_list），时间序列再按 default_time 取与预览一致的地理框
       const rootResp = await fetch(`/overlay-bounds/${layerId}`)
       if (!rootResp.ok) {
-        if (rootResp.status === 404) boundsMissCache.add(layerId)
+        if (rootResp.status === 404) _markBoundsMiss(layerId)
         console.warn(`[Overlay] bounds fetch failed for ${layerId}: ${rootResp.status}`)
         return
       }
@@ -1073,6 +1099,8 @@ export function createOverlayImageModule(
       const newUrl = _previewUrl(layerId, time, loaded.style)
       _applyImageSourceUpdate(source, newUrl, timedBounds)
       if (timedBounds) _rebuildBandsIfNeeded(loaded, newUrl, timedBounds)
+      // 同上：换图后主动重绘，别等用户动镜头才刷
+      options.map.triggerRepaint()
     }
 
     loaded.currentTime = time
