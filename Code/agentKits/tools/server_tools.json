@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "search_layers",
-      "description": "Search layer catalog by keyword (read-only, ACL filtered).",
+      "description": "Search layers by keyword (read-only, ACL filtered). Results also include the layers currently loaded on the user's page (client_context.active_layers), which are usually NOT in the catalog; such hits come first and carry on_page=true, visible, selected, layer_kind (runtime_product = a materialized run product, catalog_reference = a catalog entry) and product_class (derived_product = local inversion/materialized product, reference_layer = reference/official layer shipped with the catalog, catalog_other). When the user only names a data source (SMAP, FengYun, L3), treat it as the SOURCE, not the layer: prefer on_page/visible/selected hits over catalog references, never silently substitute a catalog reference layer for the layer the user is actually looking at, and if the only candidates differ by product_class (derived_product vs reference_layer) ask the user which one they mean instead of picking one.",
       "args": {
         "type": "object",
         "required": ["query"],
@@ -30,7 +30,7 @@
     },
     {
       "name": "get_layer_meta",
-      "description": "Get detailed metadata for one catalog layer (read-only, ACL filtered): description, readiness, extent, workflow binding, tags.",
+      "description": "Get detailed metadata for one layer (read-only, ACL filtered): description, readiness, extent, workflow binding, tags, plus temporal facts. temporal_coverage and declared_temporal_coverage are only the descriptor CLAIM; actual_temporal_coverage / actual_block_count / actual_time_blocks / temporal_summary come from the real time_list on disk. When coverage_conflict=true the claim contradicts the product, so trust actual_* and never quote the declared dates.",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
@@ -113,7 +113,7 @@
     },
     {
       "name": "get_layer_coverage",
-      "description": "Get dual-channel data coverage for a catalog layer (online window + local dates). Pass `time` to get a decisive answer (`resolved.status` = available/unavailable) about whether that date has data, and `resolved.channel` to tell local products apart from online fetching.",
+      "description": "Get dual-channel data coverage for a catalog layer (online window + local dates). Pass `time` to get a decisive answer (`resolved.status` = available/unavailable) about whether that date has data, and `resolved.channel` to tell local products apart from online fetching. `available_dates` lists the real neighbouring dates on that layer (first/last/count plus before/after around `time`): when a date has no data, the ONLY dates you may suggest come from there, and you must say they are the dates this layer actually has. Never infer or invent a substitute date.",
       "args": {
         "type": "object",
         "required": ["catalog_id"],

@@ -41,7 +41,9 @@ def execute_server_tool(
     if tool not in _ALLOWED_TOOLS:
         return {"ok": False, "error": f"未知或未授权的服务端工具: {tool}"}
     if tool == "search_layers":
-        return _search_layers(args, cred=cred)
+        # client_context 必传：只有它知道「页面上现在挂着哪些图层」，
+        # 运行产物（imported-*）不在 catalog 里，纯目录搜是搜不到的。
+        return _search_layers(args, cred=cred, client_context=client_context)
     if tool == "list_workflows":
         return _list_workflows(args, cred=cred)
     if tool == "get_layer_meta":
@@ -460,6 +462,12 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
             "supports_time": bool(blocks),
             "is_realtime": False,
             "temporal_coverage": coverage_text,
+            # 与 catalog 图层的返回结构对齐：运行产物没有「描述符声明」，
+            # 时间覆盖本来就来自真实 time_list，因此永远不冲突。
+            "declared_temporal_coverage": None,
+            "actual_temporal_coverage": coverage_text,
+            "coverage_conflict": False,
+            "coverage_note": None,
             # 报告第二轮 P2：元数据缺「原生坐标系 / 宽高」。
             # 复用同一条 overlay spec 只读栅格头（不读像元），失败给 None，绝不编造。
             "crs": header.get("crs"),
@@ -487,6 +495,108 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
             "time_span_days": facts["time_span_days"],
             "temporal_summary": facts["temporal_summary"],
         },
+    }
+
+
+def _local_time_keys(catalog_id: str) -> list[str]:
+    """图层的本地时间帧（覆盖 / 元数据 / 统计三处共用的唯一入口）。
+
+    先问 overlay 注册表（会按需从 ``<imports>/<id>/meta.json`` 惰性加载）；
+    ``imported-*`` 拿不到时再直接读盘上 meta.json。任何异常都返回空列表，
+    **绝不编造日期**——空列表本身就是「这一层没有本地产物」这个事实。
+    """
+    keys: list[str] = []
+    try:
+        from app.services.overlay_registry import get_overlay_spec
+
+        spec = get_overlay_spec(catalog_id)
+        if spec is not None:
+            keys = [str(d) for d in (spec.time_list or [])[:366] if d is not None]
+    except Exception:
+        logger.debug("overlay time_list unavailable for %s", catalog_id, exc_info=True)
+    if not keys and catalog_id.startswith("imported-"):
+        # 兜底：直接读盘上 meta.json 的 time_list
+        try:
+            from app.data_io.services.paths import safe_import_child
+            import json as _json
+
+            meta_path = safe_import_child(catalog_id) / "meta.json"
+            if meta_path.is_file():
+                loaded = _json.loads(meta_path.read_text(encoding="utf-8"))
+                raw = loaded.get("time_list") if isinstance(loaded, dict) else None
+                if isinstance(raw, list):
+                    keys = [str(d) for d in raw[:366] if d is not None]
+        except Exception:
+            logger.debug("meta time_list unavailable for %s", catalog_id, exc_info=True)
+    return keys
+
+
+_MONTH_IN_TEXT_RE = re.compile(r"(\d{4})[-/年](\d{1,2})")
+
+
+def _text_months(text: Any) -> set[tuple[int, int]]:
+    """从描述文本里抠出所有「年-月」，例如 ``2025-12-01 to 2025-12-31``。
+
+    只认 4 位年 + 分隔符 + 1~2 位月，``9km``/``L3``/``20251201`` 都不会误命中。
+    """
+    out: set[tuple[int, int]] = set()
+    for year_s, month_s in _MONTH_IN_TEXT_RE.findall(str(text or "")):
+        try:
+            year, month = int(year_s), int(month_s)
+        except ValueError:
+            continue
+        if 1970 <= year <= 2100 and 1 <= month <= 12:
+            out.add((year, month))
+    return out
+
+
+def _key_months(keys: list[str]) -> set[tuple[int, int]]:
+    """时间片键（``20251201`` 或 ``20251201_20260201``）→ 覆盖到的「年-月」。"""
+    out: set[tuple[int, int]] = set()
+    for key in keys or []:
+        for part in str(key).split("_"):
+            if len(part) != 8 or not part.isdigit():
+                continue
+            year, month = int(part[:4]), int(part[4:6])
+            if 1970 <= year <= 2100 and 1 <= month <= 12:
+                out.add((year, month))
+    return out
+
+
+def _coverage_consistency(declared: Any, keys: list[str]) -> dict[str, Any]:
+    """「描述里声明的时间」与「盘上真实时间片」的一致性判定（只读、可解释）。
+
+    这是外部测试报告第 1 条（同一图层宣称 2025-12、实物却是 2023-01）的
+    结构性修复：旧 ``get_layer_meta`` 把描述符里的 ``temporal_coverage``
+    原样返回，而 ``get_layer_coverage`` 读的是真实 ``time_list``，两个工具
+    于是自相矛盾、模型随便挑一个念。现在元数据里同时给出两侧事实和冲突标记。
+    """
+    declared_months = _text_months(declared)
+    actual_months = _key_months(keys)
+    facts = _temporal_facts(keys)
+    conflict = bool(declared_months and actual_months) and not bool(
+        declared_months & actual_months
+    )
+    actual_text = None
+    if actual_months:
+        ordered = sorted(actual_months)
+        first, last = ordered[0], ordered[-1]
+        actual_text = f"{first[0]:04d}-{first[1]:02d} ~ {last[0]:04d}-{last[1]:02d}"
+    note = None
+    if conflict and actual_text:
+        note = (
+            f"描述里写的时间（{declared}）与图层实际产物（{actual_text}）不一致，"
+            "必须以实际产物为准；不要念描述里的日期。"
+        )
+    elif not keys:
+        note = "该图层暂无本地时间片，时间覆盖只能看在线通道（channels.online）。"
+    return {
+        "conflict": conflict,
+        "declared": str(declared) if declared else None,
+        "actual_text": actual_text,
+        "actual_months": actual_months,
+        "note": note,
+        "facts": facts,
     }
 
 
@@ -529,31 +639,45 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     notes = getattr(desc, "run_readiness_notes", None) or []
     if not isinstance(notes, list):
         notes = [str(notes)]
-    return {
-        "ok": True,
-        "layer": {
-            "layer_id": str(getattr(desc, "layer_id", "") or catalog_id),
-            "display_name": str(getattr(desc, "display_name", "") or catalog_id),
-            "description": str(getattr(desc, "description", "") or "")[:500],
-            "category": str(getattr(desc, "category", "") or ""),
-            "status": str(getattr(desc, "status", "") or ""),
-            "workflow_id": str(getattr(desc, "workflow_id", "") or ""),
-            "workflow_name": str(getattr(desc, "workflow_name", "") or ""),
-            "engine": str(getattr(desc, "engine", "") or ""),
-            "run_readiness": str(getattr(desc, "run_readiness", "") or ""),
-            "run_readiness_summary": str(
-                getattr(desc, "run_readiness_summary", "") or ""
-            )[:300]
-            or None,
-            "run_readiness_notes": [str(n)[:160] for n in notes[:8]],
-            "supports_time": bool(getattr(desc, "supports_time", False)),
-            "is_realtime": bool(getattr(desc, "is_realtime", False)),
-            "temporal_coverage": str(getattr(desc, "temporal_coverage", "") or "")
-            or None,
-            "extent": extent_out,
-            "tags": [str(t)[:64] for t in tags[:20]],
-        },
+    declared_coverage = str(getattr(desc, "temporal_coverage", "") or "") or None
+    # 描述符里的时间覆盖只是「声明」，可能与盘上产物不一致（报告 第 1 条）。
+    # 这里同时给出真实时间片与冲突标记，让模型没机会只念声明。
+    actual_keys = _local_time_keys(catalog_id)
+    consistency = _coverage_consistency(declared_coverage, actual_keys)
+    facts = consistency["facts"]
+    layer = {
+        "layer_id": str(getattr(desc, "layer_id", "") or catalog_id),
+        "display_name": str(getattr(desc, "display_name", "") or catalog_id),
+        "description": str(getattr(desc, "description", "") or "")[:500],
+        "category": str(getattr(desc, "category", "") or ""),
+        "status": str(getattr(desc, "status", "") or ""),
+        "workflow_id": str(getattr(desc, "workflow_id", "") or ""),
+        "workflow_name": str(getattr(desc, "workflow_name", "") or ""),
+        "engine": str(getattr(desc, "engine", "") or ""),
+        "run_readiness": str(getattr(desc, "run_readiness", "") or ""),
+        "run_readiness_summary": str(getattr(desc, "run_readiness_summary", "") or "")[
+            :300
+        ]
+        or None,
+        "run_readiness_notes": [str(n)[:160] for n in notes[:8]],
+        "supports_time": bool(getattr(desc, "supports_time", False)),
+        "is_realtime": bool(getattr(desc, "is_realtime", False)),
+        # temporal_coverage 保留旧字段名（兼容老调用），但语义改为「声明值」；
+        # 想回答"这层到底有哪些日期"必须看 actual_temporal_coverage。
+        "temporal_coverage": declared_coverage,
+        "declared_temporal_coverage": declared_coverage,
+        "actual_temporal_coverage": consistency["actual_text"],
+        "actual_block_count": facts["block_count"],
+        "actual_time_blocks": list(facts["time_blocks"])[:8],
+        "actual_period_start": facts["period_start"],
+        "actual_period_end": facts["period_end"],
+        "temporal_summary": facts["temporal_summary"],
+        "coverage_conflict": bool(consistency["conflict"]),
+        "coverage_note": consistency["note"],
+        "extent": extent_out,
+        "tags": [str(t)[:64] for t in tags[:20]],
     }
+    return {"ok": True, "layer": layer}
 
 
 def _get_workflow_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
@@ -931,7 +1055,72 @@ def _sample_one_layer(
     }
 
 
-def _search_layers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+def _product_class(layer_id: str) -> str:
+    """按编号族判断「参考层」还是「反演/自产层」，供模型决定要不要反问。
+
+    报告 第 2 条（反演产品 vs L3 官方参考产品）需要一个**可判定**的信号：
+    ``ref-*`` 是随目录发布的参考/官方层，``imported-`` / ``method-`` / ``prod-``
+    是本机反演或物化的产物。两族同名时（例如都叫 SMAP 土壤水分）用户没说清，
+    模型应当反问而不是自选一个。
+    """
+    lid = str(layer_id or "")
+    if lid.startswith("imported-"):
+        return "derived_product"
+    if lid.startswith(("method-", "prod-")):
+        return "derived_product"
+    if lid.startswith("ref-"):
+        return "reference_layer"
+    return "catalog_other"
+
+
+def _page_layer_index(
+    client_context: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """``client_context.active_layers`` → ``{图层 id: {name, visible, selected}}``。
+
+    一个图层可能同时有 catalog_id / instance_id / overlay_layer_id 三个别名，
+    三个都登记同一份信息，避免模型拿着其中一个 id 搜不到。
+    """
+    out: dict[str, dict[str, Any]] = {}
+    if not isinstance(client_context, dict):
+        return out
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list):
+        return out
+    for item in layers:
+        if not isinstance(item, dict):
+            continue
+        ids = [
+            str(item.get(key) or "").strip()
+            for key in ("overlay_layer_id", "catalog_id", "instance_id")
+        ]
+        ids = [i for i in ids if i]
+        if not ids:
+            continue
+        info = {
+            "name": str(item.get("name") or "").strip(),
+            "visible": bool(item.get("visible")),
+            "selected": bool(item.get("selected")),
+        }
+        for lid in ids:
+            out.setdefault(lid, info)
+    return out
+
+
+def _search_layers(
+    args: dict[str, Any],
+    *,
+    cred: Any,
+    client_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """按关键词找图层：**页面上正在用的图层优先**，目录参考层排后面。
+
+    外部测试报告第 2 条（「反演产品 vs L3 参考产品，Agent 选错了层」）的根因是
+    旧实现只搜 catalog_seeds：运行产物 ``imported-*`` 根本不入库，于是用户说
+    「SMAP」时只能搜到 ``ref-smap-*-l3`` 这类参考层，模型就顺手用了它，完全
+    无视页面当前选中的那一层。现在把 ``client_context.active_layers`` 并进来，
+    并给每条结果打 ``on_page`` 标记，供模型按「页面优先」裁决。
+    """
     query = str(args.get("query") or "").strip()
     try:
         limit = int(args.get("limit") or 10)
@@ -944,6 +1133,39 @@ def _search_layers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     from app.core.config import settings
     from app.services.layer_catalog import get_layer_catalog
 
+    q = query.casefold()
+    page = _page_layer_index(client_context)
+
+    # ① 页面上的图层：先按名字/编号匹配，命中的排最前（selected > visible）
+    page_hits: list[dict[str, Any]] = []
+    for lid, info in page.items():
+        name = info["name"] or _layer_display_name(lid) or lid
+        if q not in f"{lid} {name}".casefold():
+            continue
+        entry: dict[str, Any] = {
+            "layer_id": lid,
+            "display_name": name,
+            "on_page": True,
+            "visible": bool(info["visible"]),
+            "selected": bool(info["selected"]),
+            "layer_kind": "runtime_product"
+            if lid.startswith("imported-")
+            else "page_layer",
+            "product_class": _product_class(lid),
+            **_layer_identity_fields(lid, display=name),
+        }
+        page_hits.append(entry)
+    page_hits.sort(
+        key=lambda e: (
+            0 if e.get("selected") else 1,
+            0 if e.get("visible") else 1,
+            0 if str(e.get("layer_id") or "").startswith("imported-") else 1,
+            str(e.get("layer_id") or ""),
+        )
+    )
+    seen = {str(e["layer_id"]) for e in page_hits}
+
+    # ② 目录里的图层（catalog_seeds）：去掉已经在页面上的重复项
     catalog = get_layer_catalog()
     items = list(catalog.items or [])
     env = (settings.environment or "").strip().lower()
@@ -954,31 +1176,57 @@ def _search_layers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     accessible = _filter_ids(layer_ids, cred)
     accessible_set = set(accessible)
 
-    q = query.casefold()
-    hits: list[dict[str, Any]] = []
+    catalog_hits: list[dict[str, Any]] = []
     for item in items:
         lid = str(getattr(item, "layer_id", "") or "")
-        if lid not in accessible_set:
+        if not lid or lid not in accessible_set or lid in seen:
             continue
         display = str(getattr(item, "display_name", "") or "")
         desc = str(getattr(item, "description", "") or "")
         tags = getattr(item, "tags", None) or []
         tag_s = " ".join(str(t) for t in tags) if isinstance(tags, list) else str(tags)
         blob = f"{lid} {display} {desc} {tag_s}".casefold()
-        if q in blob:
-            hits.append(
-                {
-                    "layer_id": lid,
-                    "display_name": display,
-                    "category": str(getattr(item, "category", "") or ""),
-                    "description": desc[:200],
-                    **_layer_identity_fields(lid, display=display),
-                }
-            )
-        if len(hits) >= limit:
-            break
+        if q not in blob:
+            continue
+        info = page.get(lid)
+        catalog_hits.append(
+            {
+                "layer_id": lid,
+                "display_name": display,
+                "category": str(getattr(item, "category", "") or ""),
+                "description": desc[:200],
+                "on_page": info is not None,
+                "visible": bool(info["visible"]) if info else False,
+                "selected": bool(info["selected"]) if info else False,
+                "layer_kind": "catalog_reference",
+                "product_class": _product_class(lid),
+                **_layer_identity_fields(lid, display=display),
+            }
+        )
+    # 目录层里 imported-* 也优先于 ref-* 之类的参考层
+    catalog_hits.sort(
+        key=lambda e: (
+            0 if e.get("on_page") else 1,
+            0 if str(e.get("layer_id") or "").startswith("imported-") else 1,
+            str(e.get("layer_id") or ""),
+        )
+    )
 
-    return {"ok": True, "query": query, "count": len(hits), "layers": hits}
+    hits = (page_hits + catalog_hits)[:limit]
+    payload: dict[str, Any] = {
+        "ok": True,
+        "query": query,
+        "count": len(hits),
+        "layers": hits,
+        "page_active_count": len(page_hits),
+    }
+    if page_hits:
+        payload["selection_hint"] = (
+            "on_page=true 的图层是用户页面上正在加载/选中的，排在前面；"
+            "用户说的卫星名（SMAP/风云）只是来源，不等于目录里的参考图层。"
+            "页面上的运行产物（layer_kind=runtime_product）优先于 catalog_reference。"
+        )
+    return payload
 
 
 def _filter_ids(layer_ids: list[str], cred: Any) -> list[str]:
@@ -1276,34 +1524,10 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
             "coverage_end": getattr(cap, "coverage_end", None),
             "native_step": getattr(cap, "native_step", None),
         }
-    # 本地时间帧：直接问 overlay 注册表（会按需从 <imports>/<id>/meta.json 惰性加载）。
-    # 注：旧实现调用 overlay_asset_workflow_service.get_overlay_state()，
-    # 但该方法不存在 ⇒ 异常被吞 ⇒ local 永远为空（报告 R09/R10 的根因）。
-    local_dates: list[str] = []
-    try:
-        from app.services.overlay_registry import get_overlay_spec
-
-        spec = get_overlay_spec(catalog_id)
-        if spec is not None:
-            local_dates = [
-                str(d) for d in (spec.time_list or [])[:366] if d is not None
-            ]
-    except Exception:
-        logger.debug("overlay time_list unavailable for %s", catalog_id, exc_info=True)
-    if not local_dates and catalog_id.startswith("imported-"):
-        # 兜底：直接读盘上 meta.json 的 time_list
-        try:
-            from app.data_io.services.paths import safe_import_child
-            import json as _json
-
-            meta_path = safe_import_child(catalog_id) / "meta.json"
-            if meta_path.is_file():
-                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-                raw = meta.get("time_list") if isinstance(meta, dict) else None
-                if isinstance(raw, list):
-                    local_dates = [str(d) for d in raw[:366] if d is not None]
-        except Exception:
-            logger.debug("meta time_list unavailable for %s", catalog_id, exc_info=True)
+    # 本地时间帧：唯一入口（与 get_layer_meta / get_layer_statistics 同源）。
+    # 注：旧实现直接调 overlay_asset_workflow_service.get_overlay_state()，
+    # 但该方法并不存在 ⇒ 异常被吞 ⇒ local 永远为空（报告 R09/R10 的根因）。
+    local_dates: list[str] = _local_time_keys(catalog_id)
     resolved = _resolve_coverage(
         requested=requested, local_dates=local_dates, online=online
     )
@@ -1325,11 +1549,42 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "is_single_block": facts["is_single_block"],
         "time_span_days": facts["time_span_days"],
         "temporal_summary": facts["temporal_summary"],
+        # 报告 第 3 条：不许自己编「改查 12 月 15 日」。
+        # 这里给的就是该层真实有的日期，模型要提替代日期只能从这里挑。
+        "available_dates": _nearby_dates(local_dates, requested),
         "channels": {
             "online": online,
             "local": {"dates": local_dates, "count": len(local_dates)},
         },
         **_layer_identity_fields(catalog_id),
+    }
+
+
+def _nearby_dates(keys: list[str], requested: str | None) -> dict[str, Any]:
+    """该图层真实可用的相邻日期（前 3 / 后 3），供「没有这一天」时如实引用。"""
+    ordered = [str(k) for k in (keys or []) if k]
+    if not ordered:
+        return {
+            "first": None,
+            "last": None,
+            "count": 0,
+            "before": [],
+            "after": [],
+        }
+    before: list[str] = []
+    after: list[str] = []
+    req = str(requested or "").strip()
+    if req:
+        before = [k for k in ordered if k < req][-3:]
+        after = [k for k in ordered if k >= req][:3]
+    else:
+        after = ordered[:3]
+    return {
+        "first": ordered[0],
+        "last": ordered[-1],
+        "count": len(ordered),
+        "before": before,
+        "after": after,
     }
 
 
@@ -1625,6 +1880,8 @@ def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
             "requested_time": requested,
             "error": "该日期没有对应的栅格时间片",
             "available_blocks": blocks,
+            # 报告 第 3 条：替代日期只能从真实时间片里挑，不许自己编
+            "available_dates": _nearby_dates(blocks, requested),
         }
 
     try:
