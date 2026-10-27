@@ -244,11 +244,22 @@ def ondemand_target(layer_id: str) -> dict[str, str] | None:
 #
 # ⚠ 只登记「NAS 上确实有逐日文件」的图层：
 #   · 风云·平均散射约束 SM / VOD → fy_avg_smvod/YYYYMMDD.mat（真·逐日）
+#   · SMAP·平均散射约束 SM / VOD → smap_avg_smvod/YYYYMMDD.mat（真·逐日，
+#     实测 3844 个文件覆盖 20150401~20251231，与风云同规格）
 #   · 风云·平均散射约束 OMEGA    → fy_avg_ω/doy_DDD.mat（年内日序气候态，
 #     与「2025-12-17 这一天」语义不等价，待用户确认口径后再接）
+#
+# layer_id 的来源（两处都对得上，改前已核）：
+#   目录名 = imported-<sha1(...)>,  取该层 meta.json 的 time_list 与侧栏显示日期比对：
+#   风云组三层 = 20251201_20251231（SM/VOD/OMEGA 各一）；
+#   SMAP组三层 = 20251201_20260201（SM/VOD/OMEGA 各一），全库唯一，排他确定。
 ONDEMAND_TARGETS: dict[str, dict[str, str]] = {
+    # 风云卫星 · 平均散射约束
     "imported-55359b8ecd3d": {"product": "fy_avg", "variable": "SM"},
     "imported-a94205dad5f9": {"product": "fy_avg", "variable": "VOD"},
+    # SMAP · 平均散射约束（2026-10-27 追加）
+    "imported-38993117b963": {"product": "smap_avg", "variable": "SM"},
+    "imported-bce85323670f": {"product": "smap_avg", "variable": "VOD"},
 }
 
 # NAS 成果的实际覆盖范围（前端据此提前拦掉明显不可能的日期，省一次往返）
