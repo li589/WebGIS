@@ -444,6 +444,10 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
 
     return {
         "ok": True,
+        "answer_lead": (
+            f"我按「{_qualified_layer_name(catalog_id, _layer_display_name(catalog_id))}」"
+            f"（{catalog_id}）取数"
+        ),
         "layer": {
             "layer_id": catalog_id,
             "display_name": _qualified_layer_name(
@@ -1950,12 +1954,13 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     # period_* 描述「这次实际命中的那一片」，is_single_block/span 描述「整层只有几片」。
     facts = _temporal_facts(local_dates)
     hit_start, hit_end = _block_period(hit_key)
+    _cov_display = _qualified_layer_name(catalog_id, _layer_display_name(catalog_id))
     return {
         "ok": True,
         "catalog_id": catalog_id,
-        "display_name": _qualified_layer_name(
-            catalog_id, _layer_display_name(catalog_id)
-        ),
+        "display_name": _cov_display,
+        # 与统计同款固定句式：回答第一句原样照抄，必须带 catalog_id
+        "answer_lead": f"我按「{_cov_display}」（{catalog_id}）取数",
         "requested_time": requested,
         # R09/R10：一句话回答"这天到底有没有"，channels 明细保留兼容旧调用
         "resolved": resolved,
@@ -1979,7 +1984,10 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "value_basis": _value_basis(catalog_id, hit_key),
         "channels": {
             "online": online,
-            "local": {"dates": local_dates, "count": len(local_dates)},
+            # local.dates 与上面的 time_blocks 是同一份 73 个键，重复三遍把单次
+            # 返回撑到 3.6k 字符（多轮累计直接顶爆 20000 token 上限，2026-10-29
+            # 实测「时间清单有几片」被中止）。这里只留条数，明细看 time_blocks。
+            "local": {"count": len(local_dates)},
         },
         **_layer_identity_fields(catalog_id),
     }
@@ -2368,12 +2376,15 @@ def _get_layer_statistics(
     # 旧实现把 facts["period_*"]（整层首尾 20251101~20260208）当成 period_*，
     # 模型据此说「不是当天独立观测」——而提示词要的是「实际命中的数据时间块」。
     hit_start, hit_end = _block_period(actual_key)
+    _stats_display = _qualified_layer_name(catalog_id, _layer_display_name(catalog_id))
     payload: dict[str, Any] = {
         "ok": bool(stats.get("ok")),
         "catalog_id": catalog_id,
-        "display_name": _qualified_layer_name(
-            catalog_id, _layer_display_name(catalog_id)
-        ),
+        "display_name": _stats_display,
+        # 回答第一句的**固定句式**：强制造句带 catalog_id，用户才能当场核对
+        # 「这个数到底取自哪一层」。2026-10-29 实测：只写层名不写 id 时，
+        # 模型每轮换层（动态→平均）用户完全看不出来。
+        "answer_lead": f"我按「{_stats_display}」（{catalog_id}）取数",
         "scope": "bbox" if bbox is not None else "full_extent",
         "requested_bbox": list(bbox) if bbox is not None else None,
         "statistic": "mean",
