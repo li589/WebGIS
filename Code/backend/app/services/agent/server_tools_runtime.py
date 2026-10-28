@@ -61,7 +61,9 @@ def execute_server_tool(
     if tool == "get_layer_coverage":
         return _get_layer_coverage(args, cred=cred)
     if tool == "get_layer_statistics":
-        return _get_layer_statistics(args, cred=cred)
+        # client_context 必传：统计要默认用「页面当前日期 + 页面选中图层」，
+        # 否则会静默退回 meta.default_time（曾导致页面停在 12-15 却统计 01-25~02-01）。
+        return _get_layer_statistics(args, cred=cred, client_context=client_context)
     if tool == "list_workflow_timers":
         return _list_workflow_timers(args, cred=cred)
     if tool == "run_workflow":
@@ -1107,6 +1109,55 @@ def _page_layer_index(
     return out
 
 
+def _page_timeline_date(client_context: dict[str, Any] | None) -> str | None:
+    """``client_context.timeline.date`` —— 页面时间轴当前停在哪一天。
+
+    前端已按 ``formatLocalDateKey`` 写成 ``YYYY-MM-DD``；这里原样返回，
+    由 ``_parse_date8`` 统一归一，避免两处各写一套日期格式转换。
+    """
+    if not isinstance(client_context, dict):
+        return None
+    timeline = client_context.get("timeline")
+    if not isinstance(timeline, dict):
+        return None
+    raw = str(timeline.get("date") or "").strip()
+    return raw or None
+
+
+def _page_default_layer(client_context: dict[str, Any] | None) -> str | None:
+    """页面上「该拿来统计」的那一层：selected 优先 → 可见 → 无。
+
+    只认运行时产物（``imported-*`` / ``wf-run-*``）：目录参考层（``ref-*``）
+    多半没有本地栅格，选它只会换来一句「不是本地栅格产物」。
+    """
+    if not isinstance(client_context, dict):
+        return None
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list):
+        return None
+    candidates: list[tuple[int, str]] = []
+    for item in layers:
+        if not isinstance(item, dict):
+            continue
+        lid = ""
+        for key in ("overlay_layer_id", "catalog_id", "instance_id"):
+            val = str(item.get(key) or "").strip()
+            if val:
+                lid = val
+                break
+        if not lid:
+            continue
+        if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
+            continue
+        score = (3 if item.get("selected") else 0) + (2 if item.get("visible") else 0)
+        candidates.append((score, lid))
+    if not candidates:
+        return None
+    # 稳定排序：同分时保留 active_layers 里的原始顺序
+    candidates.sort(key=lambda pair: -pair[0])
+    return candidates[0][1]
+
+
 def _search_layers(
     args: dict[str, Any],
     *,
@@ -1531,10 +1582,33 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     resolved = _resolve_coverage(
         requested=requested, local_dates=local_dates, online=online
     )
+    # ★ 2026-10-28：真实命中必须与 get_layer_statistics 同源。
+    # NAS 按需补出来的单日帧**不在** time_list 里，但 overlay spec 认它
+    # （_has_ondemand_frame 放行）。旧实现只看 local_dates，会把「2025-12-15 补帧」
+    # 说成「落在块 20251211~20251218 内」，模型据此回答「不是当天独立观测」，
+    # 与统计返回的 is_daily_frame=true 直接打架（外部报告第 2 条）。
+    hit_key: str | None = None
+    hit_source = "none"
+    if requested:
+        try:
+            from app.services.overlay_registry import get_overlay_spec
+
+            _spec = get_overlay_spec(catalog_id)
+            if _spec is not None:
+                hit_key = _spec.resolve_time_key(requested)
+        except Exception:
+            logger.debug(
+                "coverage resolve_time_key failed for %s", catalog_id, exc_info=True
+            )
+        if hit_key:
+            hit_source = "block" if str(hit_key) in local_dates else "ondemand_frame"
+    if not hit_key:
+        hit_key = resolved.get("actual_time")
+        hit_source = "block" if hit_key else "none"
     # 时间事实与元数据/统计同源（报告 优先2「共用解析逻辑」）：
     # period_* 描述「这次实际命中的那一片」，is_single_block/span 描述「整层只有几片」。
     facts = _temporal_facts(local_dates)
-    hit_start, hit_end = _block_period(resolved.get("actual_time"))
+    hit_start, hit_end = _block_period(hit_key)
     return {
         "ok": True,
         "catalog_id": catalog_id,
@@ -1542,6 +1616,10 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "requested_time": requested,
         # R09/R10：一句话回答"这天到底有没有"，channels 明细保留兼容旧调用
         "resolved": resolved,
+        # 顶层 actual_time 是**权威命中**（含按需补帧的单日帧），与统计口径一致
+        "actual_time": hit_key,
+        "hit_source": hit_source,
+        "is_daily_frame": bool(hit_key) and "_" not in str(hit_key),
         "period_start": hit_start,
         "period_end": hit_end,
         "block_count": facts["block_count"],
@@ -1815,20 +1893,51 @@ def _raster_full_stats(
         return {"ok": False, "error": f"栅格读取失败（可能不是 GeoTIFF 源）：{exc}"}
 
 
-def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+def _get_layer_statistics(
+    args: dict[str, Any],
+    *,
+    cred: Any,
+    client_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """整层只读统计（mean/min/max/std/有效像元数）——不建图层、不跑工作流。
 
     只统计「该图层该时间片的全范围有效像元」，**不是**点样本均值，
     也**不会**默认缩到当前视口（外部测试报告 优先1）。
+
+    ★ 2026-10-28 修（外部报告第 2 条「统计没用页面日期」）：
+    旧实现既拿不到 ``client_context``（分派处没传），没给 ``time`` 时又直接
+    退回 ``spec.default_time``，于是页面停在 2025-12-15、问「当前图层平均值」
+    却统计了 ``20260125_20260201``。现在取值优先级固定为
+
+        显式 time → client_context.timeline.date（页面当前日期）→ 图层 default_time
+
+    并且**如实回报来源**（``time_source``），模型才不会把"图层默认块"当成"那天"。
     """
+    # ① 图层：不点名就用页面那一层（只认运行时产物，参考层没有本地栅格）
     catalog_id = str(args.get("catalog_id") or args.get("layer_id") or "").strip()
+    layer_source = "requested" if catalog_id else "page"
     if not catalog_id:
-        return {"ok": False, "error": "catalog_id 不能为空"}
+        catalog_id = _page_default_layer(client_context) or ""
+        if not catalog_id:
+            return {
+                "ok": False,
+                "error": "catalog_id 不能为空：没传参，页面上也没有可统计的运行时图层",
+            }
     accessible = _filter_ids([catalog_id], cred)
     if catalog_id not in set(accessible):
         return {"ok": False, "error": f"无权访问图层: {catalog_id}"}
 
-    requested = _parse_date8(args.get("time") or args.get("date"))
+    # ② 时间：显式 → 页面日期 → 图层默认（后者必须标注，否则就是"日期对不上"的根因）
+    explicit_time = _parse_date8(args.get("time") or args.get("date"))
+    page_date = _parse_date8(_page_timeline_date(client_context))
+    requested = explicit_time or page_date
+    if explicit_time:
+        time_source = "requested"
+    elif page_date:
+        time_source = "page"
+    else:
+        time_source = "layer_default"
+
     # 可选空间范围（报告 优先1「输入至少包括统计范围」）：缺省＝整幅，绝不默认缩到视口
     bbox_raw = args.get("bbox")
     bbox = _parse_bbox(bbox_raw)
@@ -1878,6 +1987,8 @@ def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
             "catalog_id": catalog_id,
             "display_name": _layer_display_name(catalog_id),
             "requested_time": requested,
+            "time_source": time_source,
+            "page_date": page_date,
             "error": "该日期没有对应的栅格时间片",
             "available_blocks": blocks,
             # 报告 第 3 条：替代日期只能从真实时间片里挑，不许自己编
@@ -1900,6 +2011,10 @@ def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
 
     stats = _raster_full_stats(src_path, bbox=bbox)
     facts = _temporal_facts(getattr(spec, "time_list", None) or [])
+    # 命中块（这次真读的那一片）与整层跨度必须分开：
+    # 旧实现把 facts["period_*"]（整层首尾 20251101~20260208）当成 period_*，
+    # 模型据此说「不是当天独立观测」——而提示词要的是「实际命中的数据时间块」。
+    hit_start, hit_end = _block_period(actual_key)
     payload: dict[str, Any] = {
         "ok": bool(stats.get("ok")),
         "catalog_id": catalog_id,
@@ -1910,8 +2025,19 @@ def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "requested_time": requested,
         # 与请求日期区分开：这才是数据实际覆盖的时间块（优先3 的前置能力）
         "actual_time": actual_key,
-        "period_start": facts["period_start"],
-        "period_end": facts["period_end"],
+        # period_* = 命中块，语义与 get_layer_coverage 的 period_* 一致
+        "period_start": hit_start,
+        "period_end": hit_end,
+        # 整层首尾另立字段，避免和命中块混用
+        "layer_span_start": facts["period_start"],
+        "layer_span_end": facts["period_end"],
+        # 这个数是「按谁给的日期」算的：requested=显式传参 / page=页面当前日期
+        # / layer_default=图层默认块（此时**不是**页面那天的数据，必须如实说明）
+        "time_source": time_source,
+        "page_date": page_date,
+        "layer_source": layer_source,
+        # actual_key 不含下划线 ⇒ 真是某一天的独立观测，而不是跨多天的块
+        "is_daily_frame": "_" not in str(actual_key or ""),
         # 「整层只有一片且跨多天」——不能用 native_step 推（优先3）
         "is_single_block": facts["is_single_block"],
         "time_span_days": facts["time_span_days"],
@@ -1920,6 +2046,11 @@ def _get_layer_statistics(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
+    if time_source == "layer_default":
+        payload["time_source_warning"] = (
+            "没有拿到页面日期，本次统计用的是该图层的默认时间块 "
+            f"{actual_key}；这不代表页面上那一天的数据，回答里必须说明。"
+        )
     if not stats.get("ok") and "error" not in stats:
         payload["error"] = "统计失败"
     return payload
