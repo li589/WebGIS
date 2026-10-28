@@ -498,7 +498,7 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
             "temporal_summary": facts["temporal_summary"],
             # 时序形态：运行产物里常见「单日帧 + 8 天块 + 季均块」混装，
             # 模型必须知道这一层到底是逐日动态还是跨段合成（报告第 1/2 条）。
-            **_temporal_shape_fields(blocks),
+            **_temporal_shape_fields(blocks, layer_id=catalog_id),
         },
     }
 
@@ -536,7 +536,61 @@ def _local_time_keys(catalog_id: str) -> list[str]:
     return keys
 
 
-def _temporal_shape_fields(time_list: Any) -> dict[str, Any]:
+_OND_CACHE: dict[str, tuple[float, list[str]]] = {}
+
+
+def _ondemand_frame_dates(catalog_id: Any) -> list[str]:
+    """按需补帧（NAS 单日）在图层目录里留下的单日帧日期，升序去重。
+
+    ``nas_ondemand.ensure_frame`` 的补帧模式**刻意不写 meta.json**（见
+    ``nas_ondemand/service.py`` 的 ``target_layer_id`` 说明：为保住「勾选/添加
+    图层仍是原来的长序列」），所以 ``time_list`` 里根本看不到这些单日帧，但
+    磁盘上确实存在 ``preview_<YYYYMMDD>.png`` / ``source_<YYYYMMDD>.tif``。
+
+    对外描述必须基于「磁盘上真有什么」，否则会出现「取的是单日帧、回答却说
+    取的是块合成值」这种**反向**口径错误。2026-10-28 实测：某层 ``time_list``
+    只有一个 63 天块，目录里却已有 6 个补出的单日帧，广州 79 像元 / 0.1257
+    正是来自 20251215 那个单日帧，而回答写的是「整块合成值」。
+
+    只认 8 位纯数字：块键（含 ``_``）和任何带路径分隔符的串都不会进入结果，
+    从形态上堵死路径穿越。任何异常一律返回空列表——宁缺勿编。
+    """
+    lid = str(catalog_id or "").strip()
+    if not lid.startswith("imported-"):
+        return []
+    try:
+        from app.data_io.services.paths import safe_import_child
+
+        layer_dir = safe_import_child(lid)
+        if not layer_dir.is_dir():
+            return []
+        stamp = layer_dir.stat().st_mtime
+    except Exception:
+        return []
+    hit = _OND_CACHE.get(lid)
+    if hit is not None and hit[0] == stamp:
+        return list(hit[1])
+    found: set[str] = set()
+    try:
+        for entry in layer_dir.iterdir():
+            name = entry.name
+            if name.startswith("preview_") and name.endswith(".png"):
+                tag = name[8:-4]
+            elif name.startswith("source_") and name.endswith(".tif"):
+                tag = name[7:-4]
+            else:
+                continue
+            if len(tag) == 8 and tag.isdigit():
+                found.add(tag)
+    except OSError:  # 目录不可读时按「没有」处理，别把 500 抛给前端
+        return []
+    out = sorted(found)
+    # 目录 mtime 在补帧写入新文件时会变，够用作失效键；补帧是低频操作。
+    _OND_CACHE[lid] = (stamp, out)
+    return list(out)
+
+
+def _temporal_shape_fields(time_list: Any, layer_id: Any = None) -> dict[str, Any]:
     """图层的「时序形态」——模型区分「逐日动态」与「整段合成/平均」的唯一依据。
 
     外部报告第 1/2 条（复合指令串错产品、说"不是当天独立观测"）的物理根因：
@@ -547,10 +601,15 @@ def _temporal_shape_fields(time_list: Any) -> dict[str, Any]:
 
     ``mixed`` 表示这一层自己就混装了粒度不同的帧——此时"某一天的值"必须说清
     命中的是哪一片，不能当成当天观测。
+
+    ``hybrid`` 表示 ``time_list`` 里只有多日块、但目录里已经按需补出了单日帧
+    （NAS 补帧不写 meta）。此时「这一层非逐日」这句话是**错的**：能按天取数，
+    只是时间清单里没登记。回答必须说「按需补出的单日帧」，不得说「块合成值」。
     """
     keys = [str(k) for k in (time_list or []) if k]
     daily = [k for k in keys if len(k) == 8 and k.isdigit()]
     blocks = [k for k in keys if "_" in k]
+    ondemand = [t for t in _ondemand_frame_dates(layer_id) if t not in daily]
     try:
         from app.services.overlay_registry import _block_span_days
 
@@ -561,6 +620,8 @@ def _temporal_shape_fields(time_list: Any) -> dict[str, Any]:
         shape = "mixed"
     elif daily:
         shape = "daily_series"
+    elif ondemand:
+        shape = "hybrid"
     elif len(blocks) <= 1 and blocks:
         shape = "single_block"
     elif blocks:
@@ -572,14 +633,63 @@ def _temporal_shape_fields(time_list: Any) -> dict[str, Any]:
         "daily_frame_count": len(daily),
         "block_count": len(blocks),
         "longest_block_days": longest,
+        "ondemand_frame_count": len(ondemand),
+        "daily_available": bool(daily or ondemand),
     }
+    if ondemand:
+        # 只给最近几天 + 总数，避免把几十个日期塞进上下文
+        out["ondemand_dates"] = ondemand[-10:]
     if shape == "mixed":
         out["shape_warning"] = (
             "该图层的 time_list 同时含单日帧与多日块（最长 "
             f"{longest} 天），粒度不统一：引用「某一天」时必须说明实际命中的是哪一片，"
             "不得把跨多天的合成块当成当天的独立观测。"
         )
+    elif shape == "hybrid":
+        out["shape_warning"] = (
+            f"该图层 time_list 只有 {len(blocks)} 个多日块（最长 {longest} 天），"
+            f"但目录里已按需补出 {len(ondemand)} 个单日帧（最近："
+            + "、".join(ondemand[-3:])
+            + "）。因此「这一层只能取块合成值」是错的："
+            "命中补帧单日时，必须说这是「按需补出的单日帧」，"
+            "不得说成块合成值或整段平均。"
+        )
     return out
+
+
+def _value_basis(catalog_id: Any, actual_key: Any) -> dict[str, Any]:
+    """这次的值到底出自哪种帧——回答表述的**唯一依据**。
+
+    2026-10-28 实测的翻车：某层 ``time_list`` 只有一个 63 天块，目录里却已按需
+    补出 6 个单日帧。统计确实命中了 ``20251215`` 的补帧（广州 79 像元 / 0.1257），
+    但因为 ``temporal_summary`` 只说「1 片 63 天，非逐日」，回答就写成「取到的
+    其实是整块合成值」——值与口径**反向**。这里把「值出自哪种帧」先定死，
+    模型只能照着说，不能自己推理。
+    """
+    key = str(actual_key or "").strip()
+    if not key:
+        return {"kind": "none", "note": "没有命中任何时间片，不得给出数值。"}
+    if "_" in key:
+        return {
+            "kind": "block",
+            "note": (
+                f"本次值出自多日合成块 {key}，不是某一天的独立观测；"
+                "引用时必须说明这是跨天合成值，并给出块的起止日期。"
+            ),
+        }
+    if key in _ondemand_frame_dates(catalog_id):
+        return {
+            "kind": "ondemand_frame",
+            "note": (
+                f"本次值出自按需补出的单日帧 {key}（NAS 单日反演，"
+                "未登记在该层 time_list 里）。这就是当天的独立观测，"
+                "不得说成块合成值或整段平均。"
+            ),
+        }
+    return {
+        "kind": "daily_frame",
+        "note": f"本次值出自图层自带的单日帧 {key}，是当天的独立观测。",
+    }
 
 
 _MONTH_IN_TEXT_RE = re.compile(r"(\d{4})[-/年](\d{1,2})")
@@ -724,7 +834,7 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "actual_period_end": facts["period_end"],
         "temporal_summary": facts["temporal_summary"],
         # 时序形态：回答「是逐日动态还是跨段合成」的唯一依据
-        **_temporal_shape_fields(actual_keys),
+        **_temporal_shape_fields(actual_keys, layer_id=catalog_id),
         "coverage_conflict": bool(consistency["conflict"]),
         "coverage_note": consistency["note"],
         "extent": extent_out,
@@ -1248,7 +1358,7 @@ def _page_runtime_candidates(
                 or _layer_display_name(lid),
                 "visible": bool(item.get("visible")),
                 "selected": bool(item.get("selected")),
-                **_temporal_shape_fields(_local_time_keys(lid)),
+                **_temporal_shape_fields(_local_time_keys(lid), layer_id=lid),
             }
         )
     return out
@@ -1300,7 +1410,7 @@ def _search_layers(
             else "page_layer",
             "product_class": _product_class(lid),
             # 逐日动态 / 8 天块 / 跨季平均：模型据此区分同名不同产品
-            **_temporal_shape_fields(_local_time_keys(lid)),
+            **_temporal_shape_fields(_local_time_keys(lid), layer_id=lid),
             **_layer_identity_fields(lid, display=name),
         }
         page_hits.append(entry)
@@ -1351,7 +1461,11 @@ def _search_layers(
                 "layer_kind": "catalog_reference",
                 "product_class": _product_class(lid),
                 # 仅在真有本地时间片时给出形态，避免参考层一堆 unknown 噪音
-                **(_temporal_shape_fields(_shape_keys) if _shape_keys else {}),
+                **(
+                    _temporal_shape_fields(_shape_keys, layer_id=lid)
+                    if _shape_keys
+                    else {}
+                ),
                 **_layer_identity_fields(lid, display=display),
             }
         )
@@ -1732,7 +1846,9 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         # 这里给的就是该层真实有的日期，模型要提替代日期只能从这里挑。
         "available_dates": _nearby_dates(local_dates, requested),
         # 时序形态：与 meta / statistics 三处同源，避免「覆盖说混装、统计说单块」
-        **_temporal_shape_fields(local_dates),
+        **_temporal_shape_fields(local_dates, layer_id=catalog_id),
+        # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
+        "value_basis": _value_basis(catalog_id, hit_key),
         "channels": {
             "online": online,
             "local": {"dates": local_dates, "count": len(local_dates)},
@@ -2150,7 +2266,9 @@ def _get_layer_statistics(
         "temporal_summary": facts["temporal_summary"],
         # 时序形态（daily_series / block_series / single_block / mixed）：
         # 让回答能自证「这一层到底是逐日动态，还是跨段合成」
-        **_temporal_shape_fields(getattr(spec, "time_list", None)),
+        **_temporal_shape_fields(getattr(spec, "time_list", None), layer_id=catalog_id),
+        # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
+        "value_basis": _value_basis(catalog_id, actual_key),
         **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
@@ -2165,9 +2283,9 @@ def _get_layer_statistics(
         _cands = _page_runtime_candidates(client_context)
         if len(_cands) > 1:
             payload["page_candidates"] = _cands
-            _used_shape = _temporal_shape_fields(getattr(spec, "time_list", None)).get(
-                "temporal_shape"
-            )
+            _used_shape = _temporal_shape_fields(
+                getattr(spec, "time_list", None), layer_id=catalog_id
+            ).get("temporal_shape")
             payload["layer_source_warning"] = (
                 f"本次统计用的是页面选中图层 {catalog_id}（temporal_shape={_used_shape}）。"
                 "若用户点名的产品形态与它不符（例如用户说动态/逐日，这层却是 single_block），"

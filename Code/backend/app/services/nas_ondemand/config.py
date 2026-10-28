@@ -258,8 +258,17 @@ ONDEMAND_TARGETS: dict[str, dict[str, str]] = {
     "imported-55359b8ecd3d": {"product": "fy_avg", "variable": "SM"},
     "imported-a94205dad5f9": {"product": "fy_avg", "variable": "VOD"},
     # SMAP · 平均散射约束（2026-10-27 追加）
+    # ⚠ 2026-10-28 更正：下面两条是**遗留 id**——反算 sha1 不属于任何 catalog 层，
+    #   侧栏根本加载不到（目录里只有一个 63 天季均块）。保留仅为了兼容浏览器里
+    #   已经存了这两个 id 的旧会话，**不要把它们当成正确映射**。
+    #   正确映射见紧随其后的两条。
     "imported-38993117b963": {"product": "smap_avg", "variable": "SM"},
     "imported-bce85323670f": {"product": "smap_avg", "variable": "VOD"},
+    # SMAP · 平均散射约束 —— 正确目录（= sha1("method-smap-omega-doy-avg|VAR|VAR")）
+    # 侧栏「SMAP 平均散射约束产品」加载的就是这两个，原来不在名单里 ⇒ 点它拖时间轴
+    # 会 400「未登记为按需补帧目标」。
+    "imported-136c60293bbf": {"product": "smap_avg", "variable": "SM"},
+    "imported-169f6402583c": {"product": "smap_avg", "variable": "VOD"},
     # 动态散射约束（2026-10-27 追加）
     # NAS 实测：fy_raw_smvod / smap_raw_smvod 各 4018 个严格逐日 .mat
     # （20150101~20251231），与平均组同规格，故 SM / VOD 可直接按天取。
