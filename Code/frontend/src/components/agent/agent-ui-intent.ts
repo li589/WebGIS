@@ -419,9 +419,17 @@ function executeAgentUiIntentCore(
       const d = parseDateArg(args.date)
       if (!d) return { ok: false, message: 'date 格式无效，请用 YYYY-MM-DD' }
       targetDate = d
-      ui.applyDateHour(d, hour)
-    } else {
-      ui.setHour(hour)
+    }
+
+    // ★ 2026-10-28 修：写入页面状态必须推迟到「所有校验都通过之后」。
+    // 旧实现在这里就先 applyDateHour/setHour 再往下判定，一旦命中
+    // `!eff`（目标日没有任何时间帧）就返回 ok:false —— 但日期已经改掉了，
+    // 于是界面同时出现「✗ 执行失败」和「时间轴确实变了」两种相反的信号。
+    // 现在改成 commit()：只有确定能落帧（或确知没有时序图层可校验）才落盘，
+    // 失败分支保持页面原状，零副作用（不写 localStorage、不触发重绘）。
+    const commit = (): void => {
+      if (hasDate) ui.applyDateHour(targetDate, hour)
+      else ui.setHour(hour)
     }
 
     // 时间轴只负责「选中某个时刻」，真正的帧是渲染层按切片挑的。
@@ -432,6 +440,8 @@ function executeAgentUiIntentCore(
       instanceId: String(args.instance_id ?? '').trim() || null,
     })
     if (!dominant) {
+      // 没有任何带时间序列的图层可校验 ⇒ 没有「会失败」的依据，照旧落下
+      commit()
       return {
         ok: true,
         message: `时间轴已设为 ${formatLocalDateKey(targetDate)}（当前没有带时间序列的可见图层，无法核对该日是否有数据）`,
@@ -439,11 +449,13 @@ function executeAgentUiIntentCore(
     }
     const eff = resolveEffectiveFrame(dominant.list, targetDate, hour)
     if (!eff) {
+      // 目标日确实没有可用帧 ⇒ 不写任何状态，页面保持原样
       return {
         ok: false,
-        message: `${formatLocalDateKey(targetDate)} 没有可用数据：${dominant.name} 还没有任何时间帧`,
+        message: `${formatLocalDateKey(targetDate)} 没有可用数据：${dominant.name} 还没有任何时间帧（时间轴未改动）`,
       }
     }
+    commit()
     const requested = formatLocalDateKey(targetDate)
     const span = `${readableFrameLabel(dominant.list[0])} 至 ${readableFrameLabel(
       dominant.list[dominant.list.length - 1],
