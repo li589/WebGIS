@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "search_layers",
-      "description": "Search layers by keyword (read-only, ACL filtered). Results also include the layers currently loaded on the user's page (client_context.active_layers), which are usually NOT in the catalog; such hits come first and carry on_page=true, visible, selected, layer_kind (runtime_product = a materialized run product, catalog_reference = a catalog entry) and product_class (derived_product = local inversion/materialized product, reference_layer = reference/official layer shipped with the catalog, catalog_other). When the user only names a data source (SMAP, FengYun, L3), treat it as the SOURCE, not the layer: prefer on_page/visible/selected hits over catalog references, never silently substitute a catalog reference layer for the layer the user is actually looking at, and if the only candidates differ by product_class (derived_product vs reference_layer) ask the user which one they mean instead of picking one.",
+      "description": "按关键词搜图层（只读，已按权限过滤）。结果含页面上已加载的图层（on_page=true，排最前）与目录层；每条带 layer_kind（runtime_product / catalog_reference / product_group）、product_class、temporal_shape、product_family。产品族条目 is_product_group=true，group_members 列出可统计的变量层。同一图层不会重复列出。",
       "args": {
         "type": "object",
         "required": ["query"],
@@ -30,7 +30,7 @@
     },
     {
       "name": "get_layer_meta",
-      "description": "Get detailed metadata for one layer (read-only, ACL filtered): description, readiness, extent, workflow binding, tags, plus temporal facts. temporal_coverage and declared_temporal_coverage are only the descriptor CLAIM; actual_temporal_coverage / actual_block_count / actual_time_blocks / temporal_summary come from the real time_list on disk. When coverage_conflict=true the claim contradicts the product, so trust actual_* and never quote the declared dates.",
+      "description": "一个图层的详细元数据（只读）：描述、就绪状态、范围、工作流绑定、时序事实。temporal_coverage 只是描述符声明值，actual_temporal_coverage / actual_block_count / actual_time_blocks / temporal_summary 才来自盘上真实 time_list；coverage_conflict=true 时以 actual_* 为准。另含 catalog_id、sibling_copies / is_stale_copy（同源旧副本识别）。",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
@@ -52,7 +52,7 @@
     },
     {
       "name": "sample_layer_point",
-      "description": "Sample raster/overlay (or weather) value at a map point. Uses args lng/lat, or client_context.map_point if omitted. Optional catalog_id; otherwise samples active layers from client_context. Each overlay sample returns requested_time plus actual_time / period_start / period_end, so report the data time block per layer instead of reusing one layer's period for another.",
+      "description": "在地图某点上采样栅格/图层（或天气）值。用 lng/lat，或省略取 client_context.map_point；catalog_id 可选，省略则采样页面活动图层。每条样值返回 requested_time 与 actual_time / period_start / period_end，按各自的时间块分别说明。",
       "args": {
         "type": "object",
         "properties": {
@@ -113,7 +113,7 @@
     },
     {
       "name": "get_layer_coverage",
-      "description": "Get dual-channel data coverage for a catalog layer (online window + local dates). Pass `time` to get a decisive answer (`resolved.status` = available/unavailable) about whether that date has data, and `resolved.channel` to tell local products apart from online fetching. The TOP-LEVEL `actual_time` is the authoritative hit and may be a single day produced on demand from NAS that is NOT in time_list: `hit_source=ondemand_frame` means it really is that day's own observation (`is_daily_frame=true`), while `hit_source=block` means the date merely falls inside a multi-day block. Always prefer top-level `actual_time` over `resolved.actual_time` (which only reflects time_list blocks). `available_dates` lists the real neighbouring dates on that layer (first/last/count plus before/after around `time`): when a date has no data, the ONLY dates you may suggest come from there, and you must say they are the dates this layer actually has. Never infer or invent a substitute date.",
+      "description": "图层的数据覆盖（在线窗口 + 本地日期）。传 time 得到该日是否有数据的判定（resolved.status=available/unavailable）。顶层 actual_time 是权威命中：hit_source=ondemand_frame 表示按需补出的单日帧（is_daily_frame=true），hit_source=block 表示只落在多日块内；不要用 resolved.actual_time 压过它。available_dates 给出该层真实相邻日期（before/after）。另含 catalog_id 与 sibling_copies / is_stale_copy（同源旧副本）；问「这层 id / 是不是旧副本」时用它，不要用统计工具。",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
@@ -128,20 +128,20 @@
     },
     {
       "name": "get_layer_statistics",
-      "description": "Read-only raster statistics for one local imported layer at one time slice: mean/min/max/std and valid pixel count, NoData excluded. Both catalog_id and time are optional: when omitted, catalog_id falls back to the selected/visible runtime layer in client_context.active_layers, and time falls back to client_context.timeline.date (the page's current date) - so 'the current layer' really means what the user is looking at. The response carries time_source telling where the date came from: page / requested / layer_default (layer_default means it is NOT the page's date and you must say so). period_start~period_end is the time block actually hit; layer_span_start~layer_span_end is the whole layer's span - never mix them. is_daily_frame tells whether this is a single-day observation. Scope defaults to the full raster extent (never the current viewport); pass bbox only when the user explicitly asks for a sub-area. Never creates layers, never writes products, never runs a workflow. Also returns extent (WGS84 bbox actually analyzed) and temporal_summary.",
+      "description": "某一本地图层在一个时间片上的栅格统计（只读）：mean/min/max/std + 有效像元数，已排除 NoData。catalog_id 可省略（回落页面选中层），time 可省略（回落页面日期）；返回 time_source=page/requested/layer_default 标明日期来源，layer_default 表示不是页面那天。period_start~period_end 是命中的时间块，layer_span_* 是整层首尾，不得混用。is_daily_frame 表示是否单日观测；value_basis.kind 表示值出自哪种帧（ondemand_frame / daily_frame / block）。范围默认整幅栅格，不由视口裁剪。不建图层、不写产物、不跑工作流。",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
         "properties": {
-          "catalog_id": { "type": "string", "description": "Imported layer id, e.g. imported-38993117b963" },
+          "catalog_id": { "type": "string", "description": "图层 id，形如 imported-<12位>" },
           "time": {
             "type": "string",
-            "description": "Optional date, e.g. 20251215 or 2025-12-15; omit to use the layer default time"
+            "description": "可选日期，如 20251215 或 2025-12-15；省略则用图层默认时间"
           },
           "bbox": {
             "type": "array",
             "items": { "type": "number" },
-            "description": "Optional WGS84 bounding box [west, south, east, north] in degrees. Omit for the whole raster. Only pass when the user names an area."
+            "description": "可选 WGS84 经纬度框 [西,南,东,北]，仅在用户明确指定区域时传"
           }
         }
       }

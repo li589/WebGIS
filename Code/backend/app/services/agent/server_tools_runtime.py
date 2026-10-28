@@ -1449,6 +1449,69 @@ def _page_runtime_candidates(
     return out
 
 
+def _slim_layer_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """压掉检索结果里的空值与重复字段。
+
+    实测（2026-10-29）：12 层页面 + 产品族成员的完整条目共 7960 字符、约 2400 token，
+    而 20000 token 的单次上限里系统词已占 6000+。其中大半是 ``null``、
+    与 ``display_name`` 重复的 ``sidebar_name``、以及 ``variable``/``variable_id``
+    这类模型用不到的次级字段。只保留做判定真正要用的，内容一个不少：
+    ``layer_id``、``display_name``、``on_page``、``layer_kind``、``product_class``、
+    ``temporal_shape``、``product_family``、``variable_label``、``group_members``。
+    """
+    out: dict[str, Any] = {}
+    # 这些字段模型从来不用：category/source 只是分类噪音，variable/unit 与
+    # variable_label/unit_label 重复，product_group_label 与 display_name 同值。
+    _DROP = {
+        "sidebar_name",
+        "category",
+        "source",
+        "variable",
+        "unit",
+        "origin_catalog_id",
+        "variable_id",
+    }
+    for key, val in entry.items():
+        if key in _DROP:
+            continue
+        # 检索结果里不重复解释：temporal_shape/计数已足够，mixed/hybrid 的表述规则
+        # 在系统提示词里已写死（这两项合计 10 条结果要 480+ token）。
+        if key in {"shape_warning", "ondemand_dates"}:
+            continue
+        if val is None or val == "" or val == [] or val == {}:
+            continue
+        # 三个布尔只在为真时才带，缺省即假，省 3×N 个字段
+        if key in {"on_page", "visible", "selected"} and not val:
+            continue
+        if key == "product_group_label" and val == entry.get("display_name"):
+            continue
+        if key == "description":
+            val = str(val)[:40]
+        if key == "source_detail":
+            val = str(val)[:16]
+        if key == "group_hint":
+            val = "产品族，本身不是栅格层；请从 group_members 选一个变量层再统计"
+        if key == "group_members" and isinstance(val, list):
+            members: list[dict[str, Any]] = []
+            for m in val:
+                if not isinstance(m, dict):
+                    continue
+                mid = m.get("overlay_layer_id") or m.get("layer_id")
+                if not mid:
+                    continue
+                members.append(
+                    {
+                        "overlay_layer_id": mid,
+                        "variable_label": m.get("variable_label") or m.get("variable"),
+                    }
+                )
+            if not members:
+                continue
+            val = members
+        out[key] = val
+    return out
+
+
 def _search_layers(
     args: dict[str, Any],
     *,
@@ -1488,9 +1551,32 @@ def _search_layers(
                 q_variants.add(trimmed)
     q_variants = {v for v in q_variants if v}
 
-    def _hit(text: str) -> bool:
+    # 用户（和模型转述时）常把「来源 + 产品族 + 变量」连成一串，例如
+    # 「SMAP 平均散射约束产品 土壤水分」。整串做子串匹配命中 0 条——
+    # 实测（2026-10-29）：这种问法返回 count=0，模型只好退化到页面选中层，
+    # 于是问「SMAP 平均」却答了风云的数据。这里再按分词做一次「全部命中」匹配。
+    q_tokens = [
+        tok
+        for tok in re.split(r"[\s·・,，、/|的]+", q)
+        if len(tok) >= 2 and not tok.isdigit()
+    ]
+
+    def _match_score(text: str) -> int:
+        """命中强度：整串/去尾词命中 99，否则按分词命中个数打分（0=不命中）。"""
         low = str(text).casefold()
-        return any(v in low for v in q_variants)
+        if any(v in low for v in q_variants):
+            return 99
+        if len(q_tokens) < 2:
+            return 0
+        # 分词多数命中：允许「土壤水分」这种变量词只出现在 group_members 里而
+        # 不在族名里（「SMAP 平均散射约束产品」这个名字本身不含「土壤水分」），
+        # 否则整串问法又退回 0 条。
+        hit = sum(1 for tok in q_tokens if tok in low)
+        need = 2 if len(q_tokens) <= 3 else -(-len(q_tokens) * 3 // 5)
+        return hit if hit >= need else 0
+
+    def _hit(text: str) -> bool:
+        return _match_score(text) > 0
 
     # ① 页面上的图层：先按名字/编号匹配，命中的排最前（selected > visible）
     # 注意：``page`` 里同一图层会按 overlay_layer_id / catalog_id / instance_id
@@ -1503,7 +1589,10 @@ def _search_layers(
             continue
         base_name = info["name"] or _layer_display_name(lid) or lid
         qualified, aliases = _layer_names(lid, base_name)
-        if not _hit(f"{lid} {aliases}"):
+        # 名字匹配强度优先于 selected：用户点名「SMAP 平均」时，命中最强的那层
+        # 必须排在前面，否则模型看到第一条是 selected 的风云层就顺手用了。
+        score = _match_score(f"{lid} {qualified} {aliases}")
+        if not score:
             continue
         reported.add(id(info))
         entry: dict[str, Any] = {
@@ -1514,6 +1603,7 @@ def _search_layers(
             "on_page": True,
             "visible": bool(info["visible"]),
             "selected": bool(info["selected"]),
+            "_match": score,
             "layer_kind": "runtime_product"
             if lid.startswith("imported-")
             else "page_layer",
@@ -1525,12 +1615,15 @@ def _search_layers(
         page_hits.append(entry)
     page_hits.sort(
         key=lambda e: (
+            -int(e.get("_match") or 0),
             0 if e.get("selected") else 1,
             0 if e.get("visible") else 1,
             0 if str(e.get("layer_id") or "").startswith("imported-") else 1,
             str(e.get("layer_id") or ""),
         )
     )
+    for e in page_hits:
+        e.pop("_match", None)
     # 页面上出现过的图层（任一别名）都不再作为「目录层」重复列出，
     # 否则同一产品会以 imported-* 和 method-* 两个身份各说一遍。
     seen = set(page.keys())
@@ -1604,7 +1697,7 @@ def _search_layers(
         "ok": True,
         "query": query,
         "count": len(hits),
-        "layers": hits,
+        "layers": [_slim_layer_entry(h) for h in hits],
         "page_active_count": len(page_hits),
     }
     if page_hits:
