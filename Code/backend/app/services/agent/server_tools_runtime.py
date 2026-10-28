@@ -496,6 +496,9 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
             "is_single_block": facts["is_single_block"],
             "time_span_days": facts["time_span_days"],
             "temporal_summary": facts["temporal_summary"],
+            # 时序形态：运行产物里常见「单日帧 + 8 天块 + 季均块」混装，
+            # 模型必须知道这一层到底是逐日动态还是跨段合成（报告第 1/2 条）。
+            **_temporal_shape_fields(blocks),
         },
     }
 
@@ -531,6 +534,52 @@ def _local_time_keys(catalog_id: str) -> list[str]:
         except Exception:
             logger.debug("meta time_list unavailable for %s", catalog_id, exc_info=True)
     return keys
+
+
+def _temporal_shape_fields(time_list: Any) -> dict[str, Any]:
+    """图层的「时序形态」——模型区分「逐日动态」与「整段合成/平均」的唯一依据。
+
+    外部报告第 1/2 条（复合指令串错产品、说"不是当天独立观测"）的物理根因：
+    ``imported-136c60293bbf`` 这类目录里同时躺着单日帧、8 天窗块和跨季季均块，
+    而 meta 里 ``variable_id`` / ``label`` / ``category`` / ``run_id`` 全相同的两个
+    图层（逐日动态 vs 整季平均）在 search_layers 结果里**长得一模一样**，模型
+    只能靠 id 猜。这里把 ``time_list`` 的形状显式说出来。
+
+    ``mixed`` 表示这一层自己就混装了粒度不同的帧——此时"某一天的值"必须说清
+    命中的是哪一片，不能当成当天观测。
+    """
+    keys = [str(k) for k in (time_list or []) if k]
+    daily = [k for k in keys if len(k) == 8 and k.isdigit()]
+    blocks = [k for k in keys if "_" in k]
+    try:
+        from app.services.overlay_registry import _block_span_days
+
+        longest = max((_block_span_days(k) for k in blocks), default=0)
+    except Exception:  # pragma: no cover
+        longest = 0
+    if daily and blocks:
+        shape = "mixed"
+    elif daily:
+        shape = "daily_series"
+    elif len(blocks) <= 1 and blocks:
+        shape = "single_block"
+    elif blocks:
+        shape = "block_series"
+    else:
+        shape = "unknown"
+    out: dict[str, Any] = {
+        "temporal_shape": shape,
+        "daily_frame_count": len(daily),
+        "block_count": len(blocks),
+        "longest_block_days": longest,
+    }
+    if shape == "mixed":
+        out["shape_warning"] = (
+            "该图层的 time_list 同时含单日帧与多日块（最长 "
+            f"{longest} 天），粒度不统一：引用「某一天」时必须说明实际命中的是哪一片，"
+            "不得把跨多天的合成块当成当天的独立观测。"
+        )
+    return out
 
 
 _MONTH_IN_TEXT_RE = re.compile(r"(\d{4})[-/年](\d{1,2})")
@@ -674,6 +723,8 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "actual_period_start": facts["period_start"],
         "actual_period_end": facts["period_end"],
         "temporal_summary": facts["temporal_summary"],
+        # 时序形态：回答「是逐日动态还是跨段合成」的唯一依据
+        **_temporal_shape_fields(actual_keys),
         "coverage_conflict": bool(consistency["conflict"]),
         "coverage_note": consistency["note"],
         "extent": extent_out,
@@ -1158,6 +1209,51 @@ def _page_default_layer(client_context: dict[str, Any] | None) -> str | None:
     return candidates[0][1]
 
 
+def _page_runtime_candidates(
+    client_context: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """页面上所有**可统计**的运行时图层及其时序形态。
+
+    外部报告第 1 条（「SMAP 动态产品」却回了平均产品的 0.1664）的直接成因：
+    页面上同时挂着一个逐日动态层和一个整季平均层，两者 ``variable_label`` 都是
+    「土壤水分」，模型看不见差别，`_page_default_layer` 又只能按 selected/visible
+    挑一个。这里把候选连同 ``temporal_shape`` 一起交出去，模型才能发现
+    「我用的这层是 single_block，而用户要的是动态」并换层重算。
+    """
+    out: list[dict[str, Any]] = []
+    if not isinstance(client_context, dict):
+        return out
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list):
+        return out
+    seen: set[str] = set()
+    for item in layers:
+        if not isinstance(item, dict):
+            continue
+        lid = ""
+        for key in ("overlay_layer_id", "catalog_id", "instance_id"):
+            val = str(item.get(key) or "").strip()
+            if val:
+                lid = val
+                break
+        if not lid or lid in seen:
+            continue
+        if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
+            continue
+        seen.add(lid)
+        out.append(
+            {
+                "layer_id": lid,
+                "display_name": str(item.get("name") or "").strip()
+                or _layer_display_name(lid),
+                "visible": bool(item.get("visible")),
+                "selected": bool(item.get("selected")),
+                **_temporal_shape_fields(_local_time_keys(lid)),
+            }
+        )
+    return out
+
+
 def _search_layers(
     args: dict[str, Any],
     *,
@@ -1203,6 +1299,8 @@ def _search_layers(
             if lid.startswith("imported-")
             else "page_layer",
             "product_class": _product_class(lid),
+            # 逐日动态 / 8 天块 / 跨季平均：模型据此区分同名不同产品
+            **_temporal_shape_fields(_local_time_keys(lid)),
             **_layer_identity_fields(lid, display=name),
         }
         page_hits.append(entry)
@@ -1240,6 +1338,7 @@ def _search_layers(
         if q not in blob:
             continue
         info = page.get(lid)
+        _shape_keys = _local_time_keys(lid)
         catalog_hits.append(
             {
                 "layer_id": lid,
@@ -1251,6 +1350,8 @@ def _search_layers(
                 "selected": bool(info["selected"]) if info else False,
                 "layer_kind": "catalog_reference",
                 "product_class": _product_class(lid),
+                # 仅在真有本地时间片时给出形态，避免参考层一堆 unknown 噪音
+                **(_temporal_shape_fields(_shape_keys) if _shape_keys else {}),
                 **_layer_identity_fields(lid, display=display),
             }
         )
@@ -1595,7 +1696,7 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
 
             _spec = get_overlay_spec(catalog_id)
             if _spec is not None:
-                hit_key = _spec.resolve_time_key(requested)
+                hit_key = _spec.resolve_time_key(requested, prefer_finest=True)
         except Exception:
             logger.debug(
                 "coverage resolve_time_key failed for %s", catalog_id, exc_info=True
@@ -1630,6 +1731,8 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         # 报告 第 3 条：不许自己编「改查 12 月 15 日」。
         # 这里给的就是该层真实有的日期，模型要提替代日期只能从这里挑。
         "available_dates": _nearby_dates(local_dates, requested),
+        # 时序形态：与 meta / statistics 三处同源，避免「覆盖说混装、统计说单块」
+        **_temporal_shape_fields(local_dates),
         "channels": {
             "online": online,
             "local": {"dates": local_dates, "count": len(local_dates)},
@@ -1976,7 +2079,9 @@ def _get_layer_statistics(
         }
 
     spec_time = requested or getattr(spec, "default_time", None)
-    actual_key = spec.resolve_time_key(spec_time)
+    # prefer_finest=True：同一天若同时落在「8 天窗块」和「跨季季均块」里，
+    # 取跨度最短的那一片。否则会拿到季均块的 0.166402，回答却说成"这一天"。
+    actual_key = spec.resolve_time_key(spec_time, prefer_finest=True)
     if actual_key is None:
         try:
             blocks = [str(t) for t in (getattr(spec, "time_list", None) or [])][:366]
@@ -2043,6 +2148,9 @@ def _get_layer_statistics(
         "time_span_days": facts["time_span_days"],
         "block_count": facts["block_count"],
         "temporal_summary": facts["temporal_summary"],
+        # 时序形态（daily_series / block_series / single_block / mixed）：
+        # 让回答能自证「这一层到底是逐日动态，还是跨段合成」
+        **_temporal_shape_fields(getattr(spec, "time_list", None)),
         **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
@@ -2051,6 +2159,21 @@ def _get_layer_statistics(
             "没有拿到页面日期，本次统计用的是该图层的默认时间块 "
             f"{actual_key}；这不代表页面上那一天的数据，回答里必须说明。"
         )
+    # 报告第 1 条：页面上挂着多个同名运行时图层时，把候选（带形态）交出去。
+    # 只在「没点名、按页面选层」且候选 >1 时给，避免正常单层场景刷噪音。
+    if layer_source == "page":
+        _cands = _page_runtime_candidates(client_context)
+        if len(_cands) > 1:
+            payload["page_candidates"] = _cands
+            _used_shape = _temporal_shape_fields(getattr(spec, "time_list", None)).get(
+                "temporal_shape"
+            )
+            payload["layer_source_warning"] = (
+                f"本次统计用的是页面选中图层 {catalog_id}（temporal_shape={_used_shape}）。"
+                "若用户点名的产品形态与它不符（例如用户说动态/逐日，这层却是 single_block），"
+                "必须从 page_candidates 里挑 temporal_shape 匹配的那一层，"
+                "显式传 catalog_id 重新统计，不得直接拿这次结果回答。"
+            )
     if not stats.get("ok") and "error" not in stats:
         payload["error"] = "统计失败"
     return payload

@@ -54,6 +54,27 @@ def split_block_key(key: str | None) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _block_span_days(key: str | None) -> int:
+    """时间片键跨越的自然日数，供「同日命中多片时取最细者」排序用。
+
+    单日键返回 0；无法解析时返回一个大数（排在最后，等价于不参与优选）。
+    纯字符串/日期运算，不读盘、不抛异常。
+    """
+    start, end = split_block_key(key)
+    if not start or not end:
+        return 10**6
+    if start == end:
+        return 0
+    try:
+        from datetime import date
+
+        d0 = date(int(start[:4]), int(start[4:6]), int(start[6:8]))
+        d1 = date(int(end[:4]), int(end[4:6]), int(end[6:8]))
+    except Exception:  # pragma: no cover - 键格式异常时退化为「不优选」
+        return 10**6
+    return max((d1 - d0).days, 0)
+
+
 @dataclass
 class OverlaySpec:
     """单个叠加图层的配置。"""
@@ -158,12 +179,18 @@ class OverlaySpec:
         except OSError:  # 目录不可读时按「没有」处理，别把 500 抛给前端
             return False
 
-    def _assert_time_available(self, t: str | None) -> str | None:
+    def _assert_time_available(
+        self, t: str | None, *, prefer_finest: bool = False
+    ) -> str | None:
         """校验时序图层的时间值在 time_list 白名单内。
 
         与 :meth:`resolve_png` 的既有校验保持一致，阻断把用户可控 ``time``
         直接拼进文件路径的路径穿越（G1-01）。静态图层或空白名单时不拦截。
         支持单日 YYYYMMDD 与 YYYYMMDD_YYYYMMDD / 8 天块的相互匹配容错。
+
+        ``prefer_finest``（默认 False = 既有行为逐字节不变）：
+        只在「同一个日期同时落在多个跨天块内」时改变取舍——取**跨度最短**的
+        那一片，而不是 time_list 里排在最前的那一片。见下方容错分支的注释。
         """
         if self.category == "time-series" and t is None:
             raise OverlayValidationError(
@@ -180,6 +207,25 @@ class OverlaySpec:
             # 「拖到哪天都是整月」的根因）。
             if self._has_ondemand_frame(t_compact):
                 return t_compact
+            # ★ 2026-10-28：同一天命中多个跨天块时，取**跨度最短**的那一片。
+            # 背景：逐日产品的目录里会同时存在单日帧、8 天窗块和跨季合成块，
+            # 例如 imported-136c60293bbf 同时有 20251211_20251218（8 天）和
+            # 20251201_20260201（63 天季均）。下面的顺序匹配会先撞上后者，
+            # 于是「查 2025-12-15」拿到的是季均块的 0.166402 —— 助手据此回答
+            # 「不是当天独立观测」，而地图前端按 temporal-interval.ts:307-311
+            # 的「最短区间优先」显示的却是 8 天块，两边口径分裂。
+            # 只有 prefer_finest=True（统计 / 点查 / 覆盖查询）启用；
+            # resolve_png / resolve_bounds（地图显示）不传此参，行为完全不变。
+            if prefer_finest and len(t_compact) == 8:
+                same_day_blocks = [
+                    item
+                    for item in self.time_list
+                    if "_" in item
+                    and len(item.split("_")) == 2
+                    and item.split("_")[0] <= t_compact <= item.split("_")[1]
+                ]
+                if same_day_blocks:
+                    return min(same_day_blocks, key=_block_span_days)
             # 容错匹配：单日 8 位与时序块匹配
             for item in self.time_list:
                 if "_" in item:
@@ -194,17 +240,24 @@ class OverlaySpec:
             )
         return t
 
-    def resolve_time_key(self, time: str | None = None) -> str | None:
+    def resolve_time_key(
+        self, time: str | None = None, *, prefer_finest: bool = False
+    ) -> str | None:
         """把请求时间解析成**实际命中**的时间片键（只读，失败返回 None）。
 
         供点查 / 整层统计如实回报"请求日期"与"实际数据时间块"的区别：
         例如请求 ``2025-12-15`` 而图层只有 ``20251201_20260201`` 一片时，
         本方法返回 ``20251201_20260201``，调用方据此说明数据实为整块。
+
+        ``prefer_finest=True``：同一日期命中多个跨天块时取跨度最短者（默认关闭，
+        供统计/点查使用；地图显示走 :meth:`resolve_png`，不传此参、行为不变）。
         """
         if self.category != "time-series":
             return None
         try:
-            return self._assert_time_available(time or self.default_time)
+            return self._assert_time_available(
+                time or self.default_time, prefer_finest=prefer_finest
+            )
         except Exception:
             return None
 
@@ -498,7 +551,9 @@ class OverlaySpec:
         # 地图点查（/overlay-value）与助手点查（sample_layer_point）都走本方法，
         # 因此两边口径天然一致，不会出现"风云被写成 SMAP 的区间"。
         # 只新增键，不动既有 `time`（仍为请求时间），保持向后兼容。
-        _actual_key = self.resolve_time_key(time)
+        # prefer_finest=True：同日命中多个块时取最细的一片，与地图显示口径一致
+        # （前端 temporal-interval.ts:307-311 早已是「最短区间优先」）。
+        _actual_key = self.resolve_time_key(time, prefer_finest=True)
         _p_start, _p_end = split_block_key(_actual_key)
         result["requested_time"] = time
         result["actual_time"] = _actual_key
