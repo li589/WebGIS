@@ -446,7 +446,9 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
         "ok": True,
         "layer": {
             "layer_id": catalog_id,
-            "display_name": _layer_display_name(catalog_id) or catalog_id,
+            "display_name": _qualified_layer_name(
+                catalog_id, _layer_display_name(catalog_id)
+            ),
             "description": "运行期产物图层（本地已物化的科学栅格）。"
             + (
                 f" 源文件 {meta['source_filename']}"
@@ -839,7 +841,21 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "coverage_note": consistency["note"],
         "extent": extent_out,
         "tags": [str(t)[:64] for t in tags[:20]],
+        # 身份与产品族：同名图层必须能区分「SMAP 动态 / SMAP 平均 × SM / VOD / ω」
+        **_layer_identity_fields(
+            catalog_id, display=str(getattr(desc, "display_name", "") or "")
+        ),
     }
+    # 产品族（method-*）：自身无栅格，必须引导到具体变量层，
+    # 否则模型只会回一句「这是目录参考层、算不了」。
+    if layer.get("is_product_group"):
+        _members = layer.get("group_members") or []
+        layer["layer_kind"] = "product_group"
+        layer["group_hint"] = "这是一个产品族，本身不是可直接统计的栅格层。" + (
+            f"本机已有 {len(_members)} 个变量产物，请指定其中一个再统计。"
+            if _members
+            else "本条产品族在本机还没有任何产物，需要先跑工作流。"
+        )
     return {"ok": True, "layer": layer}
 
 
@@ -1089,6 +1105,57 @@ def _layer_identity_fields(
         return {}
 
 
+# 产品族名里的通用尾词：去掉后得到「SMAP 动态」「风云卫星 平均」这种短名，
+# 让用户嘴里的「SMAP 动态产品」也能匹配到页面上那一层。
+_GROUP_LABEL_NOISE = ("散射约束产品", "散射约束", "卫星")
+
+
+def _short_group_label(label: Any) -> str:
+    text = str(label or "")
+    for token in _GROUP_LABEL_NOISE:
+        text = text.replace(token, "")
+    return " ".join(text.split()).strip()
+
+
+def _layer_names(layer_id: str, fallback: str | None = None) -> tuple[str, str]:
+    """返回 ``(展示名, 搜索别名串)``。
+
+    页面上常同时挂着 SMAP 动态 / SMAP 平均 / 风云动态 / 风云平均 四族各三变量
+    （SM / VOD / ω）共 12 层，其中 4 层都叫「土壤水分」——前端只把侧栏变量名
+    传上来（``agent-chat-helpers.ts`` 的 ``name: l.name``），产品和口径信息全丢。
+    这里用产物的来源图层补出产品族名，得到可辨识的唯一名，例如
+    ``SMAP 动态散射约束产品 · 土壤水分``。
+    """
+    base = str(fallback or "").strip()
+    try:
+        fields = _layer_identity_fields(layer_id, display=base or None)
+    except Exception:  # pragma: no cover
+        return (base or str(layer_id), base or str(layer_id))
+    group = str(fields.get("product_group_label") or "").strip()
+    var = str(fields.get("variable_label") or "").strip()
+    if group and var and not group.endswith(var):
+        qualified = f"{group} · {var}"
+    else:
+        qualified = group or base or var or str(layer_id)
+    short = _short_group_label(group)
+    alias_parts = [qualified, short, group, var, base]
+    if short and var:
+        alias_parts.append(f"{short} · {var}")
+    # 用户打字常不带空格或用简称（「风云平均」「smap动态」「SMAP动态产品」），
+    # 所以别名再补一份去空格的紧凑写法。
+    for text in list(alias_parts):
+        compact = str(text).replace(" ", "")
+        if compact and compact != text:
+            alias_parts.append(compact)
+    aliases = " ".join(p for p in alias_parts if p)
+    return (qualified, aliases)
+
+
+def _qualified_layer_name(layer_id: str, fallback: str | None = None) -> str:
+    """图层展示名（补全产品族，见 :func:`_layer_names`）。"""
+    return _layer_names(layer_id, fallback)[0]
+
+
 def _sample_one_layer(
     catalog_id: str,
     *,
@@ -1242,7 +1309,11 @@ def _page_layer_index(
     """``client_context.active_layers`` → ``{图层 id: {name, visible, selected}}``。
 
     一个图层可能同时有 catalog_id / instance_id / overlay_layer_id 三个别名，
-    三个都登记同一份信息，避免模型拿着其中一个 id 搜不到。
+    登记同一份信息，避免模型拿着其中一个 id 搜不到。
+
+    **catalog_id 重复时不予登记**：产品族下一个 catalog_id 会挂 SM / VOD / ω
+    三个产物（例如 `method-smap-omega-doy-dynamic` 对应三个 imported-*），
+    拿它当别名只会指向「第一个变量」，查到的是错层——比查不到更容易答错。
     """
     out: dict[str, dict[str, Any]] = {}
     if not isinstance(client_context, dict):
@@ -1250,22 +1321,27 @@ def _page_layer_index(
     layers = client_context.get("active_layers")
     if not isinstance(layers, list):
         return out
+    cid_count: dict[str, int] = {}
     for item in layers:
         if not isinstance(item, dict):
             continue
-        ids = [
-            str(item.get(key) or "").strip()
-            for key in ("overlay_layer_id", "catalog_id", "instance_id")
-        ]
-        ids = [i for i in ids if i]
-        if not ids:
+        cid = str(item.get("catalog_id") or "").strip()
+        if cid:
+            cid_count[cid] = cid_count.get(cid, 0) + 1
+    for item in layers:
+        if not isinstance(item, dict):
             continue
         info = {
             "name": str(item.get("name") or "").strip(),
             "visible": bool(item.get("visible")),
             "selected": bool(item.get("selected")),
         }
-        for lid in ids:
+        for key in ("overlay_layer_id", "catalog_id", "instance_id"):
+            lid = str(item.get(key) or "").strip()
+            if not lid:
+                continue
+            if key == "catalog_id" and cid_count.get(lid, 0) > 1:
+                continue
             out.setdefault(lid, info)
     return out
 
@@ -1351,14 +1427,19 @@ def _page_runtime_candidates(
         if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
             continue
         seen.add(lid)
+        _base = str(item.get("name") or "").strip() or _layer_display_name(lid)
+        _identity = _layer_identity_fields(lid, display=_base)
         out.append(
             {
                 "layer_id": lid,
-                "display_name": str(item.get("name") or "").strip()
-                or _layer_display_name(lid),
+                # 候选之间必须能区分：4 层都可能叫「土壤水分」，只报原名等于没报
+                "display_name": _qualified_layer_name(lid, _base),
+                "sidebar_name": _base,
                 "visible": bool(item.get("visible")),
                 "selected": bool(item.get("selected")),
                 **_temporal_shape_fields(_local_time_keys(lid), layer_id=lid),
+                "product_family": _identity.get("product_family"),
+                "variable_label": _identity.get("variable_label"),
             }
         )
     return out
@@ -1393,15 +1474,39 @@ def _search_layers(
     q = query.casefold()
     page = _page_layer_index(client_context)
 
+    # 用户嘴里常带「产品/图层/那一层」这类通用词（「SMAP动态产品」「风云平均产品」），
+    # 而图层名里未必有。匹配时允许多种写法，命中任一即可。
+    q_variants: set[str] = {q}
+    for tail in ("这一层", "那个图层", "产品", "图层", "数据", "的"):
+        if tail in q:
+            trimmed = q.replace(tail, "").strip()
+            if trimmed:
+                q_variants.add(trimmed)
+    q_variants = {v for v in q_variants if v}
+
+    def _hit(text: str) -> bool:
+        low = str(text).casefold()
+        return any(v in low for v in q_variants)
+
     # ① 页面上的图层：先按名字/编号匹配，命中的排最前（selected > visible）
+    # 注意：``page`` 里同一图层会按 overlay_layer_id / catalog_id / instance_id
+    # 登记三次（为了模型用任一个 id 都搜得到），这里必须按图层去重，否则
+    # 12 层会被报成 36 条，既误导模型也把上下文撑爆。
     page_hits: list[dict[str, Any]] = []
+    reported: set[int] = set()
     for lid, info in page.items():
-        name = info["name"] or _layer_display_name(lid) or lid
-        if q not in f"{lid} {name}".casefold():
+        if id(info) in reported:
             continue
+        base_name = info["name"] or _layer_display_name(lid) or lid
+        qualified, aliases = _layer_names(lid, base_name)
+        if not _hit(f"{lid} {aliases}"):
+            continue
+        reported.add(id(info))
         entry: dict[str, Any] = {
             "layer_id": lid,
-            "display_name": name,
+            "display_name": qualified,
+            # 侧栏原名（多为「土壤水分」），保留给模型解释「用户点的是哪个」
+            "sidebar_name": base_name,
             "on_page": True,
             "visible": bool(info["visible"]),
             "selected": bool(info["selected"]),
@@ -1411,7 +1516,7 @@ def _search_layers(
             "product_class": _product_class(lid),
             # 逐日动态 / 8 天块 / 跨季平均：模型据此区分同名不同产品
             **_temporal_shape_fields(_local_time_keys(lid), layer_id=lid),
-            **_layer_identity_fields(lid, display=name),
+            **_layer_identity_fields(lid, display=base_name),
         }
         page_hits.append(entry)
     page_hits.sort(
@@ -1422,7 +1527,9 @@ def _search_layers(
             str(e.get("layer_id") or ""),
         )
     )
-    seen = {str(e["layer_id"]) for e in page_hits}
+    # 页面上出现过的图层（任一别名）都不再作为「目录层」重复列出，
+    # 否则同一产品会以 imported-* 和 method-* 两个身份各说一遍。
+    seen = set(page.keys())
 
     # ② 目录里的图层（catalog_seeds）：去掉已经在页面上的重复项
     catalog = get_layer_catalog()
@@ -1444,31 +1551,41 @@ def _search_layers(
         desc = str(getattr(item, "description", "") or "")
         tags = getattr(item, "tags", None) or []
         tag_s = " ".join(str(t) for t in tags) if isinstance(tags, list) else str(tags)
-        blob = f"{lid} {display} {desc} {tag_s}".casefold()
-        if q not in blob:
+        qualified, aliases = _layer_names(lid, display)
+        blob = f"{lid} {display} {desc} {tag_s} {aliases}".casefold()
+        if not _hit(blob):
             continue
         info = page.get(lid)
         _shape_keys = _local_time_keys(lid)
-        catalog_hits.append(
-            {
-                "layer_id": lid,
-                "display_name": display,
-                "category": str(getattr(item, "category", "") or ""),
-                "description": desc[:200],
-                "on_page": info is not None,
-                "visible": bool(info["visible"]) if info else False,
-                "selected": bool(info["selected"]) if info else False,
-                "layer_kind": "catalog_reference",
-                "product_class": _product_class(lid),
-                # 仅在真有本地时间片时给出形态，避免参考层一堆 unknown 噪音
-                **(
-                    _temporal_shape_fields(_shape_keys, layer_id=lid)
-                    if _shape_keys
-                    else {}
-                ),
-                **_layer_identity_fields(lid, display=display),
-            }
-        )
+        _identity = _layer_identity_fields(lid, display=display)
+        entry: dict[str, Any] = {
+            "layer_id": lid,
+            "display_name": qualified,
+            "sidebar_name": display,
+            "category": str(getattr(item, "category", "") or ""),
+            "description": desc[:200],
+            "on_page": info is not None,
+            "visible": bool(info["visible"]) if info else False,
+            "selected": bool(info["selected"]) if info else False,
+            "layer_kind": "catalog_reference",
+            "product_class": _product_class(lid),
+            # 仅在真有本地时间片时给出形态，避免参考层一堆 unknown 噪音
+            **(
+                _temporal_shape_fields(_shape_keys, layer_id=lid) if _shape_keys else {}
+            ),
+            **_identity,
+        }
+        # 产品族（method-*）：本身不承载栅格，必须告诉模型「去挑哪一个变量」，
+        # 否则模型只能回一句「是目录参考层、算不了」。
+        if _identity.get("is_product_group"):
+            _members = _identity.get("group_members") or []
+            entry["layer_kind"] = "product_group"
+            entry["group_hint"] = "这是一个产品族，本身不是可直接统计的栅格层。" + (
+                f"本机已有 {len(_members)} 个变量产物，请指定其中一个再统计。"
+                if _members
+                else "本条产品族在本机还没有任何产物，需要先跑工作流。"
+            )
+        catalog_hits.append(entry)
     # 目录层里 imported-* 也优先于 ref-* 之类的参考层
     catalog_hits.sort(
         key=lambda e: (
@@ -1649,10 +1766,19 @@ def _get_workflow_run(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
 
 
 def _parse_date8(value: Any) -> str | None:
-    """把 '2025-12-15' / '20251215' / '2025/12/15' / '2017-01' 统一成 'YYYYMMDD'。"""
+    """把 '2025-12-15' / '20251215' / '2025/12/15' / '2017-01' 统一成 'YYYYMMDD'。
+
+    **块键 ``YYYYMMDD_YYYYMMDD`` 原样返回**：它是图层 ``time_list`` 里的真实时间片键。
+    截成起始日会让「明确要这一整段」变成「只取第一天」——2026-10-29 实测：
+    点名 ``20251201_20260201`` 合成块，被补帧单日 ``20251201`` 抢先命中，
+    统计结果从 643,731 个像元变成当日单帧。
+    """
     if value is None:
         return None
-    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    text = str(value).strip()
+    if re.fullmatch(r"\d{8}_\d{8}", text):
+        return text
+    digits = "".join(ch for ch in text if ch.isdigit())
     if len(digits) >= 8:
         return digits[:8]
     if len(digits) == 6:  # 'YYYY-MM' → 当月第一天
@@ -1827,7 +1953,9 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     return {
         "ok": True,
         "catalog_id": catalog_id,
-        "display_name": _layer_display_name(catalog_id),
+        "display_name": _qualified_layer_name(
+            catalog_id, _layer_display_name(catalog_id)
+        ),
         "requested_time": requested,
         # R09/R10：一句话回答"这天到底有没有"，channels 明细保留兼容旧调用
         "resolved": resolved,
@@ -2188,7 +2316,9 @@ def _get_layer_statistics(
         return {
             "ok": False,
             "catalog_id": catalog_id,
-            "display_name": _layer_display_name(catalog_id),
+            "display_name": _qualified_layer_name(
+                catalog_id, _layer_display_name(catalog_id)
+            ),
             "requested_time": requested,
             "error": f"该图层的源文件是 {reader} 格式（非 GeoTIFF），暂不支持整层统计；"
             "请改用已物化为栅格的 imported-* 图层。",
@@ -2206,7 +2336,9 @@ def _get_layer_statistics(
         return {
             "ok": False,
             "catalog_id": catalog_id,
-            "display_name": _layer_display_name(catalog_id),
+            "display_name": _qualified_layer_name(
+                catalog_id, _layer_display_name(catalog_id)
+            ),
             "requested_time": requested,
             "time_source": time_source,
             "page_date": page_date,
@@ -2239,7 +2371,9 @@ def _get_layer_statistics(
     payload: dict[str, Any] = {
         "ok": bool(stats.get("ok")),
         "catalog_id": catalog_id,
-        "display_name": _layer_display_name(catalog_id),
+        "display_name": _qualified_layer_name(
+            catalog_id, _layer_display_name(catalog_id)
+        ),
         "scope": "bbox" if bbox is not None else "full_extent",
         "requested_bbox": list(bbox) if bbox is not None else None,
         "statistic": "mean",

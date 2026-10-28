@@ -68,7 +68,12 @@ _META_VARIABLE_CODES: dict[str, str] = {
 _VARIABLE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sm", ("土壤水分", "土壤湿度", "soil moisture")),
     ("vod", ("植被光学厚度", "光学厚度", "vegetation optical")),
-    ("omega", ("等效散射", "散射", "omega", "ω")),
+    # 注意：「散射」**不能**单独作为变量证据。产品族名里必然含这两个字
+    # （「SMAP 动态散射约束产品」「风云卫星平均散射约束产品」），一旦把
+    # 「散射」当 ω 的证据，整族都会被误判成 ω 图层——2026-10-28 实测：
+    # 用户问「SMAP 动态散射约束产品」，模型据此答「这一层是等效散射 ω（无量纲）」。
+    # 真正的变量层显示名是「等效散射 ω」，靠「等效散射」/「omega」/「ω」已足够。
+    ("omega", ("等效散射", "omega", "ω")),
     ("tb", ("亮温", "brightness temperature")),
     ("ndvi", ("ndvi", "植被指数")),
 )
@@ -184,6 +189,76 @@ def _meta_variable_code(overlay_id: str) -> str | None:
     return _META_VARIABLE_CODES.get(raw)
 
 
+# ── 产品族（method-* 工作流方法层）────────────────────────────────────────────
+# ``method-*`` 是「产品族」：它下面按变量分 SM / VOD / OMEGA 三个产物，
+# 本身不承载栅格。此前对它照常做变量推断，组名里的「散射」会被判成 ω，
+# 于是「SMAP 动态散射约束产品」被说成「等效散射 ω 图层」「本地无产物」。
+_PRODUCT_GROUP_PREFIX = "method-"
+_GROUP_VARIABLE_ROLES: tuple[tuple[str, str], ...] = (
+    ("SM", "sm"),
+    ("VOD", "vod"),
+    ("OMEGA", "omega"),
+)
+
+
+def _has_local_raster(layer_id: str) -> bool:
+    """该 id 自己是否挂着栅格产物（有 overlay spec 才算数据层）。"""
+    try:
+        from app.services.overlay_registry import get_overlay_spec
+
+        return get_overlay_spec(layer_id) is not None
+    except Exception:  # pragma: no cover
+        return False
+
+
+def _group_member_ids(cid: str) -> list[dict[str, str]]:
+    """产品族 id → 本机**实际存在**的成员产物（盘上没有的不列，绝不编造）。
+
+    目录命名是 ``imported-<sha1(catalogId|role|role)[:12]>``（见
+    ``data_io/services/raster_timeseries.stable_imported_layer_id``），
+    所以这里用同一函数反算，再检查 ``meta.json`` 是否真存在。
+    """
+    if not str(cid or "").startswith(_PRODUCT_GROUP_PREFIX):
+        return []
+    try:
+        from app.data_io.services.paths import safe_import_child
+        from app.data_io.services.raster_timeseries import stable_imported_layer_id
+    except Exception:  # pragma: no cover
+        return []
+    members: list[dict[str, str]] = []
+    for role, code in _GROUP_VARIABLE_ROLES:
+        try:
+            oid = stable_imported_layer_id(cid, role, role)
+            if not (safe_import_child(oid) / "meta.json").is_file():
+                continue
+        except Exception:  # pragma: no cover
+            continue
+        spec = VARIABLE_SPECS.get(code) or {}
+        members.append(
+            {
+                "overlay_layer_id": oid,
+                "variable": code,
+                "variable_label": str(spec.get("label") or ""),
+                "variable_id": role,
+            }
+        )
+    return members
+
+
+def _product_family(layer_id: str) -> str | None:
+    """产品族口径：dynamic（逐日/8 天动态） / average（整段平均） / raw（原始）。"""
+    text = str(layer_id or "").casefold()
+    if not text:
+        return None
+    if "dynamic" in text:
+        return "dynamic"
+    if "avg" in text or "average" in text:
+        return "average"
+    if "raw" in text:
+        return "raw"
+    return None
+
+
 # ── 变量判定 ────────────────────────────────────────────────────────────────
 
 
@@ -224,6 +299,10 @@ def resolve_layer_identity(
         "unit": None,
         "unit_label": None,
         "origin_layer_id": None,
+        "product_group_label": None,
+        "product_family": None,
+        "is_product_group": False,
+        "group_members": [],
         "basis": [],
     }
     if not cid:
@@ -269,13 +348,27 @@ def resolve_layer_identity(
     identity["source"] = source
     identity["source_label"] = SOURCE_LABELS.get(source, SOURCE_LABELS[SOURCE_UNKNOWN])
 
+    # ---- 产品族：method-* 且自身没有栅格 spec ⇒ 是一族，不是一层 ----
+    is_group = False
+    if cid.startswith(_PRODUCT_GROUP_PREFIX) and not _has_local_raster(cid):
+        is_group = True
+        identity["is_product_group"] = True
+        identity["group_members"] = _group_member_ids(cid)
+        identity["basis"].append("variable:product_group")
+    identity["product_group_label"] = desc_name or None
+    identity["product_family"] = _product_family(origin_id or cid)
+
     # ---- 变量 ----
     variable: str | None = None
-    if cid.startswith("imported-"):
+    if is_group:
+        # 产品族不落单一变量：组名里的「散射」是族名用词，不是 ω 的证据。
+        # 保持 unknown，让调用方去问「这一族里的哪一个」。
+        pass
+    elif cid.startswith("imported-"):
         variable = _meta_variable_code(cid)
         if variable:
             identity["basis"].append("variable:meta")
-    if variable is None:
+    if variable is None and not is_group:
         variable = _normalize_variable(
             str(display_name or ""), desc_name, cid, origin_id or ""
         )
@@ -318,7 +411,12 @@ def describe_identity_line(catalog_id: str, *, display_name: str | None = None) 
 def identity_fields(
     catalog_id: str, *, display_name: str | None = None
 ) -> dict[str, Any]:
-    """点查/目录/搜索结果要拼进返回体的字段子集。"""
+    """点查/目录/搜索结果要拼进返回体的字段子集。
+
+    ``product_group_label`` / ``product_family`` / ``origin_catalog_id`` 三项是为
+    了让同名图层可区分：页面上常同时挂着「SMAP 动态」「SMAP 平均」「风云动态」
+    「风云平均」四族各三个变量，共 12 层，其中 4 层都叫「土壤水分」。
+    """
     ident = resolve_layer_identity(catalog_id, display_name=display_name)
     return {
         "source": ident["source"],
@@ -328,4 +426,9 @@ def identity_fields(
         "variable_label": ident["variable_label"],
         "unit": ident["unit"],
         "unit_label": ident["unit_label"],
+        "origin_catalog_id": ident["origin_layer_id"],
+        "product_group_label": ident["product_group_label"],
+        "product_family": ident["product_family"],
+        "is_product_group": ident["is_product_group"],
+        "group_members": ident["group_members"],
     }
