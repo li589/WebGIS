@@ -245,6 +245,132 @@ def _group_member_ids(cid: str) -> list[dict[str, str]]:
     return members
 
 
+_IMPORT_INDEX_CACHE: dict[str, tuple[float, dict[str, dict[str, Any]]]] = {}
+
+
+def _daily_tag_count(dir_name: str) -> int:
+    """目录里 8 位单日产物（preview_*/source_*）的个数；块键带下划线，不计入。"""
+    try:
+        from app.data_io.services.paths import safe_import_child
+
+        layer_dir = safe_import_child(dir_name)
+        if not layer_dir.is_dir():
+            return 0
+        tags: set[str] = set()
+        for entry in layer_dir.iterdir():
+            name = entry.name
+            if name.startswith("preview_") and name.endswith(".png"):
+                tag = name[8:-4]
+            elif name.startswith("source_") and name.endswith(".tif"):
+                tag = name[7:-4]
+            else:
+                continue
+            if len(tag) == 8 and tag.isdigit():
+                tags.add(tag)
+        return len(tags)
+    except Exception:  # pragma: no cover - 目录不可读时按 0 处理
+        return 0
+
+
+def _import_meta_index(cid: str) -> dict[str, dict[str, Any]]:
+    """``imports/`` 下所有产物目录的关键字段（按父目录 mtime 缓存，只读一次盘）。
+
+    只取判定「是否同一份数据的两个副本」所需的最小字段，不读栅格。
+    """
+    try:
+        from app.data_io.services.paths import safe_import_child
+
+        parent = safe_import_child(cid).parent
+        stamp = parent.stat().st_mtime
+    except Exception:  # pragma: no cover
+        return {}
+    key = str(parent)
+    hit = _IMPORT_INDEX_CACHE.get(key)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    index: dict[str, dict[str, Any]] = {}
+    try:
+        names = sorted(
+            p.name
+            for p in parent.iterdir()
+            if p.is_dir() and p.name.startswith("imported-")
+        )
+    except OSError:  # pragma: no cover
+        return {}
+    for name in names:
+        meta = _read_meta(name)
+        if not meta:
+            continue
+        index[name] = {
+            "run_id": str(meta.get("run_id") or "").strip(),
+            "variable_id": str(meta.get("variable_id") or "").strip().upper(),
+            "time_list_count": len(meta.get("time_list") or []),
+            "daily_frame_count": _daily_tag_count(name),
+        }
+    _IMPORT_INDEX_CACHE[key] = (stamp, index)
+    return index
+
+
+def _canonical_sibling(run_id: str, variable_id: str) -> str | None:
+    """同一 run + 同一变量下，目录名与 ``sha1(catalogId|role|role)`` 对得上的那个。"""
+    if not run_id or not variable_id:
+        return None
+    origin = _lookup_run_layer_id(run_id)
+    if not origin:
+        return None
+    try:
+        from app.data_io.services.raster_timeseries import stable_imported_layer_id
+
+        return str(stable_imported_layer_id(origin, variable_id, variable_id))
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _sibling_copies(cid: str) -> tuple[list[dict[str, Any]], bool]:
+    """同源副本：**同一个 run、同一个变量、却是两个不同目录**的产物。
+
+    2026-10-29 实测：``imported-38993117b963``（旧）与 ``imported-136c60293bbf``（新）
+    的 63 天块逐像元完全相同（0.16640186 / 643731 像元 / 1624×3856），差别只在
+    ``time_list``——旧目录只有 1 片 63 天块 + 6 天补帧，新目录 73 片（逐日 + 8 天块
+    + 63 天块）。两者 label / variable_id / run_id 全同，靠名字分不开，于是出现
+    「同一层一会儿说 11 片、一会儿说补了 6 天」的自相矛盾。
+
+    Returns ``(siblings, is_stale_copy)``：``siblings`` 不含自己；``is_stale_copy``
+    表示「自己是那个目录名与 sha1 对不上的旧副本」。
+    """
+    if not cid.startswith("imported-"):
+        return ([], False)
+    index = _import_meta_index(cid)
+    me = index.get(cid) or {}
+    run_id = str(me.get("run_id") or "")
+    variable_id = str(me.get("variable_id") or "")
+    if not run_id or not variable_id:
+        return ([], False)
+    twins = [
+        name
+        for name, info in index.items()
+        if name != cid
+        and info.get("run_id") == run_id
+        and info.get("variable_id") == variable_id
+    ]
+    if not twins:
+        return ([], False)
+    canonical = _canonical_sibling(run_id, variable_id)
+    members = sorted([cid, *twins])
+    siblings = [
+        {
+            "overlay_layer_id": name,
+            "time_list_count": int(index[name]["time_list_count"]),
+            "daily_frame_count": int(index[name]["daily_frame_count"]),
+            "is_canonical": bool(canonical and name == canonical),
+        }
+        for name in members
+        if name != cid
+    ]
+    is_stale = bool(canonical) and cid != canonical and canonical in index
+    return (siblings, is_stale)
+
+
 def _product_family(layer_id: str) -> str | None:
     """产品族口径：dynamic（逐日/8 天动态） / average（整段平均） / raw（原始）。"""
     text = str(layer_id or "").casefold()
@@ -303,6 +429,8 @@ def resolve_layer_identity(
         "product_family": None,
         "is_product_group": False,
         "group_members": [],
+        "sibling_copies": [],
+        "is_stale_copy": False,
         "basis": [],
     }
     if not cid:
@@ -357,6 +485,14 @@ def resolve_layer_identity(
         identity["basis"].append("variable:product_group")
     identity["product_group_label"] = desc_name or None
     identity["product_family"] = _product_family(origin_id or cid)
+
+    # ---- 同源副本：同一 run + 同一变量却有两个目录（新旧两套产物）----
+    if cid.startswith("imported-") and not is_group:
+        siblings, is_stale = _sibling_copies(cid)
+        if siblings:
+            identity["sibling_copies"] = siblings
+            identity["is_stale_copy"] = is_stale
+            identity["basis"].append("sibling_copy:same_run_same_variable")
 
     # ---- 变量 ----
     variable: str | None = None
@@ -418,7 +554,7 @@ def identity_fields(
     「风云平均」四族各三个变量，共 12 层，其中 4 层都叫「土壤水分」。
     """
     ident = resolve_layer_identity(catalog_id, display_name=display_name)
-    return {
+    fields: dict[str, Any] = {
         "source": ident["source"],
         "source_label": ident["source_label"],
         "source_detail": ident["source_detail"],
@@ -432,3 +568,8 @@ def identity_fields(
         "is_product_group": ident["is_product_group"],
         "group_members": ident["group_members"],
     }
+    # 只有真存在同源副本时才带这两项，避免 12 层搜索结果里塞满空数组
+    if ident["sibling_copies"]:
+        fields["sibling_copies"] = ident["sibling_copies"]
+        fields["is_stale_copy"] = ident["is_stale_copy"]
+    return fields
