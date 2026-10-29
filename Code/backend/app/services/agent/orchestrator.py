@@ -1060,6 +1060,42 @@ def _compress_history_user(message: str) -> str:
     return message[:_HISTORY_USER_MAX_CHARS] + "…（原文过长，已截断）"
 
 
+# 多轮工具返回里，除最近一轮外都只保留前 N 字符。
+_TOOL_RESULT_KEEP_CHARS = 700
+
+
+def _shrink_old_tool_results(messages: list[dict[str, Any]]) -> None:
+    """把**之前轮次**的工具返回压短，只让最近一轮保持完整。
+
+    多轮工具调用（``max_hops`` 默认 4）时 messages 会累积 4 份完整工具返回
+    （每份 1500~2800 token），单这一项就能把 20000 预算吃光——2026-10-29
+    实测 20704 token 超限的主因就是它（system+工具 schema 已固定占 9333）。
+    模型做下一步决策只需要「上一轮取到了什么」，更早的轮次留个开头就够。
+
+    调用时机：在 append 新一轮工具返回**之前**，这样被压的永远是旧轮次。
+    兼容两种协议：OpenAI 的 ``role=tool`` 消息、Anthropic 的 ``tool_result`` block。
+    """
+    limit = _TOOL_RESULT_KEEP_CHARS
+    note = "…（早期轮次的工具返回已压缩，关键字段在开头）"
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = m.get("content")
+        # OpenAI 协议：role=tool，content 是 JSON 字符串
+        if role == "tool" and isinstance(content, str) and len(content) > limit:
+            m["content"] = content[:limit] + note
+            continue
+        # Anthropic 协议：user 消息里嵌 tool_result block
+        if role == "user" and isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                inner = block.get("content")
+                if isinstance(inner, str) and len(inner) > limit:
+                    block["content"] = inner[:limit] + note
+
+
 def _anthropic_tool_uses(content: Any) -> list[dict[str, Any]]:
     """取出一轮 content 里的全部 tool_use（界面意图与服务端工具都在内）。"""
     if not isinstance(content, list):
@@ -1711,6 +1747,7 @@ def _run_chat_impl(
                         }
                     )
                 server_calls = [c for c in all_uses if c["name"] in _SERVER_TOOLS]
+                _shrink_old_tool_results(messages)
                 messages.append({"role": "assistant", "content": data.get("content")})
                 messages.append({"role": "user", "content": tool_result_blocks})
                 if budget:
@@ -1830,6 +1867,7 @@ def _run_chat_impl(
                     "summary": f"工具跳 {hop}/{max_hops}",
                 }
             )
+            _shrink_old_tool_results(messages_oai)
             messages_oai.append(_sanitize_assistant_message(message_obj))
             for sc in calls:
                 call_id = str(sc.get("id") or "call")
