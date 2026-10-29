@@ -698,6 +698,33 @@ def _value_basis(catalog_id: Any, actual_key: Any) -> dict[str, Any]:
     }
 
 
+def _coverage_next_step(
+    catalog_id: Any, requested: Any, hit_source: Any
+) -> dict[str, Any]:
+    """覆盖查询只回答「这天有没有这片」，取数值还得调统计——把下一步写进返回。
+
+    2026-10-29 实测：问「这一层的植被光学厚度 2025-12-16 是多少」，模型查完
+    覆盖、正确说出「落在 8 天块 12-11~12-18 内、该层只补过 12-15」，然后收尾
+    「取具体数值需要先在地图上选一个点，或告诉我经纬度」——把整幅均值当成了
+    点查。用户要的就是一个数，这里直接给出该调哪个工具。
+    """
+    date_key = str(requested or "").strip()
+    source = str(hit_source or "").strip()
+    if not date_key or source not in {"block", "ondemand_frame"}:
+        return {}
+    if source == "block":
+        basis = "多日合成块（回答里必须说明这是跨天合成值，并给出块起止）"
+    else:
+        basis = "当天的独立单日观测（回答里可以说这一天有独立观测）"
+    return {
+        "next_step": (
+            f"该日期命中的是{basis}。要给出数值就继续调 "
+            f"get_layer_statistics(catalog_id='{catalog_id}', time='{date_key}')，"
+            "不传 bbox 即整幅栅格统计；**不要反问用户要经纬度或让他在地图上选点**。"
+        )
+    }
+
+
 _MONTH_IN_TEXT_RE = re.compile(r"(\d{4})[-/年](\d{1,2})")
 
 
@@ -2085,6 +2112,9 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         **_temporal_shape_fields(local_dates, layer_id=catalog_id),
         # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
         "value_basis": _value_basis(catalog_id, hit_key),
+        # 模型查完"有没有这片"就停手、把"是多少"推回给用户（实测 2026-10-29：
+        # 「取具体数值需要先在地图上选一个点」）。这里直接给出下一步该调什么。
+        **_coverage_next_step(catalog_id, requested, hit_source),
         "channels": {
             "online": online,
             # local.dates 与上面的 time_blocks 是同一份 73 个键，重复三遍把单次
