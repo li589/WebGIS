@@ -120,6 +120,27 @@ def _lookup(
         ]
         if len(prefix_hits) == 1:
             return prefix_hits[0]
+    # 口语习惯把「自治州」简称成「XX州」（凉山州 / 阿坝州 / 伊犁州 / 黔南州）。
+    # 尾词表里只有整词「自治州」，剥不出尾巴那个「州」字，于是一路落空
+    # （2026-10-29 实测：凉山州/阿坝州/甘孜州/黔东南州/伊犁州/海西州/延边州/
+    # 湘西州/黔南州/大理州/巴音州 全部「未匹配」，而只写「凉山」反而能命中）。
+    # 所以这里再剥一次尾「州」——**必须在精确匹配与前缀匹配之后**才做，
+    # 否则「杭州市」（归一化后「杭州」）会被切成「杭」。剥完要求 >=2 字，
+    # 且必须唯一命中，宁可查不到也不猜错行政区。
+    if len(qn) >= 3 and qn.endswith("州"):
+        core = qn[:-1]
+        exact_hits = [
+            _hit(feat, level) for full, feat in feats if _normalize(full) == core
+        ]
+        if len(exact_hits) == 1:
+            return exact_hits[0]
+        prefix_hits = [
+            _hit(feat, level)
+            for full, feat in feats
+            if _normalize(full).startswith(core)
+        ]
+        if len(prefix_hits) == 1:
+            return prefix_hits[0]
     return None
 
 
