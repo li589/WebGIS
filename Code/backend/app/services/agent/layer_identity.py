@@ -248,28 +248,28 @@ def _group_member_ids(cid: str) -> list[dict[str, str]]:
 _IMPORT_INDEX_CACHE: dict[str, tuple[float, dict[str, dict[str, Any]]]] = {}
 
 
-def _daily_tag_count(dir_name: str) -> int:
-    """目录里 8 位单日产物（preview_*/source_*）的个数；块键带下划线，不计入。"""
-    try:
-        from app.data_io.services.paths import safe_import_child
+def _daily_frame_total(time_list: Any, dir_name: str) -> int:
+    """这一层的「单日帧天数」＝时间清单自带单日帧 ＋ 目录里按需补出的单日帧。
 
-        layer_dir = safe_import_child(dir_name)
-        if not layer_dir.is_dir():
-            return 0
-        tags: set[str] = set()
-        for entry in layer_dir.iterdir():
-            name = entry.name
-            if name.startswith("preview_") and name.endswith(".png"):
-                tag = name[8:-4]
-            elif name.startswith("source_") and name.endswith(".tif"):
-                tag = name[7:-4]
-            else:
-                continue
-            if len(tag) == 8 and tag.isdigit():
-                tags.add(tag)
-        return len(tags)
-    except Exception:  # pragma: no cover - 目录不可读时按 0 处理
-        return 0
+    直接复用 ``server_tools_runtime._temporal_shape_fields``，与统计返回里的
+    ``daily_frame_count``（加 ``ondemand_frame_count``）**完全同口径**。
+
+    原先数的是「目录里 preview_*/source_* 的 8 位文件个数」，会把不在图层
+    跨度内的历史遗留帧（2023-01-01~01-10 那批）也算进去，于是同名同字段两处
+    数字对不上：统计返回 63，副本说明写 73（2026-10-29 实测，用户直接读到
+    「时间片 73 片、单日帧 73 天」）。
+    """
+    try:
+        from app.services.agent.server_tools_runtime import _temporal_shape_fields
+
+        shape = _temporal_shape_fields(time_list, dir_name)
+    except Exception:  # pragma: no cover - 拿不到盘上补帧时退回时间清单口径
+        return sum(
+            1 for k in (time_list or []) if len(str(k)) == 8 and str(k).isdigit()
+        )
+    return int(shape.get("daily_frame_count") or 0) + int(
+        shape.get("ondemand_frame_count") or 0
+    )
 
 
 def _import_meta_index(cid: str) -> dict[str, dict[str, Any]]:
@@ -305,7 +305,9 @@ def _import_meta_index(cid: str) -> dict[str, dict[str, Any]]:
             "run_id": str(meta.get("run_id") or "").strip(),
             "variable_id": str(meta.get("variable_id") or "").strip().upper(),
             "time_list_count": len(meta.get("time_list") or []),
-            "daily_frame_count": _daily_tag_count(name),
+            # 只存清单，单日帧天数留到真正要比对兄弟层时再算（见
+            # ``_sibling_copies``）——那样只扫 1~2 个目录，而不是 imports/ 下全部。
+            "time_list": list(meta.get("time_list") or []),
         }
     _IMPORT_INDEX_CACHE[key] = (stamp, index)
     return index
@@ -361,7 +363,7 @@ def _sibling_copies(cid: str) -> tuple[list[dict[str, Any]], bool]:
         {
             "overlay_layer_id": name,
             "time_list_count": int(index[name]["time_list_count"]),
-            "daily_frame_count": int(index[name]["daily_frame_count"]),
+            "daily_frame_count": _daily_frame_total(index[name]["time_list"], name),
             "is_canonical": bool(canonical and name == canonical),
         }
         for name in members
@@ -574,14 +576,21 @@ def identity_fields(
     # （2026-10-29 实测：主动报出了副本的 imported-38993117b963）。
     if ident["sibling_copies"]:
         sib = ident["sibling_copies"][0]
-        other_desc = (
-            f"同源还有一份更完整的正规产物（时间片 {sib['time_list_count']} 片、"
-            f"单日帧 {sib['daily_frame_count']} 天）"
+        detail = (
+            f"时间片 {sib['time_list_count']} 片、"
+            f"单日帧 {sib['daily_frame_count']} 天"
         )
+        # 措辞必须跟方向走：自己是旧副本时，另一份才是「更完整的正规产物」。
+        # 原实现把 other_desc 写死成「同源还有一份更完整的正规产物」，于是
+        # **正规产物层**会输出「这一层是正规产物，同源还有一份更完整的正规产物
+        # （时间片 1 片、单日帧 6 天）」——自己夸自己之外，还夸了一份更少的
+        # （2026-10-29 实测，与提示词里写好的两种措辞不符）。
         if ident["is_stale_copy"]:
-            fields["copy_status"] = f"这一层是旧副本，{other_desc}"
+            fields["copy_status"] = (
+                f"这一层是旧副本，同源还有一份更完整的正规产物（{detail}）"
+            )
         else:
             fields["copy_status"] = (
-                f"这一层是正规产物，{other_desc}，但那份较早、粒度较粗"
+                f"这一层是正规产物，同源另有一份较早、粒度更粗的旧副本（{detail}）"
             )
     return fields
