@@ -1044,6 +1044,22 @@ def _compress_history_reply(reply: str) -> str:
     return reply[:_HISTORY_REPLY_MAX_CHARS] + "…（回答已压缩）"
 
 
+_HISTORY_USER_MAX_CHARS = 400
+
+
+def _compress_history_user(message: str) -> str:
+    """写历史时压缩用户消息。
+
+    常规提问（<=400 字）原样保留，不影响跨轮指代；只有粘贴大段文本才截断
+    ——否则 12 轮 × 上千字的提问会单独把 20000 预算吃掉大半。
+    """
+    if not message:
+        return ""
+    if len(message) <= _HISTORY_USER_MAX_CHARS:
+        return message
+    return message[:_HISTORY_USER_MAX_CHARS] + "…（原文过长，已截断）"
+
+
 def _anthropic_tool_uses(content: Any) -> list[dict[str, Any]]:
     """取出一轮 content 里的全部 tool_use（界面意图与服务端工具都在内）。"""
     if not isinstance(content, list):
@@ -1243,9 +1259,14 @@ def _run_chat_impl(
     # 只压 append_turn 救不了它们；这里对 assistant 内容再做一次截断，模型输入与
     # 预算估算走压缩版，前端展示（get_session_messages）不受影响。
     history = [
-        {**m, "content": _compress_history_reply(m["content"])}
-        if m.get("role") == "assistant"
-        else m
+        {
+            **m,
+            "content": (
+                _compress_history_reply(m["content"])
+                if m.get("role") == "assistant"
+                else _compress_history_user(m["content"])
+            ),
+        }
         for m in history
     ]
     # R06 排查指标：模型为什么没给出好回复，靠这三个值定位
@@ -1505,7 +1526,7 @@ def _run_chat_impl(
         append_turn(
             user_id=user_id,
             session_id=str(result["session_id"]),
-            user_message=message,
+            user_message=_compress_history_user(message),
             assistant_message=_compress_history_reply(reply),
         )
         ui_intents = result.get("ui_intents") or []
@@ -1580,14 +1601,13 @@ def _run_chat_impl(
             "estimated": True,
         }
         # 历史里只存截断版：否则超长提问会污染上下文，导致后续每问都超预算
-        stored_message = (
-            message if len(message) <= 200 else message[:200] + "…（原文过长，已截断）"
-        )
+        # 助手侧只存一行：超限提示本身有几百字，存完整版会让「失败→历史变肥→
+        # 下次更容易失败」形成雪球（2026-10-29 实测 20030→20709→20704 就是它）。
         append_turn(
             user_id=user_id,
             session_id=sid,
-            user_message=stored_message,
-            assistant_message=reply,
+            user_message=_compress_history_user(message),
+            assistant_message="（上一轮提问超出单次输入预算，已中止，未取数）",
         )
         out = {
             "session_id": sid,
@@ -1746,7 +1766,7 @@ def _run_chat_impl(
             append_turn(
                 user_id=user_id,
                 session_id=sid,
-                user_message=message,
+                user_message=_compress_history_user(message),
                 assistant_message=_compress_history_reply(reply),
             )
             out = {
@@ -1916,7 +1936,7 @@ def _run_chat_impl(
         append_turn(
             user_id=user_id,
             session_id=sid,
-            user_message=message,
+            user_message=_compress_history_user(message),
             assistant_message=_compress_history_reply(reply),
         )
         logger.info(
