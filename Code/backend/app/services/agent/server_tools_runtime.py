@@ -444,9 +444,11 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
 
     return {
         "ok": True,
+        # 首句模板**只含层名、不含编号**：用户 2026-10-29 明确要求回答里不要带 id，
+        # 而这句是模型照抄的，带上 id 就会被抄进正文。编号仍在本返回的
+        # catalog_id / layer.layer_id 里，模型要核对或用户索要时照样能拿到。
         "answer_lead": (
-            f"我按「{_qualified_layer_name(catalog_id, _layer_display_name(catalog_id))}」"
-            f"（{catalog_id}）取数"
+            f"我按「{_qualified_layer_name(catalog_id, _layer_display_name(catalog_id))}」取数"
         ),
         "layer": {
             "layer_id": catalog_id,
@@ -675,11 +677,12 @@ def _value_basis(catalog_id: Any, actual_key: Any) -> dict[str, Any]:
     key = str(actual_key or "").strip()
     if not key:
         return {"kind": "none", "note": "没有命中任何时间片，不得给出数值。"}
+    span = _format_block_key(key) or key
     if "_" in key:
         return {
             "kind": "block",
             "note": (
-                f"本次值出自多日合成块 {key}，不是某一天的独立观测；"
+                f"本次值出自多日合成块（{span}），不是某一天的独立观测；"
                 "引用时必须说明这是跨天合成值，并给出块的起止日期。"
             ),
         }
@@ -687,14 +690,14 @@ def _value_basis(catalog_id: Any, actual_key: Any) -> dict[str, Any]:
         return {
             "kind": "ondemand_frame",
             "note": (
-                f"本次值出自按需补出的单日帧 {key}（NAS 单日反演，"
-                "未登记在该层 time_list 里）。这就是当天的独立观测，"
+                f"本次值出自按需补出的单日帧（{span}，NAS 单日反演，"
+                "没有登记在该层时间清单里）。这就是当天的独立观测，"
                 "不得说成块合成值或整段平均。"
             ),
         }
     return {
         "kind": "daily_frame",
-        "note": f"本次值出自图层自带的单日帧 {key}，是当天的独立观测。",
+        "note": f"本次值出自图层自带的单日帧（{span}），是当天的独立观测。",
     }
 
 
@@ -718,9 +721,9 @@ def _coverage_next_step(
         basis = "当天的独立单日观测（回答里可以说这一天有独立观测）"
     return {
         "next_step": (
-            f"该日期命中的是{basis}。要给出数值就继续调 "
-            f"get_layer_statistics(catalog_id='{catalog_id}', time='{date_key}')，"
-            "不传 bbox 即整幅栅格统计；**不要反问用户要经纬度或让他在地图上选点**。"
+            f"该日期命中的是{basis}。**这一句是给你的指令，不要抄进回答。**"
+            "要给出数值就继续调统计工具（同一个图层、同一日期，不传 bbox 即整幅栅格），"
+            "**不要反问用户要经纬度或让他在地图上选点**。"
         )
     }
 
@@ -2090,7 +2093,7 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "catalog_id": catalog_id,
         "display_name": _cov_display,
         # 与统计同款固定句式：回答第一句原样照抄，必须带 catalog_id
-        "answer_lead": f"我按「{_cov_display}」（{catalog_id}）取数",
+        "answer_lead": f"我按「{_cov_display}」取数",
         "requested_time": requested,
         # R09/R10：一句话回答"这天到底有没有"，channels 明细保留兼容旧调用
         "resolved": resolved,
@@ -2517,7 +2520,7 @@ def _get_layer_statistics(
         # 回答第一句的**固定句式**：强制造句带 catalog_id，用户才能当场核对
         # 「这个数到底取自哪一层」。2026-10-29 实测：只写层名不写 id 时，
         # 模型每轮换层（动态→平均）用户完全看不出来。
-        "answer_lead": f"我按「{_stats_display}」（{catalog_id}）取数",
+        "answer_lead": f"我按「{_stats_display}」取数",
         "scope": "bbox" if bbox is not None else "full_extent",
         "requested_bbox": list(bbox) if bbox is not None else None,
         "statistic": "mean",

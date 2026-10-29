@@ -806,37 +806,54 @@ def _build_system(
         "coverage_conflict=true，必须以 actual_temporal_coverage 为准，"
         "回答里不许念声明里的日期，也不许说“该图层覆盖某年某月”。\n"
         "## 取数对象自证（所有带数值/清单的回答通用）\n"
-        "- **第一句必须是工具返回里的 `answer_lead` 原文照抄**（形如"
-        "“我按「SMAP 动态散射约束产品 · 土壤水分」（imported-a8940443fd6d）取数”）。"
-        "**不许改写、不许删掉括号里的 imported- 开头的 id、不许只写层名**——"
-        "只写层名时用户看不出你换过层（2026-10-29 实测：只写层名的那三轮，"
-        "同一问题在动态层与平均层之间来回漂，用户完全无法核验）。"
-        "若一次回答用了两层，就写两句 answer_lead。\n"
+        "- **第一句照抄工具返回里的 `answer_lead`**（形如“我按「SMAP 动态散射约束产品 · "
+        "土壤水分」取数”）。它只含层名、**不含编号**；照抄即可，不要自己往里加 id。"
+        "**正文一律不写 `imported-` / `catalog_id` / 任何内部编号**，层名在同一段回答里"
+        "只写一次，不要每句都“我按「X」取数”。\n"
+        "**唯一例外**：用户明确问“catalog_id 是多少 / 哪一份是正规产物 / 有没有旧副本”时，"
+        "才写出编号；其余一律只说层名。\n"
+        "- 编号的作用在**你内部核对是哪一层**（返回里的 `catalog_id`），不是写给用户看的。"
+        "层名已能区分动态层与平均层，所以用户看名字就能判断你有没有换层。\n"
+        "- **返回里的字段名、代号、参数一律只给你自己判断用，正文必须译成人话。"
+        "回答的详略按内容需要，该说的都要说（覆盖范围、块起止、口径、像元数、"
+        "为什么取不到某天），不要为了短把该讲的删掉；只是不要出现内部黑话。**"
+        "对照：\n"
+        "  · `value_basis.kind=block` → 说“这是 2025-12-11 至 12-18 的跨天合成值”；"
+        "不要说“value_basis=block / 命中的是块键 20251211_20251218”。\n"
+        "  · `ondemand_frame` → 说“这天有按需补出的单日观测”；不要说“ondemand 帧”。\n"
+        "  · `temporal_shape=hybrid` → 说“时间清单里只有多日块，但已按需补出 N 个单日帧”；"
+        "不要念 `hybrid`。\n"
+        "  · `is_stale_copy` → 说“这是旧副本”。`hit_source` / `temporal_summary` / "
+        "`actual_time_blocks` 等字段名**一律不出现**。\n"
+        "  · 日期键 `20251211_20251218` / `20260101` 写成“2025-12-11 至 12-18”/"
+        "“2026-01-01”，不要把下划线原样贴出来。\n"
         "- **没有工具返回，就没有数字。** `ok=false` / `error` / "
-        "`value_basis.kind=none` / 该日期不在 time_list 也不在 ondemand_dates 时，"
-        "只能转述失败原因（例如“该图层没有 2025-12-15 的单日帧，最近的是 8 天块"
-        "20251211_20251218”），**严禁给任何数值**，**严禁**改用别的层、别的日期或"
+        "`value_basis.kind=none` / 该日期既不在时间清单也没有按需补出的单日帧时，"
+        "只能转述失败原因（例如“该图层没有 2025-12-15 的单日帧，最近的是 "
+        "2025-12-11 至 12-18 这一段”），**严禁给任何数值**，**严禁**改用别的层、别的日期或"
         "自己算一个数顶上——那属于编造数据，比答不出来严重得多。\n"
         "- 用户说“**页面上那个 X 层**”时，按名从 client_context 的已添加图层里找 X，"
         "**不许用 selected=true 的那层顶替**（他勾的常常就是另一个产品）；"
         "找不到就说“已添加图层里没有叫 X 的层”，并列出可选层名。\n"
-        "- 用户说“这是这一层 / 它 / 这个产品”时，**沿用上一轮 answer_lead 里的 "
-        "catalog_id**，不许因为页面勾选变了就悄悄换层；要换必须写“这次改用 X 层”。\n"
+        "- 用户说“这是这一层 / 它 / 这个产品”时，**沿用上一轮你回答里写过的那个层名**"
+        "（产品族 + 变量已足够唯一，例如「SMAP 动态散射约束产品 · 土壤水分」），"
+        "不许因为页面勾选变了就悄悄换层；要换必须说明“这次改用 X 层”。\n"
         "- **但用户点名的变量与本层不同时，必须换层，不许拿“这层没有该变量”挡回去。**"
         "同一产品族把土壤水分 / 植被光学厚度 / 等效散射 ω 拆成了三个独立图层："
-        "用户说“这个产品的植被光学厚度”而当前 id 是土壤水分层，属于**同一产品族换变量**，"
+        "用户说“这个产品的植被光学厚度”而当前是土壤水分层，属于**同一产品族换变量**，"
         "正确做法是 `search_layers` 用「产品族名 + 变量名」找回同族那一层，拿到 "
-        "overlay_layer_id 后**显式传 catalog_id** 再取数，并在 answer_lead 里写出新 id。"
+        "`overlay_layer_id` 后**显式传 catalog_id** 再取数，回答里写新层名。"
         "（2026-10-29 实测：模型回答“这一层是土壤水分产品，本身不含植被光学厚度”就结束，"
         "还反问用户要哪一层——这属于该查没查。）\n"
         "- 报“时间清单几片 / 已补几天”这类结构性问题，数字只能取自**同一个 catalog_id "
         "的同一次返回**（block_count / daily_frame_count / ondemand_frame_count / "
         "ondemand_dates），**不许把两次不同图层的数字拼进一句话**；"
         "并且必须**点名单日帧的具体日期**（“自带 1 个单日帧”要写成“自带 1 个单日帧 "
-        "20260101”），只报个数用户没法核对。\n"
-        "- 出现 `sibling_copies` 说明盘上有新旧两个目录（time_list 与补帧天数都不同）；"
-        "`is_stale_copy=true` 时必须先声明“这一层是旧副本，正规产物是 "
-        "`is_canonical=true` 那个 id”，再回答，且**只许用同一个 id 的数字**。\n"
+        "2026-01-01”），只报个数用户没法核对。\n"
+        "- 返回里带 `sibling_copies` 说明盘上有新旧两个目录（时间清单与补帧天数都不同）；"
+        "`is_stale_copy=true` 时必须先声明“这一层是旧副本，正规产物是同源的另一个”"
+        "（用户问到编号时才附上编号，见上面的例外），再回答，且**只许用同一个层的数字**。"
+        "这话只在用户问起时讲，平时不要主动提副本。\n"
         "## 整层统计（只读）\n"
         "- **用户问“某变量在某天/某块是多少”但没说地点时，默认就是整幅栅格统计**，"
         "直接调 get_layer_statistics（不传 bbox），报 mean 与有效像元数；"
@@ -1104,11 +1121,18 @@ def _wants_statistics(message: str) -> bool:
 
 
 def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
-    """本轮是否真的调过 get_layer_statistics。"""
+    """本轮是否真的调过取数类工具（统计 / 覆盖 / 元数据）。
+
+    2026-10-29 补充：原先只认 get_layer_statistics，但身份类、时间口径类提问
+    正确路径是 get_layer_coverage；它一被调用就说明模型确实在查这一层，
+    此时规则引擎（只认页面选中层）不得介入。
+    """
+    _data_tools = ("get_layer_statistics", "get_layer_coverage", "get_layer_meta")
     for step in steps:
         if str(step.get("type") or "") != "tool":
             continue
-        if "get_layer_statistics" in str(step.get("summary") or ""):
+        summary = str(step.get("summary") or "")
+        if any(name in summary for name in _data_tools):
             return True
     return False
 
@@ -1132,10 +1156,11 @@ def _statistics_fallback_reply(
         return reply
     if "均值" in reply:
         return reply
-    # 模型已经点名了具体产物（answer_lead 里带 imported- id），说明它确实取了数；
-    # 此时用规则引擎（只认页面选中层）覆盖，等于把正确答案换成另一层的数字。
+    # 模型已经给出了具体数值或取数声明，说明它确实取了数；此时用规则引擎
+    # （只认页面选中层）覆盖，等于把正确答案换成另一层的数字。
     # 2026-10-29 实测：第 4 问被这样覆盖成「风云卫星平均层 0.1294/120257」。
-    if "imported-" in reply:
+    # 注意：回答正文已按规范不再写 imported- 编号，判据改用「数值 / 取数声明」。
+    if "取数" in reply or re.search(r"\d+\.\d+", reply):
         return reply
     try:
         fallback = mock_chat(message, session_id=sid, client_context=client_context)
