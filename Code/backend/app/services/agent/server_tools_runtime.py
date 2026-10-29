@@ -2351,10 +2351,16 @@ def _window_extent_wgs84(ds: Any, window: Any = None) -> dict[str, float] | None
 
 
 def _raster_full_stats(
-    raster_path: Any, bbox: tuple[float, float, float, float] | None = None
+    raster_path: Any,
+    bbox: tuple[float, float, float, float] | None = None,
+    geometry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """栅格只读统计（排除 NoData），可选只统计某个经纬度框。
+    """栅格只读统计（排除 NoData），可选只统计某个经纬度框或某个多边形（省界）。
 
+    - ``bbox``：矩形框（WGS84 经纬度），走窗口读取。
+    - ``geometry``：GeoJSON 多边形（WGS84），走 ``rasterio.mask`` 按省界裁剪，
+      只统计多边形**内部**的像元（邻省像元不进来）——这是「全省均值」的正确口径，
+      与矩形 bbox 有本质区别。
     用 ``masked=True`` 读取——rasterio 会按源文件 nodata 自动掩膜，
     因此 NoData 不会进均值；不做任何写回、不生成新图层。
     源文件不是 GeoTIFF（如 .mat / .nc）或读取失败时，返回中文原因而不是抛异常
@@ -2365,6 +2371,68 @@ def _raster_full_stats(
 
         with rasterio.open(raster_path) as ds:
             window = None
+            if geometry is not None:
+                # 省界掩膜：把 WGS84 多边形先转到栅格自身 CRS（SMAP/FY 是 EPSG:6933），
+                # 再用 rasterio.mask.mask 裁剪。mask 内部会按外接框自动限窗、只留多边形内像元。
+                from rasterio.mask import mask as rio_mask
+
+                geom = geometry
+                if ds.crs is not None and str(ds.crs).upper() not in {"EPSG:4326"}:
+                    from rasterio.warp import transform_geom
+
+                    geom = transform_geom("EPSG:4326", ds.crs, geometry)
+                try:
+                    out_img, _ = rio_mask(
+                        ds,
+                        [geom],
+                        crop=True,
+                        nodata=ds.nodata if ds.nodata is not None else None,
+                        filled=False,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("mask clip failed: %s", exc)
+                    return {
+                        "ok": False,
+                        "error": "多边形与栅格没有交集，或掩膜裁剪失败"
+                        "（该省可能不在本栅格覆盖范围内）",
+                    }
+                data = out_img[0]
+                # mask 把多边形外像素置为 ds.nodata；用 numpy masked 排除 nodata 后统计
+                import numpy as np
+
+                nodata = ds.nodata
+                if nodata is not None:
+                    data = np.ma.masked_equal(data, nodata)
+                else:
+                    data = np.ma.masked_invalid(data)
+                count = int(data.count())
+                total = int(data.shape[0] * data.shape[1])
+                if count == 0:
+                    return {
+                        "ok": False,
+                        "error": "该省界范围内没有有效像元（全部为 NoData）",
+                        "valid_pixels": 0,
+                        "total_pixels": total,
+                        "valid_ratio": 0.0,
+                        "extent": _window_extent_wgs84(ds),
+                    }
+                return {
+                    "ok": True,
+                    "mean": float(data.mean()),
+                    "min": float(data.min()),
+                    "max": float(data.max()),
+                    "std": float(data.std()) if count > 1 else None,
+                    "valid_pixels": count,
+                    "total_pixels": total,
+                    "valid_ratio": round(count / total, 6) if total else None,
+                    "crs": ds.crs.to_string() if ds.crs else None,
+                    "width": int(ds.width),
+                    "height": int(ds.height),
+                    "analyzed_width": int(data.shape[1]),
+                    "analyzed_height": int(data.shape[0]),
+                    "extent": _window_extent_wgs84(ds),
+                }
+
             if bbox is not None:
                 window = _wgs84_bbox_window(ds, bbox)
                 if window is None:
@@ -2463,6 +2531,26 @@ def _get_layer_statistics(
             "error": "bbox 需要 4 个数字 [西, 南, 东, 北]（WGS84 经纬度，"
             "西<东、南<北，例如 [105, 30, 115, 40]）",
         }
+
+    # 省界掩膜：说「四川省/广东省/北京市…」时按省界多边形统计（不是矩形）。
+    # region 与 bbox 互斥；region 优先——真正的「全省均值」必须走多边形掩膜。
+    region_name = str(args.get("region") or args.get("province") or "").strip()
+    region_geom: dict[str, Any] | None = None
+    region_full_name: str | None = None
+    if region_name:
+        from app.services.agent.region import resolve_province
+
+        prov = resolve_province(region_name)
+        if prov is None:
+            return {
+                "ok": False,
+                "catalog_id": catalog_id,
+                "error": f"没有匹配到「{region_name}」这个省级行政区（支持省/自治区/直辖市/港澳台），"
+                "请确认名称写法",
+            }
+        region_geom = prov["geometry"]
+        region_full_name = prov["name"]
+        bbox = None  # 省界掩膜不走矩形 bbox
     from app.services.overlay_registry import get_overlay_spec
 
     try:
@@ -2530,7 +2618,7 @@ def _get_layer_statistics(
             "error": "找不到该时间片对应的栅格文件（产物可能已被清理）",
         }
 
-    stats = _raster_full_stats(src_path, bbox=bbox)
+    stats = _raster_full_stats(src_path, bbox=bbox, geometry=region_geom)
     facts = _temporal_facts(getattr(spec, "time_list", None) or [])
     # 命中块（这次真读的那一片）与整层跨度必须分开：
     # 旧实现把 facts["period_*"]（整层首尾 20251101~20260208）当成 period_*，
@@ -2545,8 +2633,12 @@ def _get_layer_statistics(
         # 「这个数到底取自哪一层」。2026-10-29 实测：只写层名不写 id 时，
         # 模型每轮换层（动态→平均）用户完全看不出来。
         "answer_lead": f"我按「{_stats_display}」取数",
-        "scope": "bbox" if bbox is not None else "full_extent",
+        "scope": "region"
+        if region_geom is not None
+        else ("bbox" if bbox is not None else "full_extent"),
         "requested_bbox": list(bbox) if bbox is not None else None,
+        "region": region_full_name,
+        "region_geometry_crs": "WGS84",
         "statistic": "mean",
         "requested_time": requested,
         # 与请求日期区分开：这才是数据实际覆盖的时间块（优先3 的前置能力）
