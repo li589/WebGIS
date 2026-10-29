@@ -1025,6 +1025,25 @@ def _sanitize_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# 存进会话历史的单条回复上限（字符）。回答开头必含「层名 + 关键数值结论」，
+# 尾部是解释/建议，可安全截断——否则长会话里 12 轮完整回答就把 20000 预算顶爆。
+# 2026-10-29 实测：连续十几轮后输入达 20000+，只因历史里堆了每轮几百字的完整回答。
+_HISTORY_REPLY_MAX_CHARS = 200
+
+
+def _compress_history_reply(reply: str) -> str:
+    """把要写入会话历史的助手回复压到 ``_HISTORY_REPLY_MAX_CHARS`` 以内。
+
+    只截尾部（开头是层名+数值结论，必须保留），不丢跨轮指代所需的锚点。
+    空回复 / 短回复原样返回。
+    """
+    if not reply:
+        return ""
+    if len(reply) <= _HISTORY_REPLY_MAX_CHARS:
+        return reply
+    return reply[:_HISTORY_REPLY_MAX_CHARS] + "…（回答已压缩）"
+
+
 def _anthropic_tool_uses(content: Any) -> list[dict[str, Any]]:
     """取出一轮 content 里的全部 tool_use（界面意图与服务端工具都在内）。"""
     if not isinstance(content, list):
@@ -1478,7 +1497,7 @@ def _run_chat_impl(
             user_id=user_id,
             session_id=str(result["session_id"]),
             user_message=message,
-            assistant_message=reply,
+            assistant_message=_compress_history_reply(reply),
         )
         ui_intents = result.get("ui_intents") or []
         logger.info(
@@ -1719,7 +1738,7 @@ def _run_chat_impl(
                 user_id=user_id,
                 session_id=sid,
                 user_message=message,
-                assistant_message=reply,
+                assistant_message=_compress_history_reply(reply),
             )
             out = {
                 "session_id": sid,
@@ -1889,7 +1908,7 @@ def _run_chat_impl(
             user_id=user_id,
             session_id=sid,
             user_message=message,
-            assistant_message=reply,
+            assistant_message=_compress_history_reply(reply),
         )
         logger.info(
             "agent.reply request_id=%s provider=%s finish_reason=%s reply_chars=%d"
