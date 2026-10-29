@@ -2544,11 +2544,23 @@ def _get_layer_statistics(
 
         found = resolve_region(region_name)
         if found is None:
+            # 「天河区」「广州市天河区」不是名字写错，而是**层级不支持**——原来一律
+            # 回「请确认名称写法」，用户会反复改写法（2026-10-29 用户要求分开说）。
+            _is_county = bool(
+                re.search(r"(区|县|旗|自治县|自治旗|县级市)$", region_name)
+                or re.search(r".{1,}(市|州|盟).{1,}(区|县|旗)$", region_name)
+            )
+            _tail = (
+                "，这属于县/区一级，目前只支持到地级市，请改用所属地级市或整省"
+                if _is_county
+                else "，请确认名称写法"
+            )
             return {
                 "ok": False,
                 "catalog_id": catalog_id,
-                "error": f"没有匹配到「{region_name}」这个行政区（支持省级：省/自治区/"
-                "直辖市/港澳台；市级：地级市/自治州/地区/盟），请确认名称写法",
+                "error": f"没有匹配到「{region_name}」这个行政区"
+                "（支持省级：省/自治区/直辖市/港澳台；市级：地级市/自治州/"
+                f"地区/盟）{_tail}",
             }
         region_geom = found["geometry"]
         region_full_name = found["name"]

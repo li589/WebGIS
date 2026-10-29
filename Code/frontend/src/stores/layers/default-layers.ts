@@ -108,9 +108,10 @@ interface DefaultLayerEntry {
  */
 const DEFAULT_GROUP_DISPLAY_ORDER: readonly string[] = [
   'method-fy-omega-doy-avg', // ① 风云平均（唯一默认展开、决定时间轴落点）
-  'method-smap-season-mean', // ② SMAP平均（整段季均）
-  'method-fy-omega-doy-dynamic', // ③ 风云动态（8 天块）
-  'method-smap-omega-doy-dynamic', // ④ SMAP动态（8 天块）
+  'method-smap-season-mean', // ② SMAP平均（整段季均，单片目录）
+  'method-smap-omega-doy-avg', // ③ SMAP逐日（73 片时间序列，2026-10-29 挂回）
+  'method-fy-omega-doy-dynamic', // ④ 风云动态（8 天块）
+  'method-smap-omega-doy-dynamic', // ⑤ SMAP动态（8 天块）
 ]
 
 /**
@@ -258,6 +259,55 @@ export const DEFAULT_LAYERS: DefaultLayerEntry[] = [
   },
   {
     /**
+     * SMAP **逐日**散射约束（2026-10-29 挂回）。
+     *
+     * 历史：这一组（73 片）在 2026-10-21 被 `RETIRED_OVERLAY_IDS` 退役。原因是逐日
+     * 目录里塞的「整段合成块」被 `resolveSliceForInstant` 的「同一时刻取最短区间」
+     * 规则永久屏蔽、选不中，于是给季均单独开了单片目录（`method-smap-season-mean`）。
+     *
+     * 副作用（2026-10-29 实测暴露）：页面上再也看不到 73 天时间序列。用户问
+     * 「广州某天多少」时命中的是**季均目录按需补的单日帧**（51 个有效像元），
+     * 而逐日目录里那份完整序列（28 个有效像元）根本不在侧栏 ⇒ 两份数字不同，
+     * 用户却无法在页面上自行核对。故挂回，与季均组并存：
+     * 「要看某一天」用这一组，「要看整段平均图」用季均组。
+     *
+     * 编号复核：sha1('method-smap-omega-doy-avg|<V>|<V>')[:12]
+     *   SM = 136c60293bbf / VOD = 169f6402583c / OMEGA = 9a7cf36832cd
+     *
+     * 三处刻意设定：
+     * - 成员全部不勾选：默认画面仍是风云平均的土壤水分，这组由用户自己勾；
+     * - `controlsTimeline: false`：否则会把轴拽到 20260102，风云的整月合成帧失配；
+     * - `enforceVisibility: false`：首次落 false，之后**尊重用户自己的勾选**——
+     *   这是可选组，用户勾了就该一直留着，不该每次刷新被压回去。
+     */
+    catalogId: 'method-smap-omega-doy-avg',
+    groupTitle: 'SMAP 逐日散射约束产品反演（本地）',
+    workflowId: 'omega_avg_daily_smap_single',
+    enforceVisibility: false,
+    controlsTimeline: false,
+    members: [
+      {
+        role: 'SM',
+        overlayId: 'imported-136c60293bbf',
+        label: '土壤水分',
+        visible: false,
+      },
+      {
+        role: 'VOD',
+        overlayId: 'imported-169f6402583c',
+        label: '植被光学厚度',
+        visible: false,
+      },
+      {
+        role: 'OMEGA',
+        overlayId: 'imported-9a7cf36832cd',
+        label: '等效散射 ω',
+        visible: false,
+      },
+    ],
+  },
+  {
+    /**
      * SMAP **动态**散射约束（2026-10-27 用户要求）。
      *
      * 编号复核（与盘上目录一致）：
@@ -321,16 +371,20 @@ export function defaultPrimaryOverlayId(): string | null {
  * 改用「整段季均」目录（`38993117b963` / `bce85323670f` / `49101c3674f8`）。
  * 原因是逐日目录里加进去的整段合成块被"取最短区间"规则永久屏蔽，选不中。
  * 退役只摘前端工作区，**目录与 70 片日帧全部留在盘上**，需要时可从「数据管理器」
- * 按编号加回；本数组里现在是旧编号，新编号在 `DEFAULT_LAYERS` 中，二者不重叠，
+ * 按编号加回。本数组当前为空——那三个编号已于 2026-10-29 作为「SMAP 逐日」一组
+ * 挂回 `DEFAULT_LAYERS`，两者不可重叠，
  * 不会触发「退役→挂载」互踢（那条坑见下）。
  *
  * 本机制保留（空数组时 `retireDefaultLayers` 直接 return），供以后再退役用。
  */
 const RETIRED_OVERLAY_IDS: readonly string[] = [
-  // 2026-10-21 退役：SMAP 逐日（70 片）——改由季均目录承载
-  'imported-136c60293bbf',
-  'imported-169f6402583c',
-  'imported-9a7cf36832cd',
+  // 2026-10-29 清空：原先退役的 SMAP 逐日三条目（136c60293bbf / 169f6402583c /
+  // 9a7cf36832cd）已作为独立一组重新挂回 `DEFAULT_LAYERS`（见「SMAP 逐日」那一条）。
+  //
+  // ⚠ 必须清空，不能只从 DEFAULT_LAYERS 里加：`retireDefaultLayers` 跑在挂载之前，
+  // 名单里还留着这三个编号的话，挂上去的图层当轮就会被 `removeLayer(dismiss:true)`
+  // 摘掉，表现为「侧栏刚出现又消失」（注释里提过的「退役→挂载互踢」）。
+  // 机制本身保留：以后要再退役，往这里加编号即可。
 ]
 
 export interface ProbedOverlay {

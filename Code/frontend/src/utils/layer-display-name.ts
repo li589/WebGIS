@@ -89,6 +89,7 @@ export function inversionFamilyKey(raw: string | null | undefined): string {
  */
 export const GROUP_METHOD_LABEL = {
   mean: '平均散射约束模型',
+  seasonMean: '整段季均合成',
   dynamic: '动态散射约束模型',
 } as const
 
@@ -97,12 +98,18 @@ export function runGroupMethodLabel(group: {
   workflowId?: string | null
   sourceLayerId?: string | null
 }): string {
+  const source = String(group.sourceLayerId ?? '').toLowerCase()
+  // 「整段季均」单独开了目录（catalogId = `method-*-season-mean`）承载，但它和
+  // 逐日目录共用同一个 workflowId（`omega_avg_daily_*`）⇒ 只看 workflowId 会把
+  // 两组都判成「平均散射约束模型」，侧栏出现两行一模一样的副标题，用户分不清
+  // 哪行是整段平均图、哪行是 73 天逐日序列（2026-10-29 把逐日组挂回时暴露）。
+  // 故先按 catalogId 认季均，再走原有逻辑。
+  if (/season|季均/.test(source)) return GROUP_METHOD_LABEL.seasonMean
   const workflow = String(group.workflowId ?? '').toLowerCase()
   if (workflow) {
     if (/fenkuai|block|dynamic/.test(workflow)) return GROUP_METHOD_LABEL.dynamic
     if (/avg|mean/.test(workflow)) return GROUP_METHOD_LABEL.mean
   }
-  const source = String(group.sourceLayerId ?? '').toLowerCase()
   if (source) {
     if (/dynamic|fenkuai/.test(source)) return GROUP_METHOD_LABEL.dynamic
     if (/-avg|mean/.test(source)) return GROUP_METHOD_LABEL.mean
