@@ -2410,7 +2410,7 @@ def _raster_full_stats(
                 if count == 0:
                     return {
                         "ok": False,
-                        "error": "该省界范围内没有有效像元（全部为 NoData）",
+                        "error": "该行政区边界范围内没有有效像元（全部为 NoData）",
                         "valid_pixels": 0,
                         "total_pixels": total,
                         "valid_ratio": 0.0,
@@ -2532,25 +2532,30 @@ def _get_layer_statistics(
             "西<东、南<北，例如 [105, 30, 115, 40]）",
         }
 
-    # 省界掩膜：说「四川省/广东省/北京市…」时按省界多边形统计（不是矩形）。
-    # region 与 bbox 互斥；region 优先——真正的「全省均值」必须走多边形掩膜。
+    # 行政区掩膜：说「四川省/广州市…」时按行政边界多边形统计（不是矩形）。
+    # region 与 bbox 互斥；region 优先——真正的「全市/全省均值」必须走多边形掩膜。
     region_name = str(args.get("region") or args.get("province") or "").strip()
     region_geom: dict[str, Any] | None = None
     region_full_name: str | None = None
+    region_level: str | None = None
+    region_province: str | None = None
     if region_name:
-        from app.services.agent.region import resolve_province
+        from app.services.agent.region import resolve_region
 
-        prov = resolve_province(region_name)
-        if prov is None:
+        found = resolve_region(region_name)
+        if found is None:
             return {
                 "ok": False,
                 "catalog_id": catalog_id,
-                "error": f"没有匹配到「{region_name}」这个省级行政区（支持省/自治区/直辖市/港澳台），"
-                "请确认名称写法",
+                "error": f"没有匹配到「{region_name}」这个行政区（支持省级：省/自治区/"
+                "直辖市/港澳台；市级：地级市/自治州/地区/盟），请确认名称写法",
             }
-        region_geom = prov["geometry"]
-        region_full_name = prov["name"]
-        bbox = None  # 省界掩膜不走矩形 bbox
+        region_geom = found["geometry"]
+        region_full_name = found["name"]
+        region_level = str(found.get("level") or "province")
+        if region_level == "city":
+            region_province = str(found.get("province") or "") or None
+        bbox = None  # 行政区掩膜不走矩形 bbox
     from app.services.overlay_registry import get_overlay_spec
 
     try:
@@ -2638,6 +2643,9 @@ def _get_layer_statistics(
         else ("bbox" if bbox is not None else "full_extent"),
         "requested_bbox": list(bbox) if bbox is not None else None,
         "region": region_full_name,
+        # province / city：模型据此说「按 XX 省行政边界」还是「按 XX 市行政边界」
+        "region_level": region_level,
+        "region_province": region_province,
         "region_geometry_crs": "WGS84",
         "statistic": "mean",
         "requested_time": requested,
