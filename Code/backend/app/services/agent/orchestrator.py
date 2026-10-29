@@ -1239,6 +1239,15 @@ def _run_chat_impl(
         raise ValueError(f"消息过长（上限约 {max_chars} 字符，受配置档上下文窗口限制）")
 
     history = load_history(user_id=user_id, session_id=sid)
+    # 读回时也压一次：老会话里在「压缩优化」之前写入的完整回答仍躺在磁盘上，
+    # 只压 append_turn 救不了它们；这里对 assistant 内容再做一次截断，模型输入与
+    # 预算估算走压缩版，前端展示（get_session_messages）不受影响。
+    history = [
+        {**m, "content": _compress_history_reply(m["content"])}
+        if m.get("role") == "assistant"
+        else m
+        for m in history
+    ]
     # R06 排查指标：模型为什么没给出好回复，靠这三个值定位
     # （finish_reason 取自 choices[0]，不在 message 对象上）
     finish_reason = ""
