@@ -822,9 +822,18 @@ def _build_system(
         "找不到就说“已添加图层里没有叫 X 的层”，并列出可选层名。\n"
         "- 用户说“这是这一层 / 它 / 这个产品”时，**沿用上一轮 answer_lead 里的 "
         "catalog_id**，不许因为页面勾选变了就悄悄换层；要换必须写“这次改用 X 层”。\n"
+        "- **但用户点名的变量与本层不同时，必须换层，不许拿“这层没有该变量”挡回去。**"
+        "同一产品族把土壤水分 / 植被光学厚度 / 等效散射 ω 拆成了三个独立图层："
+        "用户说“这个产品的植被光学厚度”而当前 id 是土壤水分层，属于**同一产品族换变量**，"
+        "正确做法是 `search_layers` 用「产品族名 + 变量名」找回同族那一层，拿到 "
+        "overlay_layer_id 后**显式传 catalog_id** 再取数，并在 answer_lead 里写出新 id。"
+        "（2026-10-29 实测：模型回答“这一层是土壤水分产品，本身不含植被光学厚度”就结束，"
+        "还反问用户要哪一层——这属于该查没查。）\n"
         "- 报“时间清单几片 / 已补几天”这类结构性问题，数字只能取自**同一个 catalog_id "
         "的同一次返回**（block_count / daily_frame_count / ondemand_frame_count / "
-        "ondemand_dates），**不许把两次不同图层的数字拼进一句话**。\n"
+        "ondemand_dates），**不许把两次不同图层的数字拼进一句话**；"
+        "并且必须**点名单日帧的具体日期**（“自带 1 个单日帧”要写成“自带 1 个单日帧 "
+        "20260101”），只报个数用户没法核对。\n"
         "- 出现 `sibling_copies` 说明盘上有新旧两个目录（time_list 与补帧天数都不同）；"
         "`is_stale_copy=true` 时必须先声明“这一层是旧副本，正规产物是 "
         "`is_canonical=true` 那个 id”，再回答，且**只许用同一个 id 的数字**。\n"
@@ -1074,11 +1083,19 @@ def refresh_models_for_profile(
 
 
 _STATISTICS_WORDS = re.compile(r"平均|均值|统计|像元|mean|average|最大|最小", re.I)
+# 产品族名自带「平均」二字（「SMAP 平均散射约束产品」），不剥掉的话
+# 「这一层的 catalog_id 是多少」会被判成统计请求，进而被规则引擎覆盖成
+# 「页面选中层的均值」。2026-10-29 实测第 4 问就是这么把正确答案吃掉的。
+_LAYER_NAME_NOISE = re.compile(
+    r"(?:动态|平均|月均|季均|逐日|daily|average|dynamic)?\s*散射约束产品|产品族",
+    re.I,
+)
 
 
 def _wants_statistics(message: str) -> bool:
     """用户这句话是不是在要整层统计（报告第二轮 A06~A08 的判据）。"""
-    return bool(_STATISTICS_WORDS.search(message or ""))
+    text = _LAYER_NAME_NOISE.sub(" ", message or "")
+    return bool(_STATISTICS_WORDS.search(text))
 
 
 def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
@@ -1109,6 +1126,11 @@ def _statistics_fallback_reply(
     if not _wants_statistics(message) or _statistics_tool_called(list(steps)):
         return reply
     if "均值" in reply:
+        return reply
+    # 模型已经点名了具体产物（answer_lead 里带 imported- id），说明它确实取了数；
+    # 此时用规则引擎（只认页面选中层）覆盖，等于把正确答案换成另一层的数字。
+    # 2026-10-29 实测：第 4 问被这样覆盖成「风云卫星平均层 0.1294/120257」。
+    if "imported-" in reply:
         return reply
     try:
         fallback = mock_chat(message, session_id=sid, client_context=client_context)

@@ -1555,11 +1555,21 @@ def _search_layers(
     # 「SMAP 平均散射约束产品 土壤水分」。整串做子串匹配命中 0 条——
     # 实测（2026-10-29）：这种问法返回 count=0，模型只好退化到页面选中层，
     # 于是问「SMAP 平均」却答了风云的数据。这里再按分词做一次「全部命中」匹配。
-    q_tokens = [
-        tok
-        for tok in re.split(r"[\s·・,，、/|的]+", q)
-        if len(tok) >= 2 and not tok.isdigit()
-    ]
+    # 分词前先剥掉通用尾词：「动态产品」→「动态」、「平均散射约束产品」→「平均散射约束」，
+    # 否则用户说的「动态产品」在图层的「动态散射约束产品」里查不到子串，
+    # 实测「动态产品 植被光学厚度」返回 count=0。
+    _generic = ("产品族", "产品", "图层", "数据", "这一层", "那一层")
+    q_tokens: list[str] = []
+    for _tok in re.split(r"[\s·・,，、/|的]+", q):
+        _tok = _tok.strip()
+        if len(_tok) < 2 or _tok.isdigit():
+            continue
+        for _suf in _generic:
+            if _tok.endswith(_suf) and len(_tok) > len(_suf):
+                _tok = _tok[: -len(_suf)]
+                break
+        if len(_tok) >= 2 and _tok not in _generic and _tok not in q_tokens:
+            q_tokens.append(_tok)
 
     def _match_score(text: str) -> int:
         """命中强度：整串/去尾词命中 99，否则按分词命中个数打分（0=不命中）。"""
