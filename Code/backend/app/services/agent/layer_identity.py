@@ -568,8 +568,20 @@ def identity_fields(
         "is_product_group": ident["is_product_group"],
         "group_members": ident["group_members"],
     }
-    # 只有真存在同源副本时才带这两项，避免 12 层搜索结果里塞满空数组
+    # 只有真存在同源副本时才带这一项，避免 12 层搜索结果里塞满空数组。
+    # 不输出 sibling_copies / is_stale_copy 原始字段：里面带 12 位目录编号和
+    # 布尔字段名，模型照抄就会把 imported-xxx / is_stale_copy 漏进回答
+    # （2026-10-29 实测：主动报出了副本的 imported-38993117b963）。
     if ident["sibling_copies"]:
-        fields["sibling_copies"] = ident["sibling_copies"]
-        fields["is_stale_copy"] = ident["is_stale_copy"]
+        sib = ident["sibling_copies"][0]
+        other_desc = (
+            f"同源还有一份更完整的正规产物（时间片 {sib['time_list_count']} 片、"
+            f"单日帧 {sib['daily_frame_count']} 天）"
+        )
+        if ident["is_stale_copy"]:
+            fields["copy_status"] = f"这一层是旧副本，{other_desc}"
+        else:
+            fields["copy_status"] = (
+                f"这一层是正规产物，{other_desc}，但那份较早、粒度较粗"
+            )
     return fields

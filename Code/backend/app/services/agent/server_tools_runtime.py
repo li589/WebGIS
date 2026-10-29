@@ -618,6 +618,23 @@ def _temporal_shape_fields(time_list: Any, layer_id: Any = None) -> dict[str, An
     daily = [k for k in keys if len(k) == 8 and k.isdigit()]
     blocks = [k for k in keys if "_" in k]
     ondemand = [t for t in _ondemand_frame_dates(layer_id) if t not in daily]
+    # 补帧日期必须落在图层自身的跨度内。2026-10-29 实测：平均层（2025-11-01~
+    # 2026-02-08）目录里有 10 个 2023-01-01~01-10 的补帧文件（10-13 遗留），
+    # 被当成「已按需补出 10 个单日帧」写进回答，用户看到 2023 年的日期只会
+    # 更困惑。落在跨度外的单独列，不进 count、不进"最近几天"。
+    span_first = span_last = None
+    if blocks:
+        starts = [k.split("_")[0] for k in blocks]
+        ends = [k.split("_")[-1] for k in blocks]
+        if daily:
+            starts.append(min(daily))
+            ends.append(max(daily))
+        span_first, span_last = min(starts), max(ends)
+    if span_first and span_last:
+        outside = [t for t in ondemand if not (span_first <= t <= span_last)]
+        ondemand = [t for t in ondemand if span_first <= t <= span_last]
+    else:
+        outside = []
     try:
         from app.services.overlay_registry import _block_span_days
 
@@ -644,9 +661,16 @@ def _temporal_shape_fields(time_list: Any, layer_id: Any = None) -> dict[str, An
         "ondemand_frame_count": len(ondemand),
         "daily_available": bool(daily or ondemand),
     }
+    if daily:
+        # 自带单日帧的**具体日期**。2026-10-29 实测：只给 count 时模型会把
+        # 补帧日期（2025-12-15）说成"自带的那 1 个单日帧"，因为它无从得知
+        # time_list 里那一个是哪天。
+        out["daily_frame_dates"] = daily[:10]
     if ondemand:
         # 只给最近几天 + 总数，避免把几十个日期塞进上下文
         out["ondemand_dates"] = ondemand[-10:]
+    if outside:
+        out["ondemand_out_of_span"] = outside[:5]
     if shape == "mixed":
         out["shape_warning"] = (
             "该图层的 time_list 同时含单日帧与多日块（最长 "
