@@ -78,7 +78,7 @@
     },
     {
       "name": "set_timeline",
-      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time.",
+      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time. date 允许超出 client_context.timeline.data_range：data_range 只是时间轴上现有时间块的范围，只要日期落在 NAS 逐日成果覆盖 2015-04-01~2025-12-31 之内就照常下发，前端会为这一天按需补一帧单日图；只有越过该覆盖范围才不下发。",
       "args": {
         "type": "object",
         "properties": {

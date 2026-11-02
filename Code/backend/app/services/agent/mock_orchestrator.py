@@ -374,14 +374,38 @@ def _readable_date(date_s: str) -> str:
     return date_s
 
 
+def _nas_coverage_range() -> tuple[str, str]:
+    """NAS 逐日成果的覆盖范围（``YYYYMMDD``）。
+
+    与 ``nas_ondemand/config.py`` 同源，采用延迟导入避免 services 之间循环依赖；
+    取不到时退回常量，宁可多试一次也不要凭错范围拒掉用户请求。
+    """
+    try:
+        from app.services.nas_ondemand.config import (
+            DATA_COVERAGE_END,
+            DATA_COVERAGE_START,
+        )
+
+        return DATA_COVERAGE_START, DATA_COVERAGE_END
+    except Exception:  # pragma: no cover - 配置缺失时的兜底
+        return "20150401", "20251231"
+
+
 def _build_timeline_reply(
     args_tl: dict[str, Any],
     client_context: dict[str, Any] | None,
 ) -> tuple[str, bool]:
     """时间轴切换的回复 ``(文案, 是否允许下发意图)``。
 
-    **先校验，再回答**：日期超出已知可用范围时明确说「没有切换」，
+    **先校验，再回答**：日期拿不到数据时明确说「没有切换」，
     而不是旧版那句空口的「正在更新时间轴」——用户会以为切成功了。
+
+    2026-11-02 修：原来的判定把 ``timeline.data_range`` 当成了数据边界，
+    范围外一律不下发意图。可 ``data_range`` 只是「时间轴清单里现有的块」
+    （平均产品常常只有一个 ``20251201_20260201`` 整段块），而 NAS 逐日成果
+    覆盖到 2015 年 —— 用户说「切到 2015-12-15」明明取得到，却被这句拒掉。
+    现在改成：超出 data_range 但落在 NAS 覆盖内 ⇒ 照旧下发，让前端的按需补帧
+    去取；只有真超出 NAS 覆盖才拒绝。
     """
     date_s = str(args_tl.get("date") or "").strip()
     hour = args_tl.get("hour")
@@ -396,21 +420,31 @@ def _build_timeline_reply(
         target = _compact_date(date_s)
         start, end = _compact_date(rng["start"]), _compact_date(rng["end"])
         if target < start or target > end:
+            nas_start, nas_end = _nas_coverage_range()
+            if nas_start <= target <= nas_end:
+                # 清单里没有，但 NAS 有这一天 ⇒ 交给前端按需补帧
+                return (
+                    f"已把时间轴切到 {wanted}。\n\n"
+                    f"这一天不在当前时间轴清单里（清单里是 {_readable_date(rng['start'])} "
+                    f"至 {_readable_date(rng['end'])}），正在按需从 NAS 取这一天的单日图，"
+                    "取回后地图会换成单日；取不到会在执行结果里说明。"
+                ), True
             span = f"{_readable_date(rng['start'])} 至 {_readable_date(rng['end'])}"
             frames = rng.get("frames")
             extra = (
                 f"，共 {frames} 帧" if isinstance(frames, int) and frames > 0 else ""
             )
             return (
-                f"{wanted} 不在当前图层的可用时间内，**没有切换**。\n\n"
-                f"当前可用范围：{span}{extra}。\n"
+                f"{wanted} 不在 NAS 成果覆盖内，**没有切换**。\n\n"
+                f"NAS 逐日成果覆盖 "
+                f"{_readable_date(nas_start)} 至 {_readable_date(nas_end)}；"
+                f"当前时间轴清单是 {span}{extra}。\n"
                 "要切到范围内的某一天，直接说日期即可。"
             ), False
     suffix = f"（{hour_txt}）" if hour_txt else ""
     return (
         f"已把时间轴切到 {wanted}{suffix}。\n"
-        "若该图层这一天没有数据，会自动对齐到最近的可用帧，"
-        "实际生效日期以气泡下方的执行结果为准。"
+        "实际生效日期、以及到底显示单日图还是时间块，以气泡下方的执行结果为准。"
     ), True
 
 
