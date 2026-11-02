@@ -20,6 +20,7 @@ import TimelineActionBanner from '../components/TimelineActionBanner.vue'
 import OnlinePlanPanel from '../components/OnlinePlanPanel.vue'
 import LogPanel from '../components/toolbar/LogPanel.vue'
 import AgentCompanion from '../components/agent/AgentCompanion.vue'
+import { registerOnDemandFrameProvider } from '../components/agent/agent-ui-intent'
 import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import DrawSessionExitModal from '../components/map/DrawSessionExitModal.vue'
@@ -262,6 +263,16 @@ const { notifyUserDateChange, ensureFrameForLayer } = useOnDemandFrame({
   onFrameReady: refreshImportedRasterEffectiveTimes,
   logOperation: (tag, message) => logStore.logOperation(tag, message),
 })
+
+/**
+ * 助手切日期要真去 NAS 取那天，靠这条模块级注册直连（2026-11-02）。
+ *
+ * prop 链是 DashboardView → AgentCompanion → AgentChatPanel → handlers 四跳，
+ * 任何一跳漏传都只表现为「回执说落在时间块内」，跟「这天真没单日帧」分不出来。
+ * 注册表是同一份函数引用，props 那边仍保留，作为可选覆盖。
+ */
+registerOnDemandFrameProvider(ensureFrameForLayer)
+onBeforeUnmount(() => registerOnDemandFrameProvider(null))
 
 // ── 图层平台子系统：选中图层生命周期（时间轴徽标数据源） ──
 const selectedLayerLifecycle = computed(() => {

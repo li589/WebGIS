@@ -53,6 +53,34 @@ const ACTIVE_JOB = new Set(['queued', 'running', 'retry_pending', 'accepted'])
 /** 等 NAS 取单日帧的上限：实测取一帧 4~6s，本地命中毫秒级；超了就如实说「正在取」 */
 const ONDEMAND_AWAIT_MS = 20_000
 
+/** 按需补帧的返回：`ok` 代表这一天的单日图真的落地了，不是「请求发出去过」。 */
+export interface EnsureFrameResult {
+  ok: boolean
+  applied?: string
+  cached?: boolean
+  message?: string
+}
+
+export type OnDemandFrameProvider = (catalogId: string, date: Date) => Promise<EnsureFrameResult>
+
+/**
+ * 模块级兜底：`DashboardView` 挂载时把 `ensureFrameForLayer` 注册进来。
+ *
+ * 为什么不只靠 prop 链（DashboardView → AgentCompanion → AgentChatPanel → handlers）：
+ * 这条链有四跳，任何一跳漏传，现象都只是「回执说该日落在时间块内」——
+ * 与「这天本来就只有整段块」长得一模一样，根本分不出是没接上还是真没帧。
+ * 2026-11-02 用户第二次实测就撞在这里。寄存器直连，props 只当可选覆盖。
+ */
+let onDemandFrameProvider: OnDemandFrameProvider | null = null
+
+export function registerOnDemandFrameProvider(fn: OnDemandFrameProvider | null): void {
+  onDemandFrameProvider = fn
+}
+
+function resolveOnDemandFrame(handlers: AgentUiIntentHandlers): OnDemandFrameProvider | null {
+  return handlers.ensureOnDemandFrame ?? onDemandFrameProvider
+}
+
 /** 等一个异步结果，超时返回 null（不让回执无限期挂着） */
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return await Promise.race<T | null>([
@@ -497,9 +525,10 @@ async function executeAgentUiIntentCore(
      * 所以：没有独立单日帧可落时，先按同一入口去取；取到就报单日，取不到才回落旧说法并说原因。
      */
     if (!eff.nativeMatch || isBlock) {
-      if (handlers.ensureOnDemandFrame) {
+      const ensureFrame = resolveOnDemandFrame(handlers)
+      if (ensureFrame) {
         const fetched = await withTimeout(
-          handlers.ensureOnDemandFrame(dominant.catalogId, targetDate),
+          ensureFrame(dominant.catalogId, targetDate),
           ONDEMAND_AWAIT_MS,
         )
         const fallback = isBlock ? `画面仍是时间块 ${eff.label}` : `实际显示的是 ${eff.label}`
@@ -524,6 +553,15 @@ async function executeAgentUiIntentCore(
           ok: true,
           message: `${shownName}已切到 ${requested}，正在从 NAS 取这一天的单日图（约 4~6 秒），取回后地图会换成单日`,
         }
+      }
+      /**
+       * 没有取帧入口。以前这里会落到下面「该日落在时间块内（无独立逐日帧）」，
+       * 把「功能没接上」说成「这天本来就只有块」——用户没法分辨，只能反复反馈同一件事。
+       * 现在直接说清是页面没接上，并给出唯一的自救动作。
+       */
+      return {
+        ok: false,
+        message: `${shownName}已切到 ${requested}，但这一页没接上「按天取数」入口（页面可能是旧版本），请按 Ctrl+Shift+R 强制刷新后再试；地图目前仍是 ${eff.label}`,
       }
     }
     if (eff.nativeMatch) {
