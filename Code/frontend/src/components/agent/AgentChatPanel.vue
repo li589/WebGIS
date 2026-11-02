@@ -77,6 +77,14 @@ const props = defineProps<{
   isMapReady?: () => boolean | undefined
   /** 地图初始化失败原因（就绪时为 null） */
   getMapError?: () => string | null
+  /**
+   * 按需补帧：给「图层 + 日期」就去 NAS 取那天的单日图（2026-11-02）。
+   * set_timeline 走它，等价于用户自己拖日历 —— 见 agent-ui-intent 里 set_timeline 分支。
+   */
+  ensureOnDemandFrame?: (
+    catalogId: string,
+    date: Date,
+  ) => Promise<{ ok: boolean; applied?: string; cached?: boolean; message?: string }>
 }>()
 
 const emit = defineEmits<{
@@ -980,7 +988,7 @@ async function applyChatResult(
 
   const target = messages.value.find((m) => m.id === assistantId)
   if (!opts?.skipIntents && res.ui_intents?.length) {
-    const results = executeAgentUiIntents(res.ui_intents, {
+    const results = await executeAgentUiIntents(res.ui_intents, {
       fitToLayerExtent: props.fitToLayerExtent,
       fitChina: props.fitChina,
       locateCoordinate: props.locateCoordinate,
@@ -988,6 +996,8 @@ async function applyChatResult(
       // 报告优先4：日期提示与图层列表要带来源（SMAP · 土壤水分），
       // 来源来自 /overlay-bounds 的 meta.source_label，已缓存在符号化 store。
       resolveSourceLabel: (catalogId: string) => overlaySymbology.getSourceLabel(catalogId),
+      // 2026-11-02：切日期＝替用户拖日历，必须真去 NAS 取那一天的单日图。
+      ensureOnDemandFrame: props.ensureOnDemandFrame,
     })
     const noteBodies = results
       .filter((r) => r.message)

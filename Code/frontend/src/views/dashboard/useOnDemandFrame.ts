@@ -7,7 +7,12 @@
  * |------------------------------------------------------|--------|
  * | 打开网页 / 恢复快照 / 切图层 / 勾选图层 / 添加图层     |  不取  |
  * | 用户拖时间轴、点日期格、点日历、点上/下一天            |  取    |
+ * | 助手（大模型）下发 set_timeline 切到某一天             |  取    |
  * | 播放中（自动走时）                                    |  不取  |
+ *
+ * 第三行是 2026-11-02 补的：用户指出「手动拖日历能出单日图，让助手切同一天却出整段」。
+ * 原因是 set_timeline 只写页面日期、不走这里的取帧入口。既然用户把「口头让助手切日期」
+ * 理解成「替他点日历」，两条路就必须共用同一段代码，否则渲染口径一定分叉。
  *
  * 「取哪几个图层」：点选了某个补帧层 ⇒ 只取它；**没点选图层**（时间轴顶部写
  * 「未选择图层」，2026-10-27 用户实测报障的状态）⇒ 取地图上当前可见的全部补帧层。
@@ -33,6 +38,17 @@ import { toCompactDate, useOnDemandFrameStore } from '../../stores/layers/ondema
 const DEBOUNCE_MS = 400
 /** 请求超过这么久还没回来，才提示"正在取…"（本地命中时不给用户添噪音） */
 const SLOW_NOTICE_MS = 700
+
+/** 取单日帧的结果：既能给界面用（message 直接展示），也能给助手回执用（applied/cached）。 */
+export type OnDemandFrameResult = {
+  ok: boolean
+  /** 实际生效的单日帧标签（YYYYMMDD），成功才有 */
+  applied?: string
+  /** true = 本地已有这张图，没有连 NAS */
+  cached?: boolean
+  /** 失败原因（人话，可直接展示） */
+  message?: string
+}
 
 /** `20251217` → `2025-12-17` */
 function formatTag(tag: string): string {
@@ -108,7 +124,7 @@ export function useOnDemandFrame(deps: {
     }
   }
 
-  async function request(layerId: string, tag: string) {
+  async function request(layerId: string, tag: string): Promise<OnDemandFrameResult> {
     // 标记「这一天正在取」：让上一天那张继续留在屏幕上，别在 4 秒里闪回整月合成
     store.setPendingTag(layerId, tag)
     let noticeShown = false
@@ -152,6 +168,11 @@ export function useOnDemandFrame(deps: {
         catalogId: layerId,
         tone: 'info',
       })
+      return {
+        ok: true,
+        applied,
+        cached: Boolean(result?.cached),
+      }
     } catch (err) {
       if (noticeTimer) {
         clearTimeout(noticeTimer)
@@ -169,6 +190,10 @@ export function useOnDemandFrame(deps: {
           tone: 'error',
         })
         deps.logOperation('ondemand-frame', `时间轴取单日 ${formatTag(tag)} · 无此日数据`)
+        return {
+          ok: false,
+          message: `${formatTag(tag)} 这天没有数据${coverageText()}`,
+        }
       } else {
         banner.showNotice({
           message: `取 ${formatTag(tag)} 的单日图失败：${raw}。当前显示的图保持不变，可再拖一次重试`,
@@ -179,6 +204,10 @@ export function useOnDemandFrame(deps: {
           'ondemand-frame',
           `时间轴取单日 ${formatTag(tag)} 失败 · ${status ?? 'network'}`,
         )
+        return {
+          ok: false,
+          message: `取 ${formatTag(tag)} 的单日图失败：${raw}`,
+        }
       }
     } finally {
       store.clearPendingTag(layerId)
@@ -333,9 +362,42 @@ export function useOnDemandFrame(deps: {
     }, DEBOUNCE_MS)
   }
 
+  /**
+   * 为「指定图层 + 指定日期」取单日帧 —— 助手切日期的入口（2026-11-02）。
+   *
+   * 为什么不能直接复用 `notifyUserDateChange`：它判定「该动哪几层」用的是**页面当前选中层**
+   * （`targetsForDateChange`）。助手点名的是「SMAP 平均 · 土壤水分」，而页面上选中的可能
+   * 还是等效散射 ω —— 而 ω 没登记按天取数，照抄那条判定会直接 return，一层都不取。
+   * 所以这里由调用方显式给 layerId，绕开「看选中层」的分支。
+   */
+  async function ensureFrameForLayer(layerId: string, date: Date): Promise<OnDemandFrameResult> {
+    const id = String(layerId || '').trim()
+    if (!id) return { ok: false, message: '没有指定要取哪一层' }
+    if (!store.loaded) await store.ensureLoaded()
+    if (!store.loaded) {
+      return {
+        ok: false,
+        message: `按需取数没启用：读不到图层登记表（${store.lastError || '原因未知'}）`,
+      }
+    }
+    if (!store.isOnDemandLayer(id)) {
+      return { ok: false, message: '这一层没有接入按天取数，切日期只能落在它原有的时间块上' }
+    }
+    if (!store.coversDate(date)) {
+      return {
+        ok: false,
+        message: `NAS 成果不覆盖 ${formatTag(toCompactDate(date))}${coverageText()}`,
+      }
+    }
+    const tag = toCompactDate(date)
+    // 已经钉在这一天：直接回报，不重复打接口
+    if (store.dayTagFor(id) === tag) return { ok: true, applied: tag, cached: true }
+    return await request(id, tag)
+  }
+
   onBeforeUnmount(() => {
     clearTimers()
   })
 
-  return { notifyUserDateChange }
+  return { notifyUserDateChange, ensureFrameForLayer }
 }

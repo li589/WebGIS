@@ -237,12 +237,15 @@ const {
 )
 
 /**
- * 按需补帧：**只有用户自己拖时间轴**才去 NAS 取那一天的单日图。
+ * 按需补帧：**用户自己拖时间轴**、以及**助手下发 set_timeline 切到某一天**才去 NAS 取图。
  * 打开页面 / 勾选图层 / 添加图层 / 切图层都不会触发（见 useOnDemandFrame 头注释），
  * 所以「一进来还是整月合成」这条不变。
  *
  * 没点选图层时（时间轴顶部写「未选择图层」）要动的是**地图上当前可见的**补帧层：
  * 用户勾了几个层再改日期，期望这几层都跟着变。
+ *
+ * 助手那条走 `ensureFrameForLayer`（2026-11-02）：它按助手点名的图层取数，不看页面选中层，
+ * 否则页面选中的是 ω（未登记按天取数）时会被判成「不用取」，画面停在整段块上。
  */
 const onDemandFrameStore = useOnDemandFrameStore()
 const visibleOnDemandCatalogIds = computed(() =>
@@ -251,7 +254,7 @@ const visibleOnDemandCatalogIds = computed(() =>
     .map((l) => l.catalogId),
 )
 
-const { notifyUserDateChange } = useOnDemandFrame({
+const { notifyUserDateChange, ensureFrameForLayer } = useOnDemandFrame({
   selectedCatalogId,
   visibleOnDemandIds: visibleOnDemandCatalogIds,
   currentDate,
@@ -881,6 +884,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         :set-basemap="handleSetBasemap"
         :is-map-ready="handleIsMapReady"
         :get-map-error="handleGetMapError"
+        :ensure-ondemand-frame="ensureFrameForLayer"
       />
     </section>
 

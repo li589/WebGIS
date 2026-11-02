@@ -21,6 +21,14 @@ defineProps<{
   isMapReady?: () => boolean | undefined
   /** 地图初始化失败原因 */
   getMapError?: () => string | null
+  /**
+   * 按需补帧：给「图层 + 日期」就去 NAS 取那天的单日图（2026-11-02）。
+   * 助手下发 set_timeline 时走它，等价于用户自己拖日历。
+   */
+  ensureOnDemandFrame?: (
+    catalogId: string,
+    date: Date,
+  ) => Promise<{ ok: boolean; applied?: string; cached?: boolean; message?: string }>
 }>()
 
 const open = ref(false)
@@ -334,6 +342,7 @@ watch(open, (v) => {
         :set-basemap="setBasemap"
         :is-map-ready="isMapReady"
         :get-map-error="getMapError"
+        :ensure-ondemand-frame="ensureOnDemandFrame"
         @close="open = false"
       />
     </div>

@@ -35,9 +35,33 @@ export interface AgentUiIntentHandlers {
    * 同时让「有哪些活动图层」不出现两个无法区分的同名图层。
    */
   resolveSourceLabel?: (catalogId: string) => string | null | undefined
+  /**
+   * 按需补帧：给「图层 + 日期」就去 NAS 取那天的单日图（2026-11-02）。
+   *
+   * 为什么必须由前端注入：这条能力本来只挂在「用户拖日历」上（useOnDemandFrame），
+   * 助手切日期只写页面状态，于是画面停在整段块上，而统计走的又是单日 —— 两边口径分叉。
+   * 返回真实结果（applied/cached），回执才能说「真切到了那天」，而不是猜。
+   */
+  ensureOnDemandFrame?: (
+    catalogId: string,
+    date: Date,
+  ) => Promise<{ ok: boolean; applied?: string; cached?: boolean; message?: string }>
 }
 
 const ACTIVE_JOB = new Set(['queued', 'running', 'retry_pending', 'accepted'])
+
+/** 等 NAS 取单日帧的上限：实测取一帧 4~6s，本地命中毫秒级；超了就如实说「正在取」 */
+const ONDEMAND_AWAIT_MS = 20_000
+
+/** 等一个异步结果，超时返回 null（不让回执无限期挂着） */
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return await Promise.race<T | null>([
+    p,
+    new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), ms)
+    }),
+  ])
+}
 
 function resolveInstanceId(
   catalogId: string | undefined,
@@ -192,11 +216,11 @@ function parseDateArg(raw: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-export function executeAgentUiIntent(
+export async function executeAgentUiIntent(
   intent: AgentUiIntent,
   handlers: AgentUiIntentHandlers = {},
-): AgentUiIntentResult {
-  const result = executeAgentUiIntentCore(intent, handlers)
+): Promise<AgentUiIntentResult> {
+  const result = await executeAgentUiIntentCore(intent, handlers)
   const commandId = String(intent.command_id ?? '').trim()
   const enriched: AgentUiIntentResult = commandId ? { ...result, commandId } : result
   // R02：命令与其「实际执行结果」用同一个编号串起来，失败也要记
@@ -240,10 +264,10 @@ function describeIntentTarget(intent: AgentUiIntent): string {
   return raw && raw !== '{}' ? raw.slice(0, 80) : '-'
 }
 
-function executeAgentUiIntentCore(
+async function executeAgentUiIntentCore(
   intent: AgentUiIntent,
   handlers: AgentUiIntentHandlers = {},
-): AgentUiIntentResult {
+): Promise<AgentUiIntentResult> {
   const workspace = useLayerWorkspace()
   const ui = useUiStore()
   const name = intent.name
@@ -464,9 +488,46 @@ function executeAgentUiIntentCore(
     // 有来源就写成 `SMAP · 土壤水分已切到 2025-12-15`，没来源退回「土壤水分」。
     const dominantLabel = withSource(handlers, dominant.catalogId, dominant.name)
     const shownName = dominantLabel === dominant.name ? `「${dominant.name}」` : dominantLabel
+    const isBlock = String(eff.key ?? '').includes('_')
+    /**
+     * 2026-11-02：这里原来直接回「该日落在时间块内（无独立逐日帧）」。
+     * 但用户手动拖到同一天是能出单日图的 —— 因为拖日历会走 useOnDemandFrame 去 NAS 取那一帧，
+     * 而助手切日期只写页面状态。用户把「让助手切日期」理解成「替他点日历」，
+     * 那两条路就必须共用同一条取帧链路，否则统计（按单日算）和画面（按整段块显示）永远对不上。
+     * 所以：没有独立单日帧可落时，先按同一入口去取；取到就报单日，取不到才回落旧说法并说原因。
+     */
+    if (!eff.nativeMatch || isBlock) {
+      if (handlers.ensureOnDemandFrame) {
+        const fetched = await withTimeout(
+          handlers.ensureOnDemandFrame(dominant.catalogId, targetDate),
+          ONDEMAND_AWAIT_MS,
+        )
+        const fallback = isBlock ? `画面仍是时间块 ${eff.label}` : `实际显示的是 ${eff.label}`
+        if (fetched?.ok) {
+          return {
+            ok: true,
+            message: `${shownName}已切到 ${requested}，显示的是这一天的单日图（${
+              fetched.cached ? '本地已有' : '刚从 NAS 取回'
+            }）`,
+          }
+        }
+        if (fetched && !fetched.ok) {
+          return {
+            ok: true,
+            message: `${shownName}已切到 ${requested}，${fallback}：${
+              fetched.message || '这一天的单日图没取到'
+            }`,
+          }
+        }
+        // 超过 20s 还没回来：别装作已经切好，说清正在取
+        return {
+          ok: true,
+          message: `${shownName}已切到 ${requested}，正在从 NAS 取这一天的单日图（约 4~6 秒），取回后地图会换成单日`,
+        }
+      }
+    }
     if (eff.nativeMatch) {
       // 报告第二轮 P2：时间块 ≠ 逐日帧，回执必须说清是「落在块内」还是「真切到了那一天」。
-      const isBlock = String(eff.key ?? '').includes('_')
       if (isBlock) {
         return {
           ok: true,
@@ -606,9 +667,20 @@ function executeAgentUiIntentCore(
   return { ok: false, message: `未知意图：${name}` }
 }
 
-export function executeAgentUiIntents(
+/**
+ * 逐条执行助手下发的界面意图。
+ *
+ * 2026-11-02 起改为 async：`set_timeline` 要真去 NAS 取那天的单日帧（约 4~6 秒），
+ * 结果必须等回来才能写回执。调用方只有 AgentChatPanel（`applyChatResult` 本来即 async），
+ * 用 `await` 取结果即可；其它意图内部同步，行为不变。
+ */
+export async function executeAgentUiIntents(
   intents: AgentUiIntent[],
   handlers: AgentUiIntentHandlers = {},
-): AgentUiIntentResult[] {
-  return intents.map((intent) => executeAgentUiIntent(intent, handlers))
+): Promise<AgentUiIntentResult[]> {
+  const results: AgentUiIntentResult[] = []
+  for (const intent of intents) {
+    results.push(await executeAgentUiIntent(intent, handlers))
+  }
+  return results
 }
