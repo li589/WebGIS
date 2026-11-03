@@ -19,7 +19,7 @@
     },
     {
       "name": "set_layer_opacity",
-      "description": "Set layer opacity (0..1) by catalog_id.",
+      "description": "调节图层透明度。**用户只要提到透明度就必须调用本工具**（哪怕只给了模糊说法、没给数字），绝不允许只用文字回复说「已调好」——那条路上什么都改不了，用户看到的还是原样。opacity 必须在 0~1 之间：用户说百分比或口语必须先换算（50% -> 0.5，六成 -> 0.6，八成五 -> 0.85），绝不许把 50 直接当数值传（会被当成完全遮住，地图全黑）。用户只说「淡一点/调低些/太实了」没给数字时，取 0.6 这类中间值或按 ±0.1 微调，并在回答里如实回报改后的实际值。",
       "args": {
         "type": "object",
         "required": ["catalog_id", "opacity"],
@@ -79,7 +79,7 @@
     },
     {
       "name": "set_timeline",
-      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time. date 允许超出 client_context.timeline.data_range：data_range 只是时间轴上现有时间块的范围，只要日期落在 NAS 逐日成果覆盖 2015-04-01~2025-12-31 之内就照常下发，前端会为这一天按需补一帧单日图；只有越过该覆盖范围才不下发。**多图层时必须带 catalog_id 指明要切哪一层**，否则前端只能按「当前选中层」猜，地图上同时勾了多个产品时会切错层。",
+      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time. date 允许超出 client_context.timeline.data_range：data_range 只是时间轴上现有时间块的范围，只要日期落在 NAS 逐日成果覆盖 2015-04-01~2025-12-31 之内就照常下发，前端会为这一天按需补一帧单日图。**禁止调用本工具的两种情况（调用了就算错）**：① 日期在日历上不存在（2025-02-30、2025-13-01、2025-04-31 这类）；② 日期早于 2015-04-01 或晚于 2025-12-31。这两种情况直接不调用、用文字说明原因，绝不许「先调一下让前端兜底」。**多图层时必须带 catalog_id 指明要切哪一层**，否则前端只能按「当前选中层」猜，地图上同时勾了多个产品时会切错层。",
       "args": {
         "type": "object",
         "properties": {
@@ -136,7 +136,10 @@
         "properties": {
           "catalog_id": { "type": "string" },
           "instance_id": { "type": "string" },
-          "palette": { "type": "string" },
+          "palette": {
+            "type": "string",
+            "description": "配色 id，只能取下列 25 个之一（中文名供对照）：thermal-orange 热力橙红、precip-cyan 降水青蓝、wind-blue 风场蓝、magenta-yellow 品红黄、yellow-red 黄红外推、blue-green 蓝绿渐变、red-blue 红蓝发散、purple-orange 紫橙渐变、dark-rainbow 暗色彩虹、darkgreen-yellow 墨绿亮黄、viridis、cividis、spectral、blues、reds、greens、ylgnbu、plasma、hot、terrain、tab10、ylgn、ylorrd、brg、rdylgn_r。用户用中文名说要哪个就换成对应 id。名字不在表里（例如 rainbow-ultra）就是没有这个配色：必须直说「没有这个配色」并列出相近的几个可选，绝不许先回「已改为 XXX」。"
+          },
           "vmin": { "type": "number" },
           "vmax": { "type": "number" }
         },
