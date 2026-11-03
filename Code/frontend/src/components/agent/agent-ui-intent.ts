@@ -6,7 +6,11 @@ import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import { safeLog } from '../../stores/log'
 import { useUiStore } from '../../stores/ui'
-import { isMapLinkedPalette, resolveCanonicalPaletteIdStrict } from '../map/layer-symbology'
+import {
+  isMapLinkedPalette,
+  resolveCanonicalPaletteIdStrict,
+  WEATHER_PALETTE_OPTIONS,
+} from '../map/layer-symbology'
 import {
   formatLocalDateKey,
   layerDisplayName,
@@ -240,9 +244,11 @@ function currentRangeOf(
 
 function formatRange(r: { vmin: number | null; vmax: number | null } | null): string {
   if (!r) return ''
-  const a = r.vmin == null ? '?' : String(r.vmin)
-  const b = r.vmax == null ? '?' : String(r.vmax)
-  return `${a} 到 ${b}`
+  // 只有一端时不要输出「? 到 1」这种半截话 —— 回执里出现问号，用户只会更糊涂
+  if (r.vmin == null && r.vmax == null) return ''
+  if (r.vmin == null) return `上限 ${r.vmax}`
+  if (r.vmax == null) return `下限 ${r.vmin}`
+  return `${r.vmin} 到 ${r.vmax}`
 }
 
 /**
@@ -355,9 +361,16 @@ function parseDateArg(raw: unknown): Date | null {
   if (raw == null) return null
   const s = String(raw).trim()
   if (!s) return null
-  // YYYY-MM-DD
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
-  if (m) {
+  /**
+   * 只认「年月日」三段的写法。
+   *
+   * 旧实现失败后会把字符串丢给 `new Date(s)`，而它对 `2025-12`、`2025` 这种
+   * 残缺输入是宽松解析的：前者补成 12-01、后者补成 01-01。用户说「切到 12 月」，
+   * 助手却真的切到了某一天，还不解释 —— 属于静默改日期，必须拒掉让他说清哪天。
+   */
+  const m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s)
+  if (!m) return null
+  {
     const y = Number(m[1])
     const mo = Number(m[2])
     const day = Number(m[3])
@@ -378,8 +391,6 @@ function parseDateArg(raw: unknown): Date | null {
     }
     return d
   }
-  const d = new Date(s)
-  return Number.isNaN(d.getTime()) ? null : d
 }
 
 export async function executeAgentUiIntent(
@@ -468,10 +479,23 @@ async function executeAgentUiIntentCore(
       resolved = resolveInstanceId(catalogId, undefined)
     }
     if (!resolved.instanceId) {
-      return { ok: false, message: `无法添加「${nameOf(catalogId, args.display_name)}」` }
+      // 不再回「无法添加「该图层」」——名字都没解析出来，说这句等于没说
+      const known = nameOf(catalogId, args.display_name)
+      return {
+        ok: false,
+        message:
+          known && known !== '该图层'
+            ? `没能把「${known}」加到地图上，请从左侧图层库手动添加后再试`
+            : '没有在图层库里找到这一层，可能名字对不上。请从左侧图层库点选后再告诉我。',
+      }
     }
     const layer = workspace.activeLayers.value.find((l) => l.instanceId === resolved.instanceId)
-    if (!layer) return { ok: false, message: `未找到「${nameOf(catalogId, args.display_name)}」` }
+    if (!layer) {
+      return {
+        ok: false,
+        message: '这一层没能在图层面板里建起来（可能刚被移除），请刷新后再试',
+      }
+    }
     if (layer.visible !== visible) {
       workspace.toggleLayerVisibility(resolved.instanceId)
     }
@@ -509,8 +533,9 @@ async function executeAgentUiIntentCore(
       }
       // 被跳过的层要照实说：边界是底图性质，「只显示」仍留着它；
       // 计算中的层不能摘，也要让用户知道地图上不止一层。
+      // 目标自身就是边界层时要排除，否则会出现「已只显示「省界」……省界保留」这种自我矛盾。
       const hasBoundary = workspace.activeLayers.value.some(
-        (l) => l.isAdminBoundary && l.visible !== false,
+        (l) => l.isAdminBoundary && l.visible !== false && l.instanceId !== resolved.instanceId,
       )
       const notes: string[] = []
       if (hasBoundary) notes.push('省界保留')
@@ -557,7 +582,14 @@ async function executeAgentUiIntentCore(
       }
     }
     if (!resolved.instanceId) {
-      return { ok: false, message: `「${nameOf(catalogId, args.display_name)}」还没在图层列表里` }
+      const opLabel = nameOf(catalogId, args.display_name)
+      return {
+        ok: false,
+        message:
+          opLabel && opLabel !== '该图层'
+            ? `「${opLabel}」还没在图层列表里`
+            : '没找到你说的这一层，它可能还没添加到图层面板',
+      }
     }
     const clamped = Math.max(0, Math.min(1, opacity))
     workspace.setLayerOpacity(resolved.instanceId, clamped)
@@ -586,9 +618,13 @@ async function executeAgentUiIntentCore(
   if (name === 'list_active_layers') {
     const layers = workspace.activeLayers.value.filter((l) => !l.isAdminBoundary)
     if (!layers.length) {
+      // 只有边界时不能说「没有活动图层」——用户侧栏明明有东西，会觉得助手眼瞎
+      const onlyBoundary = workspace.activeLayers.value.some((l) => l.isAdminBoundary)
       return {
         ok: true,
-        message: '当前没有活动图层。可先在左侧图层库添加图层。',
+        message: onlyBoundary
+          ? '当前只有行政区边界，没有数据图层。可先在左侧图层库添加图层。'
+          : '当前没有活动图层。可先在左侧图层库添加图层。',
         cards: [],
       }
     }
@@ -647,7 +683,12 @@ async function executeAgentUiIntentCore(
     // 2026-10-22：切换失败要说明原因（缺密钥 / 无此底图），不再一律回「切换失败」。
     if (result === true) return { ok: true, message: '底图已切换' }
     if (typeof result === 'string') return { ok: false, message: result }
-    return { ok: false, message: '底图切换失败' }
+    // 只说「切换失败」用户没法自救；也不列 source id（内部标识不进正文）
+    return {
+      ok: false,
+      message:
+        '没有切换底图：这个底图名我这边对不上。可以换个说法，比如「换成卫星影像」「换成矢量地图」「换成路网地图」',
+    }
   }
 
   if (name === 'set_timeline') {
@@ -738,11 +779,12 @@ async function executeAgentUiIntentCore(
           }
         }
         if (fetched && !fetched.ok) {
+          // 时间轴确实跳了，但画面没换 —— 两件事分开说，别用「已切到」把没做到的也包进去
           return {
             ok: true,
-            message: `${shownName}已切到 ${requested}，${fallback}：${
-              fetched.message || '这一天的单日图没取到'
-            }`,
+            message: `时间轴已跳到 ${requested}，但${shownName}这一天的单日图没取到：${
+              fetched.message || '原因未知'
+            }。${fallback}`,
           }
         }
         // 超过 20s 还没回来：别装作已经切好，说清正在取
@@ -758,7 +800,7 @@ async function executeAgentUiIntentCore(
        */
       return {
         ok: false,
-        message: `${shownName}已切到 ${requested}，但这一页没接上「按天取数」入口（页面可能是旧版本），请按 Ctrl+Shift+R 强制刷新后再试；地图目前仍是 ${eff.label}`,
+        message: `时间轴已跳到 ${requested}，但画面没换：这一页没接上「按天取数」入口（页面可能是旧版本），请按 Ctrl+Shift+R 强制刷新后再试。地图目前仍是 ${eff.label}`,
       }
     }
     if (eff.nativeMatch) {
@@ -912,11 +954,30 @@ async function executeAgentUiIntentCore(
           `量程不合法：最小值必须小于最大值，本次没有修改${now}。` + '请确认下限和上限各设成多少。',
       }
     }
+    /**
+     * 配色名可能根本不存在（模型会编 `rainbow-ultra` 这类名字）。旧实现照样落库，
+     * 渲染时又被兜底成默认色带 ⇒ 回执说「已换配色」，用户却看不出任何变化。
+     * 先校验，认不出来就拒掉并给出真实可选的名字。
+     */
+    let paletteId: string | null = null
     if (hasPalette) {
       const raw = String(args.palette).trim()
-      const canon = resolveCanonicalPaletteIdStrict(raw) ?? raw
-      workspace.setLayerPaletteOverride(resolved.instanceId, canon)
+      const canon = resolveCanonicalPaletteIdStrict(raw) || raw
+      const known = WEATHER_PALETTE_OPTIONS.some(
+        (o) => o.id === canon || o.id === raw || resolveCanonicalPaletteIdStrict(o.id) === canon,
+      )
+      if (!known) {
+        const names = WEATHER_PALETTE_OPTIONS.slice(0, 6)
+          .map((o) => `${o.id}（${o.label}）`)
+          .join('、')
+        return {
+          ok: false,
+          message: `没有「${raw}」这个配色，这次什么都没改。可用的有：${names}。说其中一个我再换。`,
+        }
+      }
+      paletteId = canon
     }
+    if (paletteId) workspace.setLayerPaletteOverride(resolved.instanceId, paletteId)
     const changedRange = patch.vmin != null || patch.vmax != null
     if (changedRange) workspace.setLayerRangeOverride(resolved.instanceId, patch)
     const symLabel = nameOf(resolved.catalogId, args.display_name || layer?.name)
@@ -926,22 +987,32 @@ async function executeAgentUiIntentCore(
      * 而这正是 10-20 那次（只授权换色、vmax 却被改）的核心问题。
      */
     if (!changedRange) {
-      const keep = before ? `，量程没动（还是 ${formatRange(before)}）` : '，量程没动'
+      const known = formatRange(before)
+      const keep = known ? `，量程没动（还是 ${known}）` : '，量程没动'
       return { ok: true, message: `已给「${symLabel}」换了配色${keep}` }
     }
-    const after = {
-      vmin: patch.vmin ?? before?.vmin ?? null,
-      vmax: patch.vmax ?? before?.vmax ?? null,
+    /**
+     * 只描述「这次改成了什么」。旧实现拼成「从 原来的量程 改为 ? 到 1」——
+     * 拿不到旧量程时会出现「原来的量程」和问号，用户读不懂到底改成了多少。
+     */
+    const parts: string[] = []
+    if (patch.vmin != null) parts.push(`下限 ${patch.vmin}`)
+    if (patch.vmax != null) parts.push(`上限 ${patch.vmax}`)
+    const changedTxt = parts.join('、')
+    const old = formatRange(before)
+    const fromTxt = old ? `（原 ${old}）` : ''
+    if (paletteId) {
+      return { ok: true, message: `已给「${symLabel}」换了配色，量程改为 ${changedTxt}${fromTxt}` }
     }
-    const from = before ? formatRange(before) : '原来的量程'
-    const to = formatRange(after)
-    if (hasPalette) {
-      return { ok: true, message: `已给「${symLabel}」换了配色，量程从 ${from} 改为 ${to}` }
-    }
-    return { ok: true, message: `已把「${symLabel}」的量程从 ${from} 改为 ${to}` }
+    return { ok: true, message: `已把「${symLabel}」的量程改为 ${changedTxt}${fromTxt}` }
   }
 
-  return { ok: false, message: `未知意图：${name}` }
+  // 不把内部意图名播报给用户（他看不懂 do_something_magic 是什么）
+  return {
+    ok: false,
+    message:
+      '这个操作我这边还做不了。能帮你做的是：显示/隐藏图层、切日期、改配色、调透明度、定位与缩放、换底图、跑工作流。',
+  }
 }
 
 /**

@@ -46,6 +46,7 @@ const bringLayerToFront = vi.fn();
 const sendLayerToBack = vi.fn();
 const setLayerPaletteOverride = vi.fn();
 const setLayerRangeOverride = vi.fn();
+const selectedInstanceId = ref("");
 const activeLayersDisplay = ref<
   Array<{ instanceId: string; renderHint?: { palette?: string } }>
 >([]);
@@ -61,6 +62,7 @@ vi.mock("@/stores/layers/selectors", () => ({
   useLayerWorkspace: () => ({
     activeLayers,
     activeLayersDisplay,
+    selectedInstanceId,
     toggleLayerVisibility,
     setLayerOpacity,
     addLayer,
@@ -93,6 +95,11 @@ vi.mock("@/stores/ui", () => ({
 vi.mock("@/components/map/layer-symbology", () => ({
   isMapLinkedPalette: () => true,
   resolveCanonicalPaletteIdStrict: (id: string) => id,
+  WEATHER_PALETTE_OPTIONS: [
+    { id: "viridis", label: "Viridis" },
+    { id: "plasma", label: "Plasma" },
+    { id: "thermal", label: "热力橙红" },
+  ],
 }));
 
 describe("executeAgentUiIntent", () => {
@@ -112,7 +119,7 @@ describe("executeAgentUiIntent", () => {
   it("toggles visibility on when requested", async () => {
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent({
+    const result = await executeAgentUiIntent({
       name: "set_layer_visibility",
       args: { catalog_id: "cmfd-precip-cn", visible: true },
     });
@@ -125,7 +132,7 @@ describe("executeAgentUiIntent", () => {
     activeLayers.value = [];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent({
+    const result = await executeAgentUiIntent({
       name: "set_layer_visibility",
       args: { catalog_id: "dem-etopo", visible: true },
     });
@@ -138,7 +145,7 @@ describe("executeAgentUiIntent", () => {
     getCatalogAddBlockReason.mockReturnValueOnce("无权限");
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent({
+    const result = await executeAgentUiIntent({
       name: "set_layer_visibility",
       args: { catalog_id: "secret-layer", visible: true },
     });
@@ -149,7 +156,7 @@ describe("executeAgentUiIntent", () => {
   it("sets opacity", async () => {
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent({
+    const result = await executeAgentUiIntent({
       name: "set_layer_opacity",
       args: { catalog_id: "cmfd-precip-cn", opacity: 0.5 },
     });
@@ -161,7 +168,7 @@ describe("executeAgentUiIntent", () => {
     const fit = vi.fn(() => true);
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent(
+    const result = await executeAgentUiIntent(
       { name: "fit_layer", args: { catalog_id: "cmfd-precip-cn" } },
       { fitToLayerExtent: fit },
     );
@@ -189,7 +196,7 @@ describe("executeAgentUiIntent", () => {
     ];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent({
+    const result = await executeAgentUiIntent({
       name: "list_active_layers",
       args: {},
     });
@@ -205,7 +212,7 @@ describe("executeAgentUiIntent", () => {
     activeLayers.value = [];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const result = executeAgentUiIntent({
+    const result = await executeAgentUiIntent({
       name: "list_active_layers",
       args: {},
     });
@@ -217,7 +224,7 @@ describe("executeAgentUiIntent", () => {
     const fitChina = vi.fn(() => true);
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res1 = executeAgentUiIntent(
+    const res1 = await executeAgentUiIntent(
       { name: "fit_china", args: {} },
       { fitChina },
     );
@@ -225,14 +232,17 @@ describe("executeAgentUiIntent", () => {
     expect(fitChina).toHaveBeenCalledTimes(1);
     expect(res1.message).toContain("中国全境");
 
-    const res2 = executeAgentUiIntent(
+    const res2 = await executeAgentUiIntent(
       { name: "zoom_to_china", args: {} },
       { fitChina },
     );
     expect(res2.ok).toBe(true);
     expect(fitChina).toHaveBeenCalledTimes(2);
 
-    const resFail = executeAgentUiIntent({ name: "fit_china", args: {} }, {});
+    const resFail = await executeAgentUiIntent(
+      { name: "fit_china", args: {} },
+      {},
+    );
     expect(resFail.ok).toBe(false);
   });
 
@@ -240,7 +250,7 @@ describe("executeAgentUiIntent", () => {
     const locate = vi.fn(() => true);
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent(
+    const res = await executeAgentUiIntent(
       {
         name: "locate_coordinate",
         args: { lng: 116.4074, lat: 39.9042, zoom: 11 },
@@ -251,13 +261,13 @@ describe("executeAgentUiIntent", () => {
     expect(locate).toHaveBeenCalledWith(116.4074, 39.9042, 11);
     expect(res.message).toContain("116.4074");
 
-    const resInvalid = executeAgentUiIntent(
+    const resInvalid = await executeAgentUiIntent(
       { name: "locate_coordinate", args: { lng: "abc" } },
       { locateCoordinate: locate },
     );
     expect(resInvalid.ok).toBe(false);
 
-    const resOutOfRange = executeAgentUiIntent(
+    const resOutOfRange = await executeAgentUiIntent(
       { name: "locate_coordinate", args: { lng: 200, lat: 39 } },
       { locateCoordinate: locate },
     );
@@ -269,7 +279,7 @@ describe("executeAgentUiIntent", () => {
     const setBasemap = vi.fn(() => true);
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent(
+    const res = await executeAgentUiIntent(
       { name: "switch_basemap", args: { basemap_id: "tianditu-img" } },
       { setBasemap },
     );
@@ -278,14 +288,14 @@ describe("executeAgentUiIntent", () => {
     // source id 是内部标识，只用于调用 handler，不出现在给人看的文案里
     expect(res.message).not.toContain("tianditu-img");
 
-    const resEmpty = executeAgentUiIntent(
+    const resEmpty = await executeAgentUiIntent(
       { name: "switch_basemap", args: {} },
       { setBasemap },
     );
     expect(resEmpty.ok).toBe(false);
 
     const setBasemapFail = vi.fn(() => false);
-    const resUnknown = executeAgentUiIntent(
+    const resUnknown = await executeAgentUiIntent(
       { name: "switch_basemap", args: { basemap_id: "not-a-real-basemap" } },
       { setBasemap: setBasemapFail },
     );
@@ -300,7 +310,7 @@ describe("executeAgentUiIntent", () => {
     });
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "set_timeline",
       args: { hour: 8, date: "2024-06-01" },
     });
@@ -328,7 +338,7 @@ describe("executeAgentUiIntent", () => {
     ];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "set_timeline",
       args: { date: "2025-12-02" },
     });
@@ -355,39 +365,123 @@ describe("executeAgentUiIntent", () => {
     ];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "set_timeline",
       args: { date: "2025-12-20" },
     });
-    expect(res.ok).toBe(true);
-    // 关键：不能只说「已切到 12-20」，必须点明该日无数据、实际显示 12-03
-    expect(res.message).toContain("没有数据");
+    // 该日不在帧清单里、且页面没接上取帧入口：必须明说「没接上」，
+    // 不能再糊成「该日落在时间块内」——那会让人以为只是块粒度问题。
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("没接上");
     expect(res.message).toContain("2025-12-03");
+  });
+
+  it("fetches an on-demand frame when the day is outside the frame list", async () => {
+    applyDateHour.mockImplementation((d: Date, h: number) => {
+      currentDate.value = d;
+      currentHour.value = h;
+    });
+    activeLayers.value = [
+      {
+        instanceId: "i1",
+        catalogId: "imported-38993117b963",
+        visible: true,
+        opacity: 0.9,
+        name: "土壤水分（SMAP 平均）",
+        importedRaster: { timeList: ["20251201", "20251202", "20251203"] },
+      },
+    ];
+    const ensureOnDemandFrame = vi.fn(async () => ({
+      ok: true,
+      applied: true,
+      cached: false,
+    }));
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    const res = await executeAgentUiIntent(
+      { name: "set_timeline", args: { date: "2025-12-20" } },
+      { ensureOnDemandFrame },
+    );
+    expect(ensureOnDemandFrame).toHaveBeenCalledWith(
+      "imported-38993117b963",
+      expect.any(Date),
+    );
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain("单日图");
+    expect(res.message).toContain("刚从 NAS 取回");
+  });
+
+  it("reports the fetch failure reason instead of pretending success", async () => {
+    applyDateHour.mockImplementation((d: Date, h: number) => {
+      currentDate.value = d;
+      currentHour.value = h;
+    });
+    activeLayers.value = [
+      {
+        instanceId: "i1",
+        catalogId: "imported-38993117b963",
+        visible: true,
+        opacity: 0.9,
+        name: "土壤水分（SMAP 平均）",
+        importedRaster: { timeList: ["20251201", "20251202", "20251203"] },
+      },
+    ];
+    const ensureOnDemandFrame = vi.fn(async () => ({
+      ok: false,
+      applied: false,
+      cached: false,
+      message: "NAS 成果不覆盖这一天",
+    }));
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    const res = await executeAgentUiIntent(
+      { name: "set_timeline", args: { date: "2025-12-20" } },
+      { ensureOnDemandFrame },
+    );
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain("2025-12-03");
+    expect(res.message).toContain("NAS 成果不覆盖这一天");
   });
 
   it("toggles timeline playing", async () => {
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    expect(
-      executeAgentUiIntent({
-        name: "set_timeline_playing",
-        args: { playing: true },
-      }).ok,
-    ).toBe(true);
+    const started = await executeAgentUiIntent({
+      name: "set_timeline_playing",
+      args: { playing: true },
+    });
+    expect(started.ok).toBe(true);
     expect(play).toHaveBeenCalled();
-    expect(
-      executeAgentUiIntent({
-        name: "set_timeline_playing",
-        args: { playing: false },
-      }).ok,
-    ).toBe(true);
+    const paused = await executeAgentUiIntent({
+      name: "set_timeline_playing",
+      args: { playing: false },
+    });
+    expect(paused.ok).toBe(true);
     expect(pause).toHaveBeenCalled();
+  });
+
+  it("accepts string booleans and rejects missing playing", async () => {
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    // 模型偶尔把布尔写成字符串：旧实现 typeof !== 'boolean' 直接拒
+    const asString = await executeAgentUiIntent({
+      name: "set_timeline_playing",
+      args: { playing: "true" },
+    });
+    expect(asString.ok).toBe(true);
+    expect(play).toHaveBeenCalled();
+    // 真没传必须仍当失败，不能被 strictBool 的 false 兜成「暂停」
+    const missing = await executeAgentUiIntent({
+      name: "set_timeline_playing",
+      args: {},
+    });
+    expect(missing.ok).toBe(false);
   });
 
   it("removes layer when not running", async () => {
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "remove_layer",
       args: { catalog_id: "cmfd-precip-cn" },
     });
@@ -410,7 +504,7 @@ describe("executeAgentUiIntent", () => {
     ];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "remove_layer",
       args: { catalog_id: "cmfd-precip-cn" },
     });
@@ -421,7 +515,7 @@ describe("executeAgentUiIntent", () => {
   it("reorders layer to front", async () => {
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "reorder_layer",
       args: { catalog_id: "cmfd-precip-cn", action: "front" },
     });
@@ -435,7 +529,7 @@ describe("executeAgentUiIntent", () => {
     ];
     const { executeAgentUiIntent } =
       await import("@/components/agent/agent-ui-intent");
-    const res = executeAgentUiIntent({
+    const res = await executeAgentUiIntent({
       name: "set_layer_symbology",
       args: {
         catalog_id: "cmfd-precip-cn",
@@ -450,5 +544,42 @@ describe("executeAgentUiIntent", () => {
       vmin: 0,
       vmax: 10,
     });
+  });
+
+  it("rejects an unknown palette instead of silently doing nothing", async () => {
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    const res = await executeAgentUiIntent({
+      name: "set_layer_symbology",
+      args: { catalog_id: "cmfd-precip-cn", palette: "rainbow-ultra" },
+    });
+    // 旧实现：认不出来也照样落库，渲染时被兜底成默认色带 ⇒ 回执说「已换配色」但颜色没变
+    expect(res.ok).toBe(false);
+    expect(setLayerPaletteOverride).not.toHaveBeenCalled();
+    expect(res.message).toContain("viridis");
+  });
+
+  it("rejects a half date instead of quietly picking a day", async () => {
+    const { executeAgentUiIntent } =
+      await import("@/components/agent/agent-ui-intent");
+    const monthOnly = await executeAgentUiIntent({
+      name: "set_timeline",
+      args: { date: "2025-12" },
+    });
+    // new Date("2025-12") 会被宽松解析成 12-01，助手就会真的切到某一天
+    expect(monthOnly.ok).toBe(false);
+    expect(applyDateHour).not.toHaveBeenCalled();
+
+    const noDash = await executeAgentUiIntent({
+      name: "set_timeline",
+      args: { date: "20251215" },
+    });
+    expect(noDash.ok).toBe(false);
+
+    const okDash = await executeAgentUiIntent({
+      name: "set_timeline",
+      args: { date: "2025-12-15" },
+    });
+    expect(okDash.ok).toBe(true);
   });
 });
