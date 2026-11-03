@@ -182,19 +182,24 @@ function variableKeyOf(displayName: string): string {
 }
 
 /**
- * 收起「同一变量」的其他可见图层，返回被收起的层（带来源，回执要用）。
+ * 收起要撤掉的图层，返回被收起的层（带来源，回执要用）。
  *
- * 只动同变量：VOD / ω 和别的产品组一律保持原样——用户可能正拿它们做对比，
- * 顺手关掉比不关更烦人。锁在计算组里的层（runGroupLocked）也不碰，那是
- * 工作流占位，单独摘掉会把组的状态弄乱。
+ * 两种口径：
+ *   - 默认（solo=false）只动**同一变量**的其他可见层——VOD / ω 和别的产品组一律
+ *     保持原样，用户可能正拿它们做对比，顺手关掉比不关更烦人。
+ *   - solo=true 用户说了「只 / 仅 / 单独」，清场：除目标层外全部收起。
+ *
+ * 两种口径都跳过行政区边界（那是底图，关掉就没参照了）和锁在计算组里的层
+ * （runGroupLocked，工作流占位，半路摘掉会把组的状态弄乱）。
  */
-function hideSiblingVariableLayers(
+function hideConflictingLayers(
   workspace: ReturnType<typeof useLayerWorkspace>,
   handlers: AgentUiIntentHandlers,
   target: { instanceId: string; catalogId: string; name?: string },
+  solo: boolean,
 ): string[] {
-  const targetKey = variableKeyOf(nameOf(target.catalogId, target.name))
-  if (!targetKey) return []
+  const targetKey = solo ? '' : variableKeyOf(nameOf(target.catalogId, target.name))
+  if (!solo && !targetKey) return []
   const closed: string[] = []
   for (const other of workspace.activeLayers.value) {
     if (other.instanceId === target.instanceId) continue
@@ -202,7 +207,7 @@ function hideSiblingVariableLayers(
     if (other.isAdminBoundary) continue
     if (other.runGroupLocked) continue
     const otherName = nameOf(other.catalogId, other.name)
-    if (variableKeyOf(otherName) !== targetKey) continue
+    if (!solo && variableKeyOf(otherName) !== targetKey) continue
     workspace.toggleLayerVisibility(other.instanceId)
     closed.push(withSource(handlers, other.catalogId, otherName))
   }
@@ -388,20 +393,40 @@ async function executeAgentUiIntentCore(
     if (!visible) {
       return { ok: true, message: `已隐藏「${label}」` }
     }
-    // 2026-11-03：显示某层时把同变量的其他版本撤掉。旧版只加不减，两个「土壤水分」
-    // 叠在一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
-    const closed = hideSiblingVariableLayers(workspace, handlers, {
-      instanceId: resolved.instanceId,
-      catalogId,
-      name: args.display_name ? String(args.display_name) : layer.name,
-    })
+    // 2026-11-03：显示某层时把要撤的层收掉。旧版只加不减，两个「土壤水分」叠在
+    // 一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
+    // solo（用户说了「只 / 仅 / 单独」）时清场，除目标层外全收。
+    const solo = args.solo === true || String(args.solo ?? '').toLowerCase() === 'true'
+    const closed = hideConflictingLayers(
+      workspace,
+      handlers,
+      {
+        instanceId: resolved.instanceId,
+        catalogId,
+        name: args.display_name ? String(args.display_name) : layer.name,
+      },
+      solo,
+    )
     const shown = withSource(handlers, catalogId, label)
+    const brief = (names: string[]): string =>
+      names.length <= 3
+        ? names.map((n) => `「${n}」`).join('')
+        : `${names
+            .slice(0, 3)
+            .map((n) => `「${n}」`)
+            .join('')} 等 ${names.length} 个`
+    if (solo) {
+      return {
+        ok: true,
+        message: closed.length
+          ? `已只显示「${shown}」，关掉了另外 ${closed.length} 层（${brief(closed)}），省界保留`
+          : `已显示「${shown}」，地图上本来就只有这一层`,
+      }
+    }
     if (closed.length) {
       return {
         ok: true,
-        message: `已显示「${shown}」，同时收起了同一变量的${closed
-          .map((n) => `「${n}」`)
-          .join('')}——地图上只留这一层`,
+        message: `已显示「${shown}」，同时收起了同一变量的${brief(closed)}——地图上只留这一层`,
       }
     }
     return { ok: true, message: `已显示「${shown}」` }

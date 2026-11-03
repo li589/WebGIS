@@ -3,13 +3,17 @@
   "intents": [
     {
       "name": "set_layer_visibility",
-      "description": "Show or hide a map layer by catalog_id.",
+      "description": "显示或隐藏一个地图图层（按 catalog_id）。默认行为是「只撤同变量」：地图上一个像素只能显示一个值，所以显示某层时，同一变量的其他版本（如 SMAP 平均·土壤水分 与 SMAP 动态·土壤水分）会自动互斥收起，不同变量不动。若用户话里带限定词（只显示 / 只看 / 只保留 / 只留 / 单独看），必须把 solo 置 true —— 表示清场，除目标层外其余产品图层全部收起（行政区边界、计算中的层由前端自动保留）。",
       "args": {
         "type": "object",
         "required": ["catalog_id", "visible"],
         "properties": {
           "catalog_id": { "type": "string" },
-          "visible": { "type": "boolean" }
+          "visible": { "type": "boolean" },
+          "solo": {
+            "type": "boolean",
+            "description": "仅当用户明确要「只看 / 只留这一层」时为 true；缺省 false。隐藏图层（visible=false）时无意义。"
+          }
         }
       }
     },
