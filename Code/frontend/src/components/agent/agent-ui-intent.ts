@@ -165,6 +165,22 @@ function withSource(
 }
 
 /**
+ * 严格布尔解析。
+ *
+ * 模型偶尔把布尔参数写成字符串，而 `Boolean("false") === true`——用户说
+ * 「隐藏这一层」，实际执行成「显示」，还不报错，事后极难查。
+ * 只认 true / "true" / "1" / 1，其余（含 "false"、缺省）一律 false。
+ */
+function strictBool(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
+  const s = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  return s === 'true' || s === '1' || s === 'yes'
+}
+
+/**
  * 「同一变量」的归一化键：剥掉「来源 · 」前缀与括号备注，只留变量名本身
  * （土壤水分 / 植被光学厚度 / 等效散射 ω）。
  *
@@ -353,7 +369,7 @@ async function executeAgentUiIntentCore(
 
   if (name === 'set_layer_visibility') {
     const catalogId = String(args.catalog_id ?? '').trim()
-    const visible = Boolean(args.visible)
+    const visible = strictBool(args.visible)
     if (!catalogId) return { ok: false, message: '缺少 catalog_id' }
 
     let resolved = resolveInstanceId(catalogId, undefined)
@@ -396,7 +412,7 @@ async function executeAgentUiIntentCore(
     // 2026-11-03：显示某层时把要撤的层收掉。旧版只加不减，两个「土壤水分」叠在
     // 一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
     // solo（用户说了「只 / 仅 / 单独」）时清场，除目标层外全收。
-    const solo = args.solo === true || String(args.solo ?? '').toLowerCase() === 'true'
+    const solo = strictBool(args.solo)
     const closed = hideConflictingLayers(
       workspace,
       handlers,
