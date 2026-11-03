@@ -165,6 +165,51 @@ function withSource(
 }
 
 /**
+ * 「同一变量」的归一化键：剥掉「来源 · 」前缀与括号备注，只留变量名本身
+ * （土壤水分 / 植被光学厚度 / 等效散射 ω）。
+ *
+ * 2026-11-03 用户报障：他手动勾着「SMAP 平均·土壤水分」，助手下发「显示
+ * SMAP 动态·土壤水分」后，两层同时亮着——上面那层把下面完全盖住，看上去
+ * 跟没切换一模一样（其实切了，只是没撤旧的）。
+ * 一个像素只能显示一个值，同变量两层同显没有任何观测价值 ⇒ 必须互斥。
+ */
+function variableKeyOf(displayName: string): string {
+  return String(displayName || '')
+    .replace(/^[\s\S]*?·\s*/, '') // 去掉「SMAP · 」这类来源前缀
+    .replace(/（[^）]*）|\([^)]*\)/g, '') // 去掉括号里的补充说明
+    .replace(/\s+/g, '')
+    .trim()
+}
+
+/**
+ * 收起「同一变量」的其他可见图层，返回被收起的层（带来源，回执要用）。
+ *
+ * 只动同变量：VOD / ω 和别的产品组一律保持原样——用户可能正拿它们做对比，
+ * 顺手关掉比不关更烦人。锁在计算组里的层（runGroupLocked）也不碰，那是
+ * 工作流占位，单独摘掉会把组的状态弄乱。
+ */
+function hideSiblingVariableLayers(
+  workspace: ReturnType<typeof useLayerWorkspace>,
+  handlers: AgentUiIntentHandlers,
+  target: { instanceId: string; catalogId: string; name?: string },
+): string[] {
+  const targetKey = variableKeyOf(nameOf(target.catalogId, target.name))
+  if (!targetKey) return []
+  const closed: string[] = []
+  for (const other of workspace.activeLayers.value) {
+    if (other.instanceId === target.instanceId) continue
+    if (!other.visible) continue
+    if (other.isAdminBoundary) continue
+    if (other.runGroupLocked) continue
+    const otherName = nameOf(other.catalogId, other.name)
+    if (variableKeyOf(otherName) !== targetKey) continue
+    workspace.toggleLayerVisibility(other.instanceId)
+    closed.push(withSource(handlers, other.catalogId, otherName))
+  }
+  return closed
+}
+
+/**
  * 挑一个「用来核对日期的时间序列图层」。
  *
  * 顺序（报告第二轮 A06：回执说切到 12-15、页面却停在 01-31，就是因为
@@ -340,10 +385,26 @@ async function executeAgentUiIntentCore(
     workspace.selectLayer(resolved.instanceId)
     workspace.setSidebarView('active')
     const label = nameOf(catalogId, args.display_name || layer.name)
-    return {
-      ok: true,
-      message: visible ? `已显示「${label}」` : `已隐藏「${label}」`,
+    if (!visible) {
+      return { ok: true, message: `已隐藏「${label}」` }
     }
+    // 2026-11-03：显示某层时把同变量的其他版本撤掉。旧版只加不减，两个「土壤水分」
+    // 叠在一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
+    const closed = hideSiblingVariableLayers(workspace, handlers, {
+      instanceId: resolved.instanceId,
+      catalogId,
+      name: args.display_name ? String(args.display_name) : layer.name,
+    })
+    const shown = withSource(handlers, catalogId, label)
+    if (closed.length) {
+      return {
+        ok: true,
+        message: `已显示「${shown}」，同时收起了同一变量的${closed
+          .map((n) => `「${n}」`)
+          .join('')}——地图上只留这一层`,
+      }
+    }
+    return { ok: true, message: `已显示「${shown}」` }
   }
 
   if (name === 'set_layer_opacity') {
