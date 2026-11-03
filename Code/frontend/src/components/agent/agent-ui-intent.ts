@@ -3,6 +3,7 @@
  */
 import type { AgentUiIntent } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import { safeLog } from '../../stores/log'
 import { useUiStore } from '../../stores/ui'
 import { isMapLinkedPalette, resolveCanonicalPaletteIdStrict } from '../map/layer-symbology'
@@ -165,6 +166,18 @@ function withSource(
 }
 
 /**
+ * 图层不在面板里时的统一说法。
+ *
+ * 旧版一律回「未找到可定位的图层」，用户不知道是名字没对上、还是这层压根没添加。
+ * 后者才是常见情况：助手只能操作「已添加」的层，用户得先去左侧图层库添加。
+ */
+function notOnPanelMessage(catalogId: string | undefined, action: string): string {
+  const resolved = catalogId ? nameOf(catalogId) : ''
+  const label = resolved && resolved !== '该图层' ? `「${resolved}」` : '这条指令指定的图层'
+  return `${label}现在不在图层面板里，无法${action}。请先在左侧图层库把它添加出来，然后再说一次。`
+}
+
+/**
  * 严格布尔解析。
  *
  * 模型偶尔把布尔参数写成字符串，而 `Boolean("false") === true`——用户说
@@ -198,6 +211,41 @@ function variableKeyOf(displayName: string): string {
 }
 
 /**
+ * 图层当前生效的量程（用户覆盖值优先，其次 meta 里的原始量程）。
+ *
+ * 只用于回执说实话：「量程没动，还是 0 到 1.5」这种话里的数字不能编。
+ * 拿不到就返回 null，调用方只说「量程没动」而不给数值。
+ */
+function currentRangeOf(
+  catalogId: string | null | undefined,
+): { vmin: number | null; vmax: number | null } | null {
+  const id = String(catalogId || '').trim()
+  if (!id) return null
+  const workspace = useLayerWorkspace()
+  const layer = workspace.activeLayers.value.find((l) => l.catalogId === id)
+  let metaVmin: number | null = null
+  let metaVmax: number | null = null
+  try {
+    const meta = useOverlaySymbologyStore().getMeta(id)
+    metaVmin = typeof meta?.vmin === 'number' ? meta.vmin : null
+    metaVmax = typeof meta?.vmax === 'number' ? meta.vmax : null
+  } catch {
+    /* store 未就绪时按「无 meta」处理，不编数字 */
+  }
+  const vmin = typeof layer?.vminOverride === 'number' ? layer.vminOverride : metaVmin
+  const vmax = typeof layer?.vmaxOverride === 'number' ? layer.vmaxOverride : metaVmax
+  if (vmin == null && vmax == null) return null
+  return { vmin, vmax }
+}
+
+function formatRange(r: { vmin: number | null; vmax: number | null } | null): string {
+  if (!r) return ''
+  const a = r.vmin == null ? '?' : String(r.vmin)
+  const b = r.vmax == null ? '?' : String(r.vmax)
+  return `${a} 到 ${b}`
+}
+
+/**
  * 收起要撤掉的图层，返回被收起的层（带来源，回执要用）。
  *
  * 两种口径：
@@ -207,27 +255,34 @@ function variableKeyOf(displayName: string): string {
  *
  * 两种口径都跳过行政区边界（那是底图，关掉就没参照了）和锁在计算组里的层
  * （runGroupLocked，工作流占位，半路摘掉会把组的状态弄乱）。
+ * 被跳过的层要一并返回：solo 回执若写死「省界保留」，而实际还有计算中的层
+ * 亮着，那句「只显示」就是不准确的。
  */
 function hideConflictingLayers(
   workspace: ReturnType<typeof useLayerWorkspace>,
   handlers: AgentUiIntentHandlers,
   target: { instanceId: string; catalogId: string; name?: string },
   solo: boolean,
-): string[] {
+): { closed: string[]; kept: string[] } {
   const targetKey = solo ? '' : variableKeyOf(nameOf(target.catalogId, target.name))
-  if (!solo && !targetKey) return []
+  if (!solo && !targetKey) return { closed: [], kept: [] }
   const closed: string[] = []
+  const kept: string[] = []
   for (const other of workspace.activeLayers.value) {
     if (other.instanceId === target.instanceId) continue
     if (!other.visible) continue
     if (other.isAdminBoundary) continue
-    if (other.runGroupLocked) continue
     const otherName = nameOf(other.catalogId, other.name)
+    if (other.runGroupLocked) {
+      // solo 时这些层本来要收，但计算中的层不能动 ⇒ 如实记下「保留」
+      if (solo) kept.push(withSource(handlers, other.catalogId, otherName))
+      continue
+    }
     if (!solo && variableKeyOf(otherName) !== targetKey) continue
     workspace.toggleLayerVisibility(other.instanceId)
     closed.push(withSource(handlers, other.catalogId, otherName))
   }
-  return closed
+  return { closed, kept }
 }
 
 /**
@@ -303,8 +358,25 @@ function parseDateArg(raw: unknown): Date | null {
   // YYYY-MM-DD
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
   if (m) {
-    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-    return Number.isNaN(d.getTime()) ? null : d
+    const y = Number(m[1])
+    const mo = Number(m[2])
+    const day = Number(m[3])
+    const d = new Date(y, mo - 1, day)
+    /**
+     * 回检：JS 的 Date 会把越界值自动进位 —— `2025-02-30` 变成 3 月 1 日、
+     * `2025-13-01` 变成 12 月 31 日。旧实现直接返回这个 Date，于是助手会
+     * 一本正经地回「已切到 2025-03-01」，用户以为在看自己说的那天。
+     * 构造后必须逐项对回去，不一致就当无效输入拒掉。
+     */
+    if (
+      Number.isNaN(d.getTime()) ||
+      d.getFullYear() !== y ||
+      d.getMonth() !== mo - 1 ||
+      d.getDate() !== day
+    ) {
+      return null
+    }
+    return d
   }
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? null : d
@@ -413,7 +485,7 @@ async function executeAgentUiIntentCore(
     // 一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
     // solo（用户说了「只 / 仅 / 单独」）时清场，除目标层外全收。
     const solo = strictBool(args.solo)
-    const closed = hideConflictingLayers(
+    const { closed, kept } = hideConflictingLayers(
       workspace,
       handlers,
       {
@@ -432,11 +504,21 @@ async function executeAgentUiIntentCore(
             .map((n) => `「${n}」`)
             .join('')} 等 ${names.length} 个`
     if (solo) {
+      if (!closed.length) {
+        return { ok: true, message: `已显示「${shown}」，地图上本来就只有这一层` }
+      }
+      // 被跳过的层要照实说：边界是底图性质，「只显示」仍留着它；
+      // 计算中的层不能摘，也要让用户知道地图上不止一层。
+      const hasBoundary = workspace.activeLayers.value.some(
+        (l) => l.isAdminBoundary && l.visible !== false,
+      )
+      const notes: string[] = []
+      if (hasBoundary) notes.push('省界保留')
+      if (kept.length) notes.push(`正在计算的 ${kept.length} 层保留未动`)
+      const tail = notes.length ? `，${notes.join('，')}` : ''
       return {
         ok: true,
-        message: closed.length
-          ? `已只显示「${shown}」，关掉了另外 ${closed.length} 层（${brief(closed)}），省界保留`
-          : `已显示「${shown}」，地图上本来就只有这一层`,
+        message: `已只显示「${shown}」，关掉了另外 ${closed.length} 层（${brief(closed)}）${tail}`,
       }
     }
     if (closed.length) {
@@ -450,10 +532,23 @@ async function executeAgentUiIntentCore(
 
   if (name === 'set_layer_opacity') {
     const catalogId = String(args.catalog_id ?? '').trim()
-    const opacity = Number(args.opacity)
-    if (!catalogId || Number.isNaN(opacity)) {
+    const raw = Number(args.opacity)
+    if (!catalogId || Number.isNaN(raw)) {
       return { ok: false, message: '缺少 catalog_id 或 opacity' }
     }
+    /**
+     * 模型可能把「透明度调到 50%」直接传成 50。旧实现走 clamp(0,1) 静默截成 1，
+     * 用户要的是半透明、结果是完全不透明，还以为自己没说清。
+     * 这里按百分数折算并明确回报；超过 100 直接拒绝，不猜。
+     */
+    if (raw < 0 || raw > 100) {
+      return {
+        ok: false,
+        message: `透明度 ${raw} 超出范围：请用 0~1，或用 0~100 表示百分比`,
+      }
+    }
+    const asPercent = raw > 1
+    const opacity = asPercent ? raw / 100 : raw
     const resolved = resolveInstanceId(catalogId, undefined)
     if (resolved.ambiguous?.length) {
       return {
@@ -470,7 +565,7 @@ async function executeAgentUiIntentCore(
       ok: true,
       message: `已把「${nameOf(catalogId, args.display_name)}」的透明度调为 ${Math.round(
         clamped * 100,
-      )}%`,
+      )}%${asPercent ? '（按百分数换算）' : ''}`,
     }
   }
 
@@ -479,7 +574,7 @@ async function executeAgentUiIntentCore(
     const instanceIdArg = args.instance_id != null ? String(args.instance_id).trim() : undefined
     const resolved = resolveInstanceId(catalogId, instanceIdArg)
     if (!resolved.instanceId) {
-      return { ok: false, message: '未找到可定位的图层' }
+      return { ok: false, message: notOnPanelMessage(catalogId ?? instanceIdArg, '缩放') }
     }
     const ok = handlers.fitToLayerExtent?.(resolved.instanceId) ?? false
     const fitLabel = nameOf(resolved.catalogId, args.display_name)
@@ -689,14 +784,19 @@ async function executeAgentUiIntentCore(
   }
 
   if (name === 'set_timeline_playing') {
-    if (typeof args.playing !== 'boolean') {
-      return { ok: false, message: '缺少 playing: boolean' }
+    // 与其他布尔参数统一口径：模型偶尔把 true 写成字符串 "true"，
+    // 旧实现对非布尔直接报「缺少 playing: boolean」，「开始播放」这种简单指令
+    // 就莫名其妙失败。但仍要保留「真没传」的判定，否则缺省会被当成暂停。
+    const given = args.playing != null && String(args.playing).trim() !== ''
+    if (!given) {
+      return { ok: false, message: '缺少 playing（true 表示开始播放，false 表示暂停）' }
     }
-    if (args.playing) ui.play()
+    const playing = strictBool(args.playing)
+    if (playing) ui.play()
     else ui.pause()
     return {
       ok: true,
-      message: args.playing ? '已开始时间轴播放' : '已暂停时间轴播放',
+      message: playing ? '已开始时间轴播放' : '已暂停时间轴播放',
     }
   }
 
@@ -705,7 +805,7 @@ async function executeAgentUiIntentCore(
     const instanceIdArg = args.instance_id != null ? String(args.instance_id).trim() : undefined
     const resolved = resolveInstanceId(catalogId, instanceIdArg)
     if (!resolved.instanceId) {
-      return { ok: false, message: '未找到可移除的图层' }
+      return { ok: false, message: notOnPanelMessage(catalogId ?? instanceIdArg, '移除') }
     }
     const layer = workspace.activeLayers.value.find((l) => l.instanceId === resolved.instanceId)
     if (!layer) return { ok: false, message: '未找到可移除的图层' }
@@ -733,7 +833,7 @@ async function executeAgentUiIntentCore(
     const instanceIdArg = args.instance_id != null ? String(args.instance_id).trim() : undefined
     const resolved = resolveInstanceId(catalogId, instanceIdArg)
     if (!resolved.instanceId) {
-      return { ok: false, message: '未找到可重排的图层' }
+      return { ok: false, message: notOnPanelMessage(catalogId ?? instanceIdArg, '调整层级') }
     }
     if (action === 'front') workspace.bringLayerToFront(resolved.instanceId)
     else workspace.sendLayerToBack(resolved.instanceId)
@@ -752,7 +852,7 @@ async function executeAgentUiIntentCore(
     const instanceIdArg = args.instance_id != null ? String(args.instance_id).trim() : undefined
     const resolved = resolveInstanceId(catalogId, instanceIdArg)
     if (!resolved.instanceId) {
-      return { ok: false, message: '图层未在活动列表中' }
+      return { ok: false, message: notOnPanelMessage(catalogId ?? instanceIdArg, '改配色') }
     }
     const display = workspace.activeLayersDisplay.value.find(
       (l) => l.instanceId === resolved.instanceId,
@@ -779,29 +879,66 @@ async function executeAgentUiIntentCore(
     if (!hasPalette && !hasVmin && !hasVmax) {
       return { ok: false, message: '请提供 palette 和/或 vmin/vmax' }
     }
+    // ── 先全部校验、再落库：避免「配色改了、量程被判无效」这种半成品状态 ──
+    const before = currentRangeOf(resolved.catalogId ?? catalogId)
+    const patch: { vmin?: number; vmax?: number } = {}
+    if (hasVmin) {
+      const v = Number(args.vmin)
+      if (Number.isNaN(v)) return { ok: false, message: 'vmin 无效' }
+      patch.vmin = v
+    }
+    if (hasVmax) {
+      const v = Number(args.vmax)
+      if (Number.isNaN(v)) return { ok: false, message: 'vmax 无效' }
+      patch.vmax = v
+    }
+    /**
+     * 量程填反会渲染成全黑或全白，而且不会报错——用户只会觉得「图坏了」。
+     * 两端都给了就互相比；只给一端就跟现有另一端比。
+     */
+    const badOrder =
+      patch.vmin != null && patch.vmax != null
+        ? patch.vmin >= patch.vmax
+        : patch.vmin != null && before?.vmax != null
+          ? patch.vmin >= before.vmax
+          : patch.vmax != null && before?.vmin != null
+            ? patch.vmax <= before.vmin
+            : false
+    if (badOrder) {
+      const now = before ? `（当前量程 ${formatRange(before)}）` : ''
+      return {
+        ok: false,
+        message:
+          `量程不合法：最小值必须小于最大值，本次没有修改${now}。` + '请确认下限和上限各设成多少。',
+      }
+    }
     if (hasPalette) {
       const raw = String(args.palette).trim()
       const canon = resolveCanonicalPaletteIdStrict(raw) ?? raw
       workspace.setLayerPaletteOverride(resolved.instanceId, canon)
     }
-    if (hasVmin || hasVmax) {
-      const patch: { vmin?: number; vmax?: number } = {}
-      if (hasVmin) {
-        const v = Number(args.vmin)
-        if (Number.isNaN(v)) return { ok: false, message: 'vmin 无效' }
-        patch.vmin = v
-      }
-      if (hasVmax) {
-        const v = Number(args.vmax)
-        if (Number.isNaN(v)) return { ok: false, message: 'vmax 无效' }
-        patch.vmax = v
-      }
-      workspace.setLayerRangeOverride(resolved.instanceId, patch)
+    const changedRange = patch.vmin != null || patch.vmax != null
+    if (changedRange) workspace.setLayerRangeOverride(resolved.instanceId, patch)
+    const symLabel = nameOf(resolved.catalogId, args.display_name || layer?.name)
+    /**
+     * 回执必须分清「只换色」和「真改了量程」。
+     * 旧版两种都回「已更新配色与拉伸」⇒ 用户没有任何途径判断量程被没被动，
+     * 而这正是 10-20 那次（只授权换色、vmax 却被改）的核心问题。
+     */
+    if (!changedRange) {
+      const keep = before ? `，量程没动（还是 ${formatRange(before)}）` : '，量程没动'
+      return { ok: true, message: `已给「${symLabel}」换了配色${keep}` }
     }
-    return {
-      ok: true,
-      message: `已更新「${nameOf(resolved.catalogId, args.display_name || layer?.name)}」的配色与拉伸`,
+    const after = {
+      vmin: patch.vmin ?? before?.vmin ?? null,
+      vmax: patch.vmax ?? before?.vmax ?? null,
     }
+    const from = before ? formatRange(before) : '原来的量程'
+    const to = formatRange(after)
+    if (hasPalette) {
+      return { ok: true, message: `已给「${symLabel}」换了配色，量程从 ${from} 改为 ${to}` }
+    }
+    return { ok: true, message: `已把「${symLabel}」的量程从 ${from} 改为 ${to}` }
   }
 
   return { ok: false, message: `未知意图：${name}` }

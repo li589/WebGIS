@@ -53,16 +53,13 @@
     },
     {
       "name": "locate_coordinate",
-      "description": "Fly the map to a WGS84 longitude/latitude. Prefer lng+lat; longitude/lon and latitude aliases accepted. Optional zoom (typical city ~10–12).",
+      "description": "Fly the map to a WGS84 longitude/latitude. 用 lng + lat 两个字段；zoom 可选（城市一般 10–12）。",
       "args": {
         "type": "object",
         "required": ["lng", "lat"],
         "properties": {
           "lng": { "type": "number", "description": "Longitude WGS84 (−180…180)" },
           "lat": { "type": "number", "description": "Latitude WGS84 (−90…90)" },
-          "longitude": { "type": "number" },
-          "lon": { "type": "number" },
-          "latitude": { "type": "number" },
           "zoom": { "type": "number", "minimum": 1, "maximum": 22 }
         }
       }
@@ -82,12 +79,16 @@
     },
     {
       "name": "set_timeline",
-      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time. date 允许超出 client_context.timeline.data_range：data_range 只是时间轴上现有时间块的范围，只要日期落在 NAS 逐日成果覆盖 2015-04-01~2025-12-31 之内就照常下发，前端会为这一天按需补一帧单日图；只有越过该覆盖范围才不下发。",
+      "description": "Set the map timeline clock. Provide hour (0–23) and/or date (YYYY-MM-DD). Prefer reading client_context.timeline first when answering about current time. date 允许超出 client_context.timeline.data_range：data_range 只是时间轴上现有时间块的范围，只要日期落在 NAS 逐日成果覆盖 2015-04-01~2025-12-31 之内就照常下发，前端会为这一天按需补一帧单日图；只有越过该覆盖范围才不下发。**多图层时必须带 catalog_id 指明要切哪一层**，否则前端只能按「当前选中层」猜，地图上同时勾了多个产品时会切错层。",
       "args": {
         "type": "object",
         "properties": {
           "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
-          "date": { "type": "string", "description": "ISO date YYYY-MM-DD" }
+          "date": { "type": "string", "description": "ISO date YYYY-MM-DD" },
+          "catalog_id": {
+            "type": "string",
+            "description": "要把时间轴切到哪一层（用户点名的图层，或当前明确选中的那一层）。省略时前端按当前选中层处理；地图上同时显示多个产品时务必传。"
+          }
         }
       }
     },
