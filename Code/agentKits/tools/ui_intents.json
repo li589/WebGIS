@@ -129,7 +129,7 @@
     },
     {
       "name": "set_layer_symbology",
-      "description": "Set palette and/or value range (vmin/vmax) for a recolor-capable layer.",
+      "description": "设置图层的调色板（换配色）和/或数值范围 vmin/vmax（改量程）。两者性质不同：换配色只改外观、不影响读数，用户说了就能做；改量程会改变「什么颜色代表什么数值」，0.75 以上全部压成同一色、用户就分不出高低了 —— 所以**只有用户明确说「改量程 / 最大值设成 X / 最小值设成 Y」时才允许传 vmin/vmax**。用户只抱怨「颜色太深 / 不好看」时只传 palette，并在回答里说明量程没动、还是多少到多少。",
       "args": {
         "type": "object",
         "properties": {
