@@ -1,6 +1,7 @@
 /**
  * 执行后端返回的 UI intent（地图状态仅在客户端）。
  */
+import { nextTick } from 'vue'
 import type { AgentUiIntent } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
@@ -357,6 +358,70 @@ function pickDominantTimeseries(target?: {
   return null
 }
 
+/**
+ * 切层之后等时间轴落定，再把「页面真实停在哪天」读回来（2026-11-04）。
+ *
+ * 为什么必须等：切层改日期这段逻辑挂在 `useTimelineSync` 的 watcher 上
+ * （先按 `cgda.timeline.layer-memory` 恢复记忆日期，记忆日无覆盖时再 snap 到最新切片），
+ * 是「选中某个层之后才发生」的异步动作。意图函数如果立刻 return，读到的还是切换前的
+ * 旧日期 —— 这正是「页面已跳到 2026-02-02、助手却回『仍停在 2025-12-15』」的根因。
+ *
+ * 只轮询「日期是否还在变」，不用固定 sleep：静态图层（无 time_list）约 40ms 就返回。
+ */
+async function waitForTimelineSettle(maxMs = 900): Promise<void> {
+  const ui = useUiStore()
+  // 至少放过两轮 Vue 更新：watcher 本身要跑，跑完才会改 currentDate
+  await nextTick()
+  await nextTick()
+  const started = Date.now()
+  let last = ui.currentDate.getTime()
+  let steady = 0
+  while (Date.now() - started < maxMs) {
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    const now = ui.currentDate.getTime()
+    if (now === last) {
+      steady += 1
+      if (steady >= 3) return
+    } else {
+      steady = 0
+      last = now
+    }
+  }
+}
+
+/**
+ * 切完层后的「日期尾巴」：页面实际停在哪个日期 / 哪一帧。
+ *
+ * 算不出来（该层没有时间序列、或该日无任何可用帧）就返回空串 —— 宁可不提日期，
+ * 也不能再猜一个写进回执。措辞区分「日期确实变了」和「本来就停在这天」，
+ * 避免把没发生的事说成刚发生。
+ */
+function describeSettledTimeline(catalogId: string, moved: boolean): string {
+  const ui = useUiStore()
+  const workspace = useLayerWorkspace()
+  const day = formatLocalDateKey(ui.currentDate)
+  const head = moved ? `，时间轴跟着切到 ${day}` : `，时间轴仍停在 ${day}`
+  /**
+   * 只认**这一层自己**的 time_list。
+   * 不能借用 pickDominantTimeseries 的兜底（它会退到「帧数最多的可见图层」）：
+   * 目标层的时间序列还在异步加载、尚未就绪时，那会把别的层的帧结构套进来，
+   * 于是「该日落在时间块 X 内」这类补充说明会张冠李戴。拿不到就只说日期。
+   */
+  const layer = workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
+  const list = (layer?.importedRaster?.timeList ?? []).map((t) => String(t))
+  if (!list.length) return head
+  const eff = resolveEffectiveFrame(list, ui.currentDate, ui.currentHour)
+  if (!eff) return head
+  // 时间块 key 形如 20251211_20251218：落在块内 ≠ 真切到了那一天
+  if (String(eff.key ?? '').includes('_')) {
+    return `${head}（该日落在时间块 ${eff.label} 内）`
+  }
+  if (!eff.nativeMatch && eff.label && eff.label !== day) {
+    return `${head}，实际显示的是 ${eff.label}`
+  }
+  return head
+}
+
 function parseDateArg(raw: unknown): Date | null {
   if (raw == null) return null
   const s = String(raw).trim()
@@ -496,14 +561,24 @@ async function executeAgentUiIntentCore(
         message: '这一层没能在图层面板里建起来（可能刚被移除），请刷新后再试',
       }
     }
+    // 记下切换前的日期：用来区分「这次真的跳了」和「本来就停在这天」
+    const dateBefore = ui.currentDate.getTime()
     if (layer.visible !== visible) {
       workspace.toggleLayerVisibility(resolved.instanceId)
     }
     workspace.selectLayer(resolved.instanceId)
     workspace.setSidebarView('active')
+    /**
+     * ★ 2026-11-04 修：切层会触发时间轴按图层记忆跳转，而那是**异步**的
+     * （useTimelineSync 的 watcher）。不等它落定就读日期，读到的是切换前的旧值，
+     * 回执必然说错日期 —— 用户看到「页面已跳到 2026-02-02，助手却说仍停在 2025-12-15」。
+     * 先等时间轴稳住，再用页面真实日期拼回执。
+     */
+    await waitForTimelineSettle()
+    const nowHint = describeSettledTimeline(catalogId, ui.currentDate.getTime() !== dateBefore)
     const label = nameOf(catalogId, args.display_name || layer.name)
     if (!visible) {
-      return { ok: true, message: `已隐藏「${label}」` }
+      return { ok: true, message: `已隐藏「${label}」${nowHint}` }
     }
     // 2026-11-03：显示某层时把要撤的层收掉。旧版只加不减，两个「土壤水分」叠在
     // 一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
@@ -529,7 +604,10 @@ async function executeAgentUiIntentCore(
             .join('')} 等 ${names.length} 个`
     if (solo) {
       if (!closed.length) {
-        return { ok: true, message: `已显示「${shown}」，地图上本来就只有这一层` }
+        return {
+          ok: true,
+          message: `已显示「${shown}」，地图上本来就只有这一层${nowHint}`,
+        }
       }
       // 被跳过的层要照实说：边界是底图性质，「只显示」仍留着它；
       // 计算中的层不能摘，也要让用户知道地图上不止一层。
@@ -543,16 +621,16 @@ async function executeAgentUiIntentCore(
       const tail = notes.length ? `，${notes.join('，')}` : ''
       return {
         ok: true,
-        message: `已只显示「${shown}」，关掉了另外 ${closed.length} 层（${brief(closed)}）${tail}`,
+        message: `已只显示「${shown}」，关掉了另外 ${closed.length} 层（${brief(closed)}）${tail}${nowHint}`,
       }
     }
     if (closed.length) {
       return {
         ok: true,
-        message: `已显示「${shown}」，同时收起了同一变量的${brief(closed)}——地图上只留这一层`,
+        message: `已显示「${shown}」，同时收起了同一变量的${brief(closed)}——地图上只留这一层${nowHint}`,
       }
     }
-    return { ok: true, message: `已显示「${shown}」` }
+    return { ok: true, message: `已显示「${shown}」${nowHint}` }
   }
 
   if (name === 'set_layer_opacity') {

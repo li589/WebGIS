@@ -785,6 +785,15 @@ def _build_system(
         "才下发对应的视图意图。判别标准只有一条：**用户要不要画面跟着变。**\n"
         "- 用户问的日期与时间轴当前日期不一致时，口头说明“当前时间轴停在 X，"
         "你问的是 Y，我按 Y 取数、没有动你的时间轴”，**不要顺手把时间轴切过去**。\n"
+        "## 下发视图意图的那一轮：禁止替界面报日期\n"
+        "- `set_layer_visibility` / `set_timeline` / `remove_layer` / `set_layer_symbology` "
+        "这几条**由浏览器在你回复之后才执行**。切换图层会连带把时间轴按该图层的记忆日期"
+        "跳过去，而那一刻的日期由界面回执给出（形如“已显示「X」，时间轴跟着切到 YYYY-MM-DD”）。"
+        "所以这一轮的正文**不要写出切换后的具体日期**，只说“已按要求切换”即可；"
+        "`client_context.timeline.date` 是**请求发出时**的日期，禁止把它当作切换后的日期播报。"
+        "（2026-11-04 实测：页面已跳到 2026-02-02，回答却写“仍停在 2025-12-15”。）\n"
+        "- 例外，且**优先于上一条**：用户是在**问**当前日期/画面状态（而不是让你改画面）时，"
+        "仍按 client_context 如实回答“当前时间轴停在 X”。\n"
         "## 来源与单位\n"
         "- 来源只认工具/目录返回的 source_label（SMAP / 风云卫星 / 地面站点 / 多源融合 / 未标注来源），"
         "**不要用图层名字去猜卫星**，也不要自己编造。返回 unknown 时如实说“未标注来源”。\n"
@@ -1214,7 +1223,13 @@ def refresh_models_for_profile(
         }
 
 
-_STATISTICS_WORDS = re.compile(r"平均|均值|统计|像元|mean|average|最大|最小", re.I)
+_STATISTICS_WORDS = re.compile(
+    # 2026-11-04 补「多少/是多少/多大」：外部测试第 2 轮问「广州市的土壤水分是多少」，
+    # 这句话不含原有关键词，被判定为「不是统计请求」⇒ 兜底不触发 ⇒ 模型凭空报了
+    # 0.148 m³/m³ 与 1024 个有效栅格（该时间片全球有效像元其实是 0）。
+    r"平均|均值|统计|像元|mean|average|最大|最小|多少|是多少|多大",
+    re.I,
+)
 # 产品族名自带「平均」二字（「SMAP 平均散射约束产品」），不剥掉的话
 # 「这一层的 catalog_id 是多少」会被判成统计请求，进而被规则引擎覆盖成
 # 「页面选中层的均值」。2026-10-29 实测第 4 问就是这么把正确答案吃掉的。
@@ -1222,11 +1237,19 @@ _LAYER_NAME_NOISE = re.compile(
     r"(?:动态|平均|月均|季均|逐日|daily|average|dynamic)?\s*散射约束产品|产品族",
     re.I,
 )
+# 时间结构类提问（片数/天数/时间清单）：答案在 time_list 与覆盖信息里，不是统计值
+_TIME_STRUCTURE_RE = re.compile(
+    r"时间片|时间块|时间清单|时间轴|多少天|几天|片数|补了几天|几个时次|多少时次", re.I
+)
 
 
 def _wants_statistics(message: str) -> bool:
     """用户这句话是不是在要整层统计（报告第二轮 A06~A08 的判据）。"""
     text = _LAYER_NAME_NOISE.sub(" ", message or "")
+    # 排除「时间结构」类提问：它们同样含「多少/几个」，但答案在 time_list /
+    # 覆盖信息里，跑统计只会把「本层共 13 片」换成一段无关的均值。
+    if _TIME_STRUCTURE_RE.search(text):
+        return False
     return bool(_STATISTICS_WORDS.search(text))
 
 
@@ -1247,6 +1270,39 @@ def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
     return False
 
 
+_UNGROUNDED_REPLY = (
+    "这次没有取到统计结果，所以不能给出均值和有效像元数。"
+    "（本轮没有调用统计工具，服务端补算也没有拿到有效值。）"
+    "请再说一次要统计的图层和日期，我重新取数；"
+    "如果该日期落在没有数据的时间块里，我会直接告诉你哪几天是空的。"
+)
+
+
+def _looks_numeric(text: str) -> bool:
+    """正文里是否出现了「像统计结果」的数字。
+
+    判据刻意收窄：只认**小数**（0.148、0.0597）和**贴着统计量名**的整数
+    （「有效像元 1024」「均值 12」）。这样「3 层」「31 天」「共 13 片」这类
+    正常计数不会被误判成统计值，否则兜底会把好好的回答换成一句「未取到」。
+    """
+    raw = str(text or "")
+    # 先摘掉日期形态，避免把 2025-11-13 / 20251109_20251116 当成统计值
+    raw = re.sub(r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?", " ", raw)
+    raw = re.sub(r"\d{8}(?:_\d{8})?", " ", raw)
+    if re.search(r"\d+\.\d+", raw):
+        return True
+    if re.search(r"(均值|平均值|有效像元|有效栅格)[^。；\n]{0,14}?\d", raw):
+        return True
+    if re.search(r"\d[^。；\n]{0,8}?(个有效像元|个有效栅格|个栅格)", raw):
+        return True
+    return False
+
+
+def _grounded_statistics(text: str) -> bool:
+    """规则引擎的答复是不是「真算过数」（它只在取数成功时会写这些词）。"""
+    return any(k in text for k in ("均值", "有效像元", "有效栅格"))
+
+
 def _statistics_fallback_reply(
     message: str,
     reply: str,
@@ -1254,42 +1310,64 @@ def _statistics_fallback_reply(
     sid: str,
     client_context: dict[str, Any] | None,
 ) -> str:
-    """统计请求的确定性兜底：模型没调工具、也没给出数值时，用规则引擎补一次。
+    r"""统计请求的确定性兜底：模型没调过任何取数工具时，正文里的数字一律不可信。
 
     报告第二轮 P1：「统计请求即使包含『当前图层』也不能只列图层或说明计划，
     核对来源、变量与日期后继续调用 get_layer_statistics，直到得到结果或明确报错」。
     真模型对「当前选中图层」这类模糊主语约束力弱，光靠系统提示不可靠；
-    提示词已写死规则（## 整层统计），这里再加一道代码兜底。
+    提示词已写死规则（## 整层统计），这里再加一道代码闸门。
     **只补文本，不下发任何改变视图的意图。**
+
+    ★ 2026-11-04 重写（外部测试报告第 1 条「数值查询必须调用统计工具」）：
+    旧实现在 ``_wants_statistics`` 命中后还有两道早退——
+
+        if "均值" in reply: return reply
+        if "取数" in reply or re.search(r"\d+\.\d+", reply): return reply
+
+    第二道本意是「别用规则引擎覆盖正确答案」（10-29 赵测过：模型已取数时被
+    覆盖成页面选中层的数字）。但「有小数」恰好也是**编造答案**的特征：
+    11-04 实测模型没调任何工具，直接报「0.148 m³/m³、1024 个有效栅格」，
+    而那个时间片全球有效像元是 0 ⇒ 编造的数字被当成了「已取数」放行。
+
+    现在的判据改成**看有没有工具调用，而不是看正文长什么样**：
+      1. 本轮调过 get_layer_statistics / coverage / meta ⇒ 尊重模型原文；
+      2. 一次都没调过 ⇒ 规则引擎真算出数就整段替换，算不出来就把正文里
+         的数值换成一句如实的「未取到」，绝不让无出处的数字流出去。
     """
     if not _wants_statistics(message) or _statistics_tool_called(list(steps)):
         return reply
-    if "均值" in reply:
-        return reply
-    # 模型已经给出了具体数值或取数声明，说明它确实取了数；此时用规则引擎
-    # （只认页面选中层）覆盖，等于把正确答案换成另一层的数字。
-    # 2026-10-29 实测：第 4 问被这样覆盖成「风云卫星平均层 0.1294/120257」。
-    # 注意：回答正文已按规范不再写 imported- 编号，判据改用「数值 / 取数声明」。
-    if "取数" in reply or re.search(r"\d+\.\d+", reply):
-        return reply
     try:
-        fallback = mock_chat(message, session_id=sid, client_context=client_context)
+        # 直接进统计分支，不走关键词分流：「是多少」这类说法不在 _STAT_VERB 里，
+        # 经 mock_chat 会被当成普通对话，返回一段能力介绍，救不了场。
+        from app.services.agent.mock_orchestrator import forced_statistics_reply
+
+        fallback = forced_statistics_reply(
+            message, client_context=client_context, session_id=sid
+        )
     except Exception:
         logger.debug("statistics fallback failed", exc_info=True)
-        return reply
+        return _UNGROUNDED_REPLY if _looks_numeric(reply) else reply
     text = str(fallback.get("reply") or "").strip()
-    # 规则引擎的统计答复一定带「均值」；若它也只给了图层列表，说明目标选择没接上，
-    # 保留模型原文（宁可少说，也不要替换成另一种不准确的答复）。
-    if not text or "均值" not in text:
-        return reply
-    steps.append(
-        {
-            "type": "tool_result",
-            "summary": "服务端补调整层统计（模型本轮未调用工具）",
-            "detail": text[:800],
-        }
-    )
-    return text
+    if text and _grounded_statistics(text):
+        steps.append(
+            {
+                "type": "tool_result",
+                "summary": "服务端强制取数（模型本轮未调用任何数据工具）",
+                "detail": text[:800],
+            }
+        )
+        return text
+    # 规则引擎也算不出来：模型若给了数字，就是无出处的，必须收回
+    if _looks_numeric(reply):
+        steps.append(
+            {
+                "type": "tool_result",
+                "summary": "已拦截无出处的数值（本轮未调用任何数据工具）",
+                "detail": (text or "规则引擎未得到有效统计结果")[:400],
+            }
+        )
+        return _UNGROUNDED_REPLY
+    return reply
 
 
 def _run_chat_impl(

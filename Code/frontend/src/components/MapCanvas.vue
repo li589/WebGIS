@@ -29,6 +29,7 @@ import type { MapCanvasNonWeatherLayerSyncModule } from './map/map-canvas-non-we
 import { createMapStagePresentationModule } from './map/map-stage-presentation-module'
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
+import { ensureWorldLandBase, setWorldLandBaseVisible } from './map/land-base-module'
 import { installSafeMapStyleAccess, isMapStyleAlive } from './map/map-style-guards'
 import type { OverlayTimeState } from './map/overlay-image-module'
 import { validateOverlayBounds } from './map/overlay-image-module'
@@ -483,6 +484,21 @@ watch(
     setTimeout(applyBasemapSuppression, 120)
   },
 )
+
+/**
+ * 全球陆地灰底衬是否该显示。
+ * 默认就开（用户要求"勾了图层就该有"，不该依赖任何别的开关）。
+ * 只在两种底图上关掉：卫星/影像（灰会把影像糊掉）、深色底图（灰会发脏）。
+ * 空白底图没有海洋蓝可比，也一并不开。
+ */
+const shouldShowWorldLandBaseNow = computed(() => {
+  const style = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
+  return style !== 'satellite' && style !== 'dark' && style !== 'none'
+})
+
+watch(shouldShowWorldLandBaseNow, (show) => {
+  setWorldLandBaseVisible(state.resources.map, show)
+})
 
 // ─── 实验性 3D：globe 投影切换 ──────────────────────────────────────────────
 // 外观设置勾选「启用3D视图（实验测试）」且顶栏处于 3D 模式时切 globe；
@@ -1001,6 +1017,15 @@ onMounted(async () => {
       onMapLoad: async () => {
         moduleBundle.basemapModule.switchTileSource(props.tileSourceId)
         await moduleBundle.adminBoundaryModule.ensureLayers()
+        // 全球陆地灰底衬（数据是全球栅格，缩到全球视野时底图为空白米色，需自铺一层灰）
+        await ensureWorldLandBase(mapInstance, shouldShowWorldLandBaseNow.value)
+        // 兜住时序：onMapLoad 时 tileSourceId / 视图可能还没定稿，若那一刻判定为"该隐藏"
+        // 就会把图层建成 visibility:none 且之后没人再纠正；若第一次因时序失败，这里重试一次
+        // （ensureWorldLandBase 幂等：已存在则只切显隐）。
+        setTimeout(() => {
+          if (_isUnmounted || !isMapStyleAlive(mapInstance)) return
+          void ensureWorldLandBase(mapInstance, shouldShowWorldLandBaseNow.value)
+        }, 600)
         // 就绪即撤销初始化超时兜底（避免地图已好还被判超时）
         clearMapInitTimer()
         mapInitError.value = null

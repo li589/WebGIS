@@ -230,3 +230,9 @@ Tools/sync_server_data.py
 # 误拷入仓库根的传输归档（远端清理用，勿入库；2026-09-18）
 Code/backend.7z
 Code/frontend.zip
+
+# 全球陆地掩膜的 GeoJSON 中间产物（2026-11-04）
+# Tools/build_world_land_mask.py 由 Natural Earth 现生成，运行时只用
+# world-land-merc-4096.png（191KB）。这两个 .geojson 各 2.6/2.8MB，
+# 超过提交钩子 1MB 上限，且可随时重建 ⇒ 不入库。
+Code/frontend/public/data/boundaries/world-land*.geojson

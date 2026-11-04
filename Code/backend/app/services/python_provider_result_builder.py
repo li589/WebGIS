@@ -59,7 +59,7 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         # 2026-10-20（用户第 7 轮）：ylorrd → reds。
         # ylorrd 的黄→橙→红在面板上偏「火焰图」观感，用户要求换掉；
         # reds 是 ColorBrewer 顺序色带（近白 → 深红），去掉黄橙中段后更素净，
-        # 红系与 SM 的 ylgnbu（绿蓝）、VOD 的 darkgreen-yellow（墨绿→亮黄）色相分离。
+        # 红系与 SM 的 sm-paper（橙绿青蓝紫）、VOD 的 darkgreen-yellow（墨绿→亮黄）色相分离。
         # ⚠ ω 低值偏多 ⇒ 色带起点必须是浅色（不可用 magma / viridis 这类深起点，
         #   否则大面积糊成暗块），reds 起点 #fff5f0 满足。
         "palette": "reds",
@@ -70,10 +70,17 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "variable": "SM",
         "grid_preset": "ease2-global-9km",
         "label": "SM",
-        "palette": "ylgnbu",
+        # 2026-11-04（用户）：ylgnbu → sm-paper，量程 0–0.5 → 0–0.6。
+        # 色带取自用户指定的论文图 colorbar（橙黄→黄绿→绿→青→蓝→深紫蓝，
+        # 0.30 处最亮纯青），按 13 个等距节点连续插值、不分档。
+        # 色带定义在 catalog_seeds/palettes.json，前端表由
+        # Tools/generate_palette_config.py 生成；改这里必须两处（本注册表 +
+        # 下方兜底扫描循环）同步，否则兜底一跑就用旧色阶覆盖已落盘 meta。
+        # ⚠ vmax=0.6 是用户明确指定（原 0.5），勿擅自改回。
+        "palette": "sm-paper",
         "from_block_dir": True,
         "vmin": 0.0,
-        "vmax": 0.5,
+        "vmax": 0.6,
     },
     "omega_sf_vod_block_dir": {
         "variable": "VOD",
@@ -84,7 +91,7 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         # 历史：plasma（中段品红+荧光黄，嫌霓虹）→ magma（起点近纯黑 #000004，
         # VOD 低值偏多 ⇒ 大面积死黑，实测中位色 [0,0,4]）→ purple-orange
         # （起点深紫 #2d1b3d 不发黑）→ 本条。
-        # 与 SM 的 ylgnbu（绿蓝）、ω 的 reds（近白→深红）色相分离。
+        # 与 SM 的 sm-paper（橙绿青蓝紫）、ω 的 reds（近白→深红）色相分离。
         #
         # ⚠ vmax 保持 1.5（用户明确要求，勿动）：曾于 2026-10-20 试调到 0.75，
         # 被用户当场否决并回退。实测 VOD 反演值 p50≈0.03~0.22、p99≈0.54~0.71，
@@ -1863,8 +1870,10 @@ class PythonProviderResultBuilder:
                     # 2026-10-14 定位）。VOD 为 0–1.5，见 _MAPPABLE_PRODUCTS 注释。
                     # 2026-10-20：VOD 这条同时把 palette 由 viridis 对齐成主路径的
                     # darkgreen-yellow（原先两处 palette 本就不一致，兜底一跑就换色）。
+                    # 2026-11-04：SM 与主注册表同步改为 sm-paper / 0–0.6
+                    # （用户指定论文色带 + 0~0.6 量程），两处必须一致。
                     for variable, label, palette, vmin, vmax in (
-                        ("SM", "SM", "ylgnbu", 0.0, 0.5),
+                        ("SM", "SM", "sm-paper", 0.0, 0.6),
                         ("VOD", "VOD", "darkgreen-yellow", 0.0, 1.5),
                         ("OMEGA", "OMEGA", "cividis", 0.0, 0.5),
                     ):

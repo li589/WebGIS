@@ -227,6 +227,43 @@ _account_cooldown_until: dict[str, float] = {}
 _ACCOUNT_LIMIT_RE = re.compile(
     r"\b(401|403|429)\b|频率过于频繁|下载频繁|too often|rate.?limit", re.IGNORECASE
 )
+# 瞬时故障：门户偶发用 404 / 5xx 掩盖会话掉线或网关抖动，文件本身是好的。
+# 实测 2026-11-04：同一账号对 FY3D_..._20260117_2149 先返回 404，
+# 20 分钟后原样重取成功（37.5 MB）。这类错误**不该冷却**（不是限额），
+# 但必须换账号/重试，否则一次抖动就废掉整段日期区间。
+_TRANSIENT_NSMC_RE = re.compile(
+    r"\b(404|408|425|500|502|503|504)\b"
+    r"|timed? ?out|超时|连接.*(失败|超时|重置)"
+    r"|Connection.*(reset|aborted|refused|error)",
+    re.IGNORECASE,
+)
+# 多账号主动轮换游标：每处理一天把起始账号轮转一格，
+# 避免"每天 N 个时次"场景下第一个账号连续承压被限流。
+_nsmc_rotate_cursor = 0
+
+# 单日全部数据源失败的容忍比例（超过则整节点失败，防止静默产出残缺数据集）。
+_DEFAULT_MAX_FAILED_DAY_RATIO = 0.5
+
+
+def _is_transient_nsmc_error(exc: BaseException) -> bool:
+    """该异常是否属于"换个账号/等一会儿就能好"的瞬时故障。"""
+    return bool(_TRANSIENT_NSMC_RE.search(str(exc)))
+
+
+def _rotate_accounts(accounts: list[dict[str, str]]) -> list[dict[str, str]]:
+    """按全局游标把账号列表整体轮转一格（多账号主动轮换）。
+
+    原实现按"冷却到期时间"排序后从头遍历，只在报错时才轮到下一个账号，
+    因此一切正常时永远只用第一个。每天 10 个时次、连续几十天的场景下，
+    单账号必被限流。此函数保证每次处理新的一天都换一个起始账号。
+    """
+    global _nsmc_rotate_cursor
+    if len(accounts) <= 1:
+        return accounts
+    offset = _nsmc_rotate_cursor % len(accounts)
+    rotated = accounts[offset:] + accounts[:offset]
+    _nsmc_rotate_cursor = (_nsmc_rotate_cursor + 1) % len(accounts)
+    return rotated
 
 
 def _nsmc_accounts(entry: dict[str, object]) -> list[dict[str, str]]:
@@ -397,6 +434,8 @@ def _download_from_nsmc(
     ordered = sorted(
         accounts, key=lambda acc: _account_cooldown_until.get(_account_key(acc), 0.0)
     )
+    # 多账号主动轮换：每处理一天把可用账号整体轮转一格。
+    ordered = _rotate_accounts(ordered)
     failures: list[str] = []
     last_error: Exception | None = None
     for account in ordered:
@@ -447,6 +486,16 @@ def _download_from_nsmc(
                     f"cooldown {int(_ACCOUNT_COOLDOWN_SECONDS)}s)"
                 )
                 last_error = exc
+                continue
+            if _is_transient_nsmc_error(exc):
+                # 瞬时故障：不冷却（否则好账号被误封 10 分钟），换下一个账号再试
+                failures.append(f"{key}: transient ({message[:160]})")
+                last_error = exc
+                _nsmc_phase(
+                    f"账号 {key} 检索遇到瞬时错误，换下一个账号…",
+                    0.0,
+                    account=key,
+                )
                 continue
             raise
 
@@ -513,6 +562,17 @@ def _download_from_nsmc(
                 )
                 failures.append(f"{key}: limited during download ({message[:160]})")
                 last_error = exc
+                continue
+            if _is_transient_nsmc_error(exc):
+                # 瞬时故障（门户用 404 掩盖会话掉线/网关抖动）：换账号重来一遍。
+                # 已落盘且校验通过的文件会走 _local_download_ok 跳过，不会重下。
+                failures.append(f"{key}: transient during download ({message[:160]})")
+                last_error = exc
+                _nsmc_phase(
+                    f"账号 {key} 下载遇到瞬时错误，换下一个账号…",
+                    0.0,
+                    account=key,
+                )
                 continue
             raise
 
@@ -713,12 +773,11 @@ def _fetch_from_nas_smb(
             + ("…" if len(purged) > 5 else ""),
         )
 
-    smb_root = str(
-        ds.get("nas_smb_root") or os.getenv("CGDA_FY_NAS_SMB_ROOT") or ""
-    ).strip() or "Z:\\Chenhaojun\\Data"
-    remote_dir, band_names, remote_names = _nas_daily_targets(
-        satellite, date_ymd, ds
+    smb_root = (
+        str(ds.get("nas_smb_root") or os.getenv("CGDA_FY_NAS_SMB_ROOT") or "").strip()
+        or "Z:\\Chenhaojun\\Data"
     )
+    remote_dir, band_names, remote_names = _nas_daily_targets(satellite, date_ymd, ds)
 
     # 取远端目录末段作为 SMB 根下的子目录：
     # "/Chenhaojun/Data/fy3dhdf2425" → "fy3dhdf2425"（与 FileBrowser 风格
@@ -1100,6 +1159,16 @@ class FYDownloadModule(BaseModule):
         download_interval = _parse_float_param(
             resolved, "download_interval", 5.0, minimum=0.0
         )
+        # 单日"全部数据源失败"的容忍比例：超过即整节点失败。
+        # 缺省 0.5 —— 个别时次缺失（地面站接收空档）不该毁掉整段日期；
+        # 但过半日期拿不到说明数据源整体不可用，必须报错而不是静默产出残缺数据集。
+        max_failed_day_ratio = _parse_float_param(
+            resolved,
+            "max_failed_day_ratio",
+            _DEFAULT_MAX_FAILED_DAY_RATIO,
+            minimum=0.0,
+        )
+        max_failed_day_ratio = min(max_failed_day_ratio, 1.0)
 
         sources_to_try: list[str] = []
         if data_source == "nsmc":
@@ -1110,6 +1179,8 @@ class FYDownloadModule(BaseModule):
             sources_to_try = ["nsmc", "nas"]
 
         downloaded_days: list[str] = []
+        # 拿不到任何文件的日期（两源皆失败）：记下来继续跑，最后按比例决定成败。
+        failed_days: list[dict[str, str]] = []
         used_sources: set[str] = set()
         from modules.download_nodes import (
             _emit_download_progress,
@@ -1166,12 +1237,37 @@ class FYDownloadModule(BaseModule):
                             },
                         )
             if day_error is not None:
-                raise RuntimeError(
-                    f"fy_download: all sources failed for {day}. "
-                    f"Last error: {day_error} "
-                    f"(downloaded {len(downloaded_days)}/{len(days)} days)"
-                )
+                # 单日两源皆失败：记为缺口继续跑，不再让一次抖动废掉整段日期。
+                # 2026-11-04 事故：01-17 一个轨道文件被门户返 404，导致前 9 天
+                # 已下好的数据连同后续 15 天全部作废。
+                _msg = str(day_error).strip().replace("\n", " ")[:300]
+                failed_days.append({"date": day, "error": _msg})
+                if ctx.logger_adapter is not None:
+                    ctx.logger_adapter.emit_warning(
+                        "fy_download",
+                        f"[{day}] 全部数据源失败，跳过该日继续：{_msg}",
+                    )
             _day_cb(day_index + 1, total_days, 0, day)
+
+        if not downloaded_days:
+            _first = (
+                failed_days[0] if failed_days else {"date": "?", "error": "unknown"}
+            )
+            raise RuntimeError(
+                "fy_download: 所有日期均未取到数据 "
+                f"({len(failed_days)}/{len(days)} 天失败)。"
+                f"首条错误: {_first['date']} {_first['error']}"
+            )
+        if len(failed_days) > len(days) * max_failed_day_ratio:
+            raise RuntimeError(
+                f"fy_download: 失败天数过多 "
+                f"({len(failed_days)}/{len(days)} 天，超过上限比例 "
+                f"{max_failed_day_ratio:g})，疑似数据源整体不可用，"
+                "拒绝产出残缺数据集。缺失日期: "
+                + ", ".join(d["date"] for d in failed_days[:10])
+                + ("…" if len(failed_days) > 10 else "")
+                + f"。首条错误: {failed_days[0]['date']} {failed_days[0]['error']}"
+            )
 
         return _store_path_manifest(
             ctx,
@@ -1185,6 +1281,9 @@ class FYDownloadModule(BaseModule):
                 "end_date": days[-1],
                 "dates": downloaded_days,
                 "day_count": len(downloaded_days),
+                "failed_dates": [d["date"] for d in failed_days],
+                "failed_day_count": len(failed_days),
+                "failed_details": failed_days,
                 "local_dir": str(target_dir),
             },
         )

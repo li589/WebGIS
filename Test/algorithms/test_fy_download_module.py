@@ -173,6 +173,81 @@ class TestFYDownloadExecute(unittest.TestCase):
             self.assertIn("2025-12-01", msg)
             self.assertIn("network unreachable", msg)
 
+    def test_single_day_failure_skipped_and_recorded(self) -> None:
+        """单日两源皆失败不再整条中止：跳过该日、其余照常，并记录缺口。
+
+        背景（2026-11-04 事故）：01-17 一个轨道文件被门户返 404，
+        前 9 天已下好的数据连同后续 15 天全部作废。
+        """
+
+        def _nsmc(ctx, **kwargs):
+            if kwargs.get("date_path") == "2025.12.02":
+                raise RuntimeError("portal 404 on one orbit file")
+            return Path(kwargs["target_dir"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, extra, nsmc, _ = self._run(
+                tmp,
+                params={
+                    "start_date": "2025-12-01",
+                    "end_date": "2025-12-03",
+                    "data_source": "nsmc",
+                },
+                side_effects={"nsmc": _nsmc},
+            )
+        self.assertEqual(nsmc.call_count, 3)
+        self.assertEqual(extra["day_count"], 2)
+        self.assertEqual(extra["dates"], ["2025-12-01", "2025-12-03"])
+        self.assertEqual(extra["failed_dates"], ["2025-12-02"])
+        self.assertEqual(extra["failed_day_count"], 1)
+        self.assertIn("portal 404", extra["failed_details"][0]["error"])
+
+    def test_failed_day_ratio_exceeded_raises(self) -> None:
+        """失败天数超过容忍比例 → 报错，拒绝静默产出残缺数据集。"""
+
+        def _nsmc(ctx, **kwargs):
+            if kwargs.get("date_path") != "2025.12.01":
+                raise RuntimeError("portal down")
+            return Path(kwargs["target_dir"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(RuntimeError) as cm:
+                self._run(
+                    tmp,
+                    params={
+                        "start_date": "2025-12-01",
+                        "end_date": "2025-12-04",
+                        "data_source": "nsmc",
+                        # 4 天里 3 天失败（0.75）> 0.5 上限
+                    },
+                    side_effects={"nsmc": _nsmc},
+                )
+            msg = str(cm.exception)
+            self.assertIn("失败天数过多", msg)
+            self.assertIn("3/4", msg)
+
+    def test_max_failed_day_ratio_zero_is_strict(self) -> None:
+        """max_failed_day_ratio=0 → 任意一天失败即报错（需要严格时可选）。"""
+
+        def _nsmc(ctx, **kwargs):
+            if kwargs.get("date_path") == "2025.12.02":
+                raise RuntimeError("boom")
+            return Path(kwargs["target_dir"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(RuntimeError) as cm:
+                self._run(
+                    tmp,
+                    params={
+                        "start_date": "2025-12-01",
+                        "end_date": "2025-12-03",
+                        "data_source": "nsmc",
+                        "max_failed_day_ratio": 0,
+                    },
+                    side_effects={"nsmc": _nsmc},
+                )
+            self.assertIn("失败天数过多", str(cm.exception))
+
     def test_missing_start_date_raises(self) -> None:
         from modules.fy_download import FYDownloadModule
 
@@ -191,9 +266,11 @@ class TestNSMCAccountRotation(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        from modules.fy_download import _account_cooldown_until
+        import modules.fy_download as _fy
 
-        _account_cooldown_until.clear()
+        _fy._account_cooldown_until.clear()
+        # 主动轮换游标是进程级全局状态，测试间必须归零，否则用例互相串。
+        _fy._nsmc_rotate_cursor = 0
 
     def _ds(self, accounts: list[dict]) -> dict:
         return {"portal_credentials": {"nsmc": {"enabled": True, "accounts": accounts}}}
@@ -395,10 +472,13 @@ class TestNSMCAccountRotation(unittest.TestCase):
         self.assertEqual(len([c for c in calls if c["phase"] == "ensure"]), 2)
 
     def test_non_limit_error_propagates_without_cooldown(self) -> None:
+        """硬错误（成品校验失败）直接外抛、不进冷却——换账号也救不回来。"""
         import modules.fy_download as fy
         from ingest.nsmc_portal import NsmcDownloadError
 
-        fatal = NsmcDownloadError("NSMC HTTP 500: server error")
+        fatal = NsmcDownloadError(
+            "NSMC 下载后校验失败（大小/HDF 不可读）: x.HDF expected=1 actual=0"
+        )
         fake_cls, _ = self._fake_client({"a@x": fatal})
         accounts = [{"username": "a@x", "password": "p"}]
         with tempfile.TemporaryDirectory() as tmp:
@@ -414,6 +494,58 @@ class TestNSMCAccountRotation(unittest.TestCase):
                         target_dir=Path(tmp) / "out",
                     )
         self.assertEqual(fy._account_cooldown_until, {})
+
+    def test_transient_404_switches_account_without_cooldown(self) -> None:
+        """404 属瞬时故障：换下一个账号重试，且不把该账号打入冷却。
+
+        背景（2026-11-04 事故）：门户对同一文件偶发返 404，20 分钟后原样
+        重取成功。旧实现把 404 当"文件不存在"直接抛，导致 25 天任务全废。
+        """
+        import modules.fy_download as fy
+        from ingest.nsmc_portal import NsmcDownloadError
+
+        behavior = {
+            "a@x": NsmcDownloadError(
+                "NSMC 下载 HTTP 404（可能触发频控/会话失效）: x.HDF"
+            ),
+            "b@x": "ok",
+        }
+        fake_cls, calls = self._fake_client(behavior)
+        accounts = [
+            {"username": "a@x", "password": "pA"},
+            {"username": "b@x", "password": "pB"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            with patch("ingest.nsmc_portal.NsmcPortalClient", fake_cls):
+                fy._download_from_nsmc(
+                    _ctx(workspace),
+                    satellite="FY3D",
+                    date_path="2026.09.01",
+                    ds=self._ds(accounts),
+                    target_dir=Path(tmp) / "out",
+                )
+        ensured = [c["username"] for c in calls if c["phase"] == "ensure"]
+        self.assertEqual(ensured, ["a@x", "b@x"])
+        # 瞬时故障不该让账号进 10 分钟冷却（否则好账号被误封）
+        self.assertNotIn("a@x", fy._account_cooldown_until)
+
+    def test_rotate_accounts_round_robins(self) -> None:
+        """主动轮换：连续处理多天时起始账号逐日轮转。"""
+        import modules.fy_download as fy
+
+        fy._nsmc_rotate_cursor = 0
+        accounts = [
+            {"username": "a@x", "token": "", "password": "p"},
+            {"username": "b@x", "token": "", "password": "p"},
+            {"username": "c@x", "token": "", "password": "p"},
+        ]
+        starts = [fy._rotate_accounts(list(accounts))[0]["username"] for _ in range(4)]
+        self.assertEqual(starts, ["a@x", "b@x", "c@x", "a@x"])
+        # 单账号不应被轮转打乱
+        self.assertEqual(fy._rotate_accounts([accounts[0]]), [accounts[0]])
+        self.assertEqual(fy._rotate_accounts([]), [])
 
     def test_fy3f_orba_template_selected(self) -> None:
         """FY3F ORBA 走 FY3F_MWRI-_ORBA_L1 模板（含连字符命名）。"""

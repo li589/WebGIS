@@ -471,6 +471,43 @@ def _pick_stat_target(
     return None, f"当前可见（或已加载）的图层有多个：{names}。请指明要统计哪一个。"
 
 
+# 行政区名候选：够长才可能是名字，够短才不至于把整句吃进去。
+# 只做「候选提取」，真伪一律由 resolve_region 裁决（见 _parse_region_arg）。
+_REGION_CANDIDATE_RE = re.compile(
+    r"[\u4e00-\u9fa5]{2,10}?(?:特别行政区|自治区|自治州|省|市|地区|盟)"
+)
+
+
+def _parse_region_arg(message: str) -> str | None:
+    """从中文句子里抓行政区名（省/自治区/地级市），抓不到返回 None。
+
+    2026-11-04 新增：外部测试问「广州市的土壤水分是多少」，规则引擎原来的统计
+    分支只会算**整幅栅格**，于是「广州」被静默丢掉 —— 答出来的数看着像广州的、
+    其实是全球均值，比答不出来更糟。这里把行政区名解析出来，交给
+    ``_get_layer_statistics(region=...)`` 走行政边界掩膜。
+
+    校验一律回落到 ``resolve_region``：候选串先按长度从长到短试，
+    命中即返回（「广州市天河区」这种会先试长的、失败再试短的）。
+    """
+    text = str(message or "")
+    if not text:
+        return None
+    try:
+        from app.services.agent.region import resolve_region
+    except Exception:  # noqa: BLE001 - 区域库缺失时退化为「不做区域统计」
+        return None
+    candidates = sorted(
+        {m for m in _REGION_CANDIDATE_RE.findall(text)}, key=len, reverse=True
+    )
+    for cand in candidates[:8]:
+        try:
+            if resolve_region(cand) is not None:
+                return cand
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
 def _statistics_reply(
     text: str,
     layers: list[dict[str, Any]],
@@ -506,20 +543,54 @@ def _statistics_reply(
             raw_date = str(timeline.get("date") or "").strip()
             if raw_date:
                 day = raw_date
-    res = _get_layer_statistics(
-        {"catalog_id": target["catalog_id"], "time": day or None},
-        cred=None,
-    )
+    # 「广州市」「四川省」这类行政区名必须进 region，否则算出来的是全球均值，
+    # 用户会当成该市的值（外部测试 2026-11-04 就是这么错答的）。
+    region = _parse_region_arg(text)
+    stat_args: dict[str, Any] = {
+        "catalog_id": target["catalog_id"],
+        "time": day or None,
+    }
+    if region:
+        stat_args["region"] = region
+    res = _get_layer_statistics(stat_args, cred=None)
 
     name = _display(target)
+    scope_prefix = f"按「{region}」行政边界" if region else "整层"
     if not res.get("ok"):
         reason = str(res.get("error") or "统计未成功")
+        # 空片（整片 NoData）要单独说清：这不是「取数失败」，而是这一片本来就没有数据。
+        # 外部测试第 3 轮模型说「11 月 13 日没有对应日期」——日期在，是片子里没值。
+        period_start = str(res.get("period_start") or "").strip()
+        period_end = str(res.get("period_end") or "").strip()
+        block = ""
+        if period_start:
+            block = _readable_date(period_start)
+            if period_end and period_end != period_start:
+                block += f" 至 {_readable_date(period_end)}"
+        if res.get("valid_pixels") == 0 and block:
+            asked = str(res.get("requested_time") or "").strip()
+            asked_note = (
+                f"你问的 {_readable_date(asked)} 就落在这一片里，"
+                "这一片本身是空的（空产物），不是日期不存在。"
+                if asked and asked != str(res.get("actual_time") or "")
+                else ""
+            )
+            return {
+                "session_id": sid,
+                "reply": (
+                    f"「{name}」{scope_prefix}在 {block} 这一片**没有任何有效像元**"
+                    f"（整片 NoData，0/{res.get('total_pixels')}），因此无法给出均值。"
+                    f"{asked_note}"
+                    "本次只读统计，未创建图层、未提交工作流。"
+                ),
+                "ui_intents": intents,
+            }
         if res.get("available_blocks"):
             blocks = "、".join(str(b) for b in res["available_blocks"][:3])
             reason = f"{reason}（该图层可用时间块：{blocks}）"
         return {
             "session_id": sid,
-            "reply": f"「{name}」整层统计没有完成：{reason}。未创建图层、未提交工作流。",
+            "reply": f"「{name}」{scope_prefix}统计没有完成：{reason}。未创建图层、未提交工作流。",
             "ui_intents": intents,
         }
 
@@ -538,7 +609,7 @@ def _statistics_reply(
     # 图层名里往往已含来源（「SMAP 土壤水分」），就别再补一个（SMAP）
     suffix = f"（{source}）" if source and source not in name else ""
     lines = [
-        f"「{name}」{suffix}整幅栅格的只读统计：",
+        f"「{name}」{suffix}{scope_prefix}的只读统计：",
         f"- 均值：{float(mean):.4f} {unit}".rstrip()
         if mean is not None
         else "- 均值：—",
@@ -558,10 +629,30 @@ def _statistics_reply(
             else f"- 你请求的日期是 {_readable_date(requested)}，实际取的是上面那个时间块。"
         )
     lines.append(
-        "统计范围是整幅栅格的有效像元（已排除 NoData），不是点样本均值，也未按视口裁剪。"
+        f"统计范围是「{region}」行政边界内的有效像元（已排除 NoData），"
+        "不是矩形框，也未按视口裁剪。"
+        if region
+        else "统计范围是整幅栅格的有效像元（已排除 NoData），不是点样本均值，也未按视口裁剪。"
     )
     lines.append("本次只读统计，未创建图层、未写入产物、未提交工作流。")
     return {"session_id": sid, "reply": "\n".join(lines), "ui_intents": intents}
+
+
+def forced_statistics_reply(
+    message: str,
+    *,
+    client_context: dict[str, Any] | None = None,
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    """服务端强制走一次「整层/行政边界统计」，不走关键词分流。
+
+    2026-11-04 新增，给 ``orchestrator._statistics_fallback_reply`` 用：
+    模型这一轮**一个取数工具都没调**时，不能再靠 ``_STAT_VERB`` 那串关键词判断
+    （「是多少」压根不在里面，正是漏判的原因），直接进统计分支，算出真值。
+    """
+    sid = (session_id or "").strip() or str(uuid.uuid4())
+    layers = _normalize_layers(client_context)
+    return _statistics_reply(str(message or ""), layers, client_context, sid, [])
 
 
 def mock_chat(

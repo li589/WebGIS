@@ -168,18 +168,10 @@ const emit = defineEmits<{
               :class="`group-status-chip--${runGroupOf(row.groupId)?.status ?? 'computing'}`"
               >{{ groupStatusLabel(row.groupId) }}</span
             >
-            <span
-              v-if="typeof runGroupOf(row.groupId)?.progress === 'number'"
-              class="group-progress-track"
-              :title="`${runGroupOf(row.groupId)?.progress}%`"
-            >
-              <span
-                class="group-progress-fill"
-                :style="{
-                  width: `${Math.max(0, Math.min(100, runGroupOf(row.groupId)?.progress ?? 0))}%`,
-                }"
-              ></span>
-            </span>
+            <!-- 2026-11-04 用户要求：删掉组头那条青绿渐变小条。
+                 它其实是 runGroup.progress 的进度条（.group-progress-track），
+                 组跑完后停在某个中间值不再刷新，看起来像半截色带；而且左边
+                 已有 .group-status-chip 显示「计算中/失败/完成」，信息重复。 -->
             <span class="group-count"
               >{{ runGroupOf(row.groupId)?.memberInstanceIds.length ?? 0 }} 层</span
             >
@@ -327,6 +319,11 @@ const emit = defineEmits<{
               >
                 {{ ONLINE_PLAN_COPY.pendingBadge }}
               </button>
+              <!-- 2026-11-04 用户要求：隐藏行尾的「自动 / 在线 / 本地」来源路由徽标
+                   与独立的「在线」取数徽标。这两枚小字每个图层都挂一个，既占宽度、
+                   又只有内部人才看得懂（自动=本地优先、在线=钉死远程、本地=钉死本地）。
+                   未删除，取消下面整段注释即可恢复；恢复后点击可在 本地→在线→自动 间循环
+                   （逻辑仍在 cycleSourceRoute）。
               <button
                 v-if="getSourceRouteBadge?.(row.layer.catalogId)"
                 type="button"
@@ -346,6 +343,7 @@ const emit = defineEmits<{
                 title="此图层支持在线获取历史时间数据"
                 >在线</span
               >
+              -->
               <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
               <span v-else-if="row.layer.isImported" class="admin-tip-inline"
                 >导入 · {{ row.layer.importedGeometryType }} ·

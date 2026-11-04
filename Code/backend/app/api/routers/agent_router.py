@@ -558,6 +558,11 @@ def _sse_pack(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
+# 心跳间隔（秒）。必须远小于网关的 proxy_read_timeout（nginx.conf 里是 600s），
+# 15s 既能让 nginx 认为连接活着，也不至于刷屏。
+_SSE_HEARTBEAT_SECONDS = 15.0
+
+
 def _chat_result_to_response(result: dict[str, Any]) -> AgentChatResponse:
     usage_raw = result.get("usage")
     usage = AgentTokenUsage(**usage_raw) if isinstance(usage_raw, dict) else None
@@ -674,8 +679,17 @@ def agent_chat_stream(
                 q.put(None)
 
         threading.Thread(target=worker, daemon=True, name="agent-chat-stream").start()
+        # 2026-11-04：加心跳。原来这里是裸的 ``q.get()`` ——模型/工具在服务端卡住时
+        # 一个字节都发不出去，nginx 的 proxy_read_timeout 600s 一到就掐成 504，
+        # 前端显示「流式连接异常」（外部测试第 1 轮就是这么挂的）。
+        # SSE 注释行 ``:`` 开头，浏览器的 EventSource 与前端自研解析器都会忽略，
+        # 既保活又不改变消息语义。
         while True:
-            item = q.get()
+            try:
+                item = q.get(timeout=_SSE_HEARTBEAT_SECONDS)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
             if item is None:
                 break
             kind, data = item

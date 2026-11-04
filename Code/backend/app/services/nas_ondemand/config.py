@@ -146,17 +146,19 @@ PRODUCT_NAS_DIR_BY_VAR: dict[str, dict[str, str | tuple[str, ...]]] = {
 
 # ── 变量表：配色与量程口径 ────────────────────────────────────────────────────
 # ⚠ 口径来源：app/services/python_provider_result_builder.py 的 VARIABLE 预设，
-#   与现有导入产物 meta.json 完全一致（SM ylgnbu 0–0.5 / VOD darkgreen-yellow
+#   与现有导入产物 meta.json 完全一致（SM sm-paper 0–0.6 / VOD darkgreen-yellow
 #   0–1.5 / OMEGA reds 0–0.5）。**不是本模块新定的，不许擅自改**：
 #   VOD 的 vmax=1.5 是用户 2026-10-20 明确否决过 0.75 之后确定的现状。
+#   2026-11-04（用户）：SM 全校统一为 sm-paper / 0–0.6，本表同步，
+#   否则新建 NAS 层会退回 ylgnbu/0–0.5，与其它 8 个 SM 产物不一致。
 VARIABLES: dict[str, dict[str, object]] = {
     "SM": {
         "variable_id": "SM",
         "label": "SM",
         "title": "土壤水分",
-        "palette": "ylgnbu",
+        "palette": "sm-paper",
         "vmin": 0.0,
-        "vmax": 0.5,
+        "vmax": 0.6,
         "unit": "m³/m³",
     },
     "VOD": {
