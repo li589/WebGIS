@@ -105,6 +105,34 @@ export function useTimelineSync(
   /** 按需补帧：登记表 + 「当前显示哪一天」覆盖（见 stores/layers/ondemand-frame.ts） */
   const ondemand = useOnDemandFrameStore()
 
+  /**
+   * 「补帧身份键」—— 同一个图层在系统里有两个 id，必须取后端认的那个。
+   *
+   * 后端 `ONDEMAND_TARGETS` 的 key 是**产物目录名** `imported-<sha1>`，
+   * 也就是 `importedRaster.overlayLayerId`；而 `ActiveLayer.catalogId` 在导入、
+   * 恢复快照等入口会被改写成 `method-<...>` 或 `imported-<instanceId>`。
+   *
+   * 2026-11-05 用户实测「风云平均勾选后只有月份、SMAP 平均正常」：
+   * 判定只用了 catalogId ⇒ 永远查不到登记表 ⇒ 时间轴退回 meta 的 `native_step`。
+   * 风云平均那三层恰好是 `1M`/单片 ⇒ 月历；SMAP 平均是 `1d`/73 片 ⇒ 看着正常，
+   * 掩盖了同一个缺陷。请求本身能通，是因为发请求用的是 overlayLayerId。
+   *
+   * 返回 `''` = 该层确实没接按天取数（两个键都查过）。
+   */
+  function ondemandKeyOf(
+    layer:
+      | { catalogId?: string | null; importedRaster?: { overlayLayerId?: string | null } | null }
+      | null
+      | undefined,
+  ): string {
+    if (!layer) return ''
+    const overlayId = layer.importedRaster?.overlayLayerId
+    if (overlayId && ondemand.isOnDemandLayer(overlayId)) return overlayId
+    const catalogId = layer.catalogId
+    if (catalogId && ondemand.isOnDemandLayer(catalogId)) return catalogId
+    return ''
+  }
+
   // ── 基础 computed ─────────────────────────────────────────────────────
 
   /** 瓦片 API 用的预报偏移 */
@@ -207,10 +235,9 @@ export function useTimelineSync(
        * 所以这里优先认前端那层「当前显示哪一天」的覆盖，
        * 取不到才回落 time_list 的常规解析。
        */
-      const ondemandTag = ondemand.displayedDayTag(
-        layer.catalogId,
-        toCompactDate(currentDate.value),
-      )
+      const ondemandTag = ondemandKeyOf(layer)
+        ? ondemand.displayedDayTag(ondemandKeyOf(layer), toCompactDate(currentDate.value))
+        : null
       const resolved = resolveLayerEffectiveTime(layer, tRef)
       const sliceLabel = ondemandTag ?? (resolved?.slice ? formatSliceLabel(resolved.slice) : null)
       if (!sliceLabel) continue
@@ -538,7 +565,7 @@ export function useTimelineSync(
      * 只改**时间轴刻度**：不改该层 meta.json 的 native_step，
      * 也不改 snapTargetFromLayer 的落点算法 ⇒ 打开页面仍是原来的长序列。
      */
-    if (layer?.importedRaster?.timeList?.length && ondemand.isOnDemandLayer(layer.catalogId)) {
+    if (layer?.importedRaster?.timeList?.length && ondemandKeyOf(layer)) {
       return 'day'
     }
     const scienceSpec = temporalSpecFromActiveLayer(layer)
@@ -695,7 +722,7 @@ export function useTimelineSync(
       // 所以文案换成「拖到该日可取单日图」，不再说「无独立逐日帧」。
       const readyLabel =
         gran === 'day' && isSingleCrossDayBlock(scienceTimes)
-          ? ondemand.isOnDemandLayer(selectedCatalogId.value)
+          ? ondemandKeyOf(selectedActiveLayer.value)
             ? ONDEMAND_DAY_READY_LABEL
             : BLOCK_DAY_READY_LABEL
           : undefined

@@ -249,14 +249,46 @@ const {
  * 否则页面选中的是 ω（未登记按天取数）时会被判成「不用取」，画面停在整段块上。
  */
 const onDemandFrameStore = useOnDemandFrameStore()
+
+/**
+ * 「补帧身份键」：优先用 `importedRaster.overlayLayerId`（= 后端登记表与产物目录
+ * 真正用的 `imported-<sha1>`），查不到再退回 `catalogId`。
+ *
+ * 2026-11-05 用户实测「风云平均只有月历、SMAP 平均正常」：只查 catalogId 时
+ * 永远命中不了登记表（catalogId 可能是 `method-*`），时间轴就退回 meta 的
+ * `native_step`；风云平均恰好是 `1M`/单片 ⇒ 月历，SMAP 平均是 `1d`/73 片 ⇒ 看着没事。
+ */
+function ondemandKeyOfLayer(layer: {
+  catalogId?: string | null
+  importedRaster?: { overlayLayerId?: string | null } | null
+}): string {
+  const overlayId = layer?.importedRaster?.overlayLayerId
+  if (overlayId && onDemandFrameStore.isOnDemandLayer(overlayId)) return overlayId
+  const catalogId = layer?.catalogId
+  if (catalogId && onDemandFrameStore.isOnDemandLayer(catalogId)) return catalogId
+  return ''
+}
+
 const visibleOnDemandCatalogIds = computed(() =>
   workspace.activeLayers.value
-    .filter((l) => l.visible && onDemandFrameStore.isOnDemandLayer(l.catalogId))
-    .map((l) => l.catalogId),
+    .filter((l) => l.visible)
+    .map((l) => ondemandKeyOfLayer(l))
+    .filter((id): id is string => Boolean(id)),
 )
+
+/** 当前选中层若接了按天取数，给出它的补帧键；否则空串（调用方据此静默或提示） */
+const selectedOnDemandId = computed(() => {
+  const catalogId = selectedCatalogId.value
+  const layer = catalogId
+    ? workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
+    : null
+  if (!layer) return ''
+  return ondemandKeyOfLayer(layer)
+})
 
 const { notifyUserDateChange, ensureFrameForLayer } = useOnDemandFrame({
   selectedCatalogId,
+  selectedOnDemandId,
   visibleOnDemandIds: visibleOnDemandCatalogIds,
   currentDate,
   isPlaying,

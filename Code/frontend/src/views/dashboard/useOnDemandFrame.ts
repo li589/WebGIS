@@ -59,6 +59,12 @@ function formatTag(tag: string): string {
 
 export function useOnDemandFrame(deps: {
   selectedCatalogId: ComputedRef<string | null>
+  /**
+   * 选中层的「补帧身份键」（`imported-<sha1>`，= 后端登记表 key）。
+   * 选中层没接按天取数时是空串。调用方负责把 catalogId 换算成这个键 ——
+   * 2026-11-05 的教训：直接拿 catalogId 查登记表永远查不到。
+   */
+  selectedOnDemandId?: ComputedRef<string>
   /** 地图上当前可见的补帧层 catalogId（未点选图层时的取数对象） */
   visibleOnDemandIds: ComputedRef<string[]>
   currentDate: Ref<Date>
@@ -220,7 +226,11 @@ export function useOnDemandFrame(deps: {
     if (selected) {
       // 点选了具体图层就以它为准。它不是补帧层 ⇒ 本次一个都不动，
       // 否则用户在别的图层上拖日期会莫名其妙触发 NAS 取数。
-      return store.isOnDemandLayer(selected) ? [selected] : []
+      // 注意用「补帧身份键」而不是 catalogId：两者在部分入口并不相等。
+      const key = deps.selectedOnDemandId?.value || ''
+      if (key) return [key]
+      if (store.isOnDemandLayer(selected)) return [selected]
+      return []
     }
     return deps.visibleOnDemandIds.value.filter((id) => store.isOnDemandLayer(id))
   }
@@ -297,7 +307,18 @@ export function useOnDemandFrame(deps: {
       return
     }
 
-    if (selected && !store.isOnDemandLayer(selected)) {
+    /**
+     * 选中层的补帧键（`imported-<sha1>`）。**不能直接用 catalogId**：
+     * `ActiveLayer.catalogId` 在导入/快照恢复等入口可能是 `method-*` 或
+     * `imported-<instanceId>`，与后端登记表 key 对不上 ⇒ 这里会误判成
+     * 「这一层没接入按天取数」并直接 return，用户看到的就是「点了日期毫无反应」
+     * （2026-11-05 现场：风云平均 SM 与 SMAP 平均现象不同，就是这么来的）。
+     */
+    const selectedKey = () =>
+      deps.selectedOnDemandId?.value ||
+      (selected && store.isOnDemandLayer(selected) ? selected : '')
+
+    if (selected && !selectedKey()) {
       /**
        * 选中的图层不在登记表里。两种可能，必须分开处理：
        *  1. 登记表是**旧的**（后端刚加登记、页面没重开）⇒ 强制重拉一次就能救回来；
@@ -307,7 +328,7 @@ export function useOnDemandFrame(deps: {
       if (!reloadTried.has(selected)) {
         reloadTried.add(selected)
         void store.reload().then(() => {
-          if (store.isOnDemandLayer(selected)) {
+          if (selectedKey()) {
             notifyUserDateChange(date)
             return
           }
