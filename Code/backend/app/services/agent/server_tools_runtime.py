@@ -2476,6 +2476,63 @@ def _raster_full_stats(
         return {"ok": False, "error": f"栅格读取失败（可能不是 GeoTIFF 源）：{exc}"}
 
 
+def _slice_has_valid_pixels(raster_path: Any) -> bool | None:
+    """这一片栅格里究竟有没有**一个**有效像元（整幅读，不算统计量）。
+
+    返回 ``None`` = 读不了（文件缺失 / 非 GeoTIFF）——调用方必须当成「不知道」，
+    绝不能当成「空」，否则会把读取失败说成「该时段没有数据」。
+
+    用途：区分「整幅就是空的」和「只是你选的区域没覆盖」。
+    2026-11-05 外部测试报告：「11 月 13 日命中的 11 月 9—16 日块，全幅有效栅格
+    都是 0，仅换区域仍无法得到数值」——根因是上游该时段没有观测（本地 SMAP L3
+    2025-11 整月零文件 ⇒ 反演 mat 全 NaN ⇒ 物化成全 -9999 的空片），
+    跟用户选哪个省、哪个市毫无关系。
+    """
+    try:
+        import rasterio
+
+        with rasterio.open(raster_path) as ds:
+            data = ds.read(1, masked=True)
+            return int(data.count()) > 0
+    except Exception:
+        logger.debug("probe slice failed: %s", raster_path, exc_info=True)
+        return None
+
+
+def _slice_suggest_dates(
+    spec: Any, actual_key: str, *, want: int = 3, scan: int = 8
+) -> list[str]:
+    """空片时给出几个**确实有像元**的邻近时间片，供模型如实建议。
+
+    只从该层自己的 time_list 里挑（绝不凭空编日期），按与命中片的距离由近到远，
+    最多探 ``scan`` 片、返回 ``want`` 片。探测本身是整幅读，单次约几十毫秒，
+    所以只在「已经确认是空片」这一条冷路径上调用。
+    """
+    keys = [str(t) for t in (getattr(spec, "time_list", None) or []) if t]
+    if not keys:
+        return []
+    try:
+        idx = keys.index(str(actual_key))
+    except ValueError:
+        idx = 0
+    order = sorted(range(len(keys)), key=lambda i: (abs(i - idx), i))
+    out: list[str] = []
+    for i in order[:scan]:
+        if i == idx:
+            continue
+        key = keys[i]
+        try:
+            probe = spec.resolve_source_path(key)
+        except Exception:
+            continue
+        if probe is None or _slice_has_valid_pixels(probe) is not True:
+            continue
+        out.append(key)
+        if len(out) >= want:
+            break
+    return out
+
+
 def _get_layer_statistics(
     args: dict[str, Any],
     *,
@@ -2636,6 +2693,15 @@ def _get_layer_statistics(
         }
 
     stats = _raster_full_stats(src_path, bbox=bbox, geometry=region_geom)
+    # 空片兜底（2026-11-05，外部测试报告「11 月 9—16 日块全幅有效栅格都是 0」）：
+    # 「这一片整幅没数据」和「你选的区域没覆盖」是两件事，必须分开说。
+    # 只在「本次统计 0 个有效像元」时才多读一次整幅确认，正常路径零开销。
+    empty_slice = False
+    suggested_dates: list[str] = []
+    if not stats.get("ok") and not (stats.get("valid_pixels") or 0):
+        if _slice_has_valid_pixels(src_path) is False:
+            empty_slice = True
+            suggested_dates = _slice_suggest_dates(spec, str(actual_key or ""))
     facts = _temporal_facts(getattr(spec, "time_list", None) or [])
     # 命中块（这次真读的那一片）与整层跨度必须分开：
     # 旧实现把 facts["period_*"]（整层首尾 20251101~20260208）当成 period_*，
@@ -2686,9 +2752,20 @@ def _get_layer_statistics(
         **_temporal_shape_fields(getattr(spec, "time_list", None), layer_id=catalog_id),
         # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
         "value_basis": _value_basis(catalog_id, actual_key),
+        # 这一片整幅都没有有效像元（≠ 选中的区域没覆盖）：见函数内 empty_slice 注释
+        "empty_slice": empty_slice,
         **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
+    if empty_slice:
+        # 说清「这不是你的区域的问题」，并把可用的替代时间片一起交出去，
+        # 免得模型自己编日期、或让用户反复换省换市（2026-11-05 外部测试实测）。
+        payload["empty_slice_hint"] = (
+            f"时间片 {actual_key} 整幅没有任何有效像元，原因是上游这一时段没有观测入库，"
+            "物化出来就是一张全 NoData 的空片——与所选区域无关，换省/换市都算不出值。"
+            "回答必须讲明这一点，不能把「算不出均值」说成「该区域没有数据」"
+        )
+        payload["suggested_times"] = suggested_dates
     if time_source == "layer_default":
         payload["time_source_warning"] = (
             "没有拿到页面日期，本次统计用的是该图层的默认时间块 "

@@ -44,14 +44,18 @@ const rampStyle = computed(() =>
   targetLayer.value ? symbology.getColorRampStyle(targetLayer.value) : {},
 )
 
+/**
+ * 收起态显示的是**量程**（vmin–vmax，如 0–0.6），不是刻度值。
+ * 2026-11-05 起侧栏图例不再标量程起点 0（那是标尺左端，不是数据里有 0），
+ * 但迷你色标这行的语义就是"这条色带代表哪一段数值"，所以仍取真实量程。
+ */
 const rangeLabel = computed(() => {
   const layer = targetLayer.value
   if (!layer) return ''
-  const ticks = symbology.getLegendTicks(layer)
-  const first = ticks.ticks[0] ?? ''
-  const last = ticks.maxLabel ?? ''
-  if (!first && !last) return ''
-  return first && last ? `${first} – ${last}` : first || last
+  const lo = symbology.getSymbologyVmin(layer)
+  const hi = symbology.getSymbologyVmax(layer)
+  if (!lo && !hi) return ''
+  return lo && hi ? `${lo} – ${hi}` : lo || hi
 })
 
 const layerName = computed(() => targetLayer.value?.metricLabel ?? '')

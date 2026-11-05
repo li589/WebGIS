@@ -275,9 +275,9 @@ const emit = defineEmits<{
               "
               class="layer-legend"
             >
-              <!-- 2026-11-05 用户口径：色带上方标「低 / 高」，下方标 0 / 0.2 / 0.4 / >0.6。
-                   内部刻度用 space-between 铺满，正好落在色带的 0%、33%、67%、100% 处；
-                   右端写 ">0.6" 是因为渲染端把 ≥0.6 的值都 clip 到同一个端点色。 -->
+              <!-- 2026-11-05 用户口径（第二版）：色带上方标「低 / 高」，下方标 0 / 0.2 / 0.4 / ≥0.6。
+                   内部刻度用 space-between 铺满，正好落在色带的 0%、33%、67%、100%；
+                   右端写 "≥0.6"：渲染端把 ≥0.6 的有效值统一 clip 到端点深蓝。 -->
               <div class="legend-direction" aria-hidden="true">
                 <span>低</span>
                 <span>高</span>
@@ -292,7 +292,7 @@ const emit = defineEmits<{
                 >
                 <span
                   class="legend-max"
-                  :title="`≥ ${getLegendTicks(row.layer).maxLabel.slice(1)} 的值统一用端点色`"
+                  :title="`${getLegendTicks(row.layer).maxLabel} 的有效值统一用端点深蓝`"
                 >
                   {{ getLegendTicks(row.layer).maxLabel }}
                   <!-- 2026-10-15 用户要求：colorbar 标注单位。SM（体积含水量）= m³/m³；
