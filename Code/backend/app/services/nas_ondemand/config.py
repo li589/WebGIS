@@ -282,6 +282,20 @@ ONDEMAND_TARGETS: dict[str, dict[str, str]] = {
     "imported-731b37b59c97": {"product": "fy_raw", "variable": "VOD"},
     "imported-a8940443fd6d": {"product": "smap_raw", "variable": "SM"},
     "imported-5427e1020d63": {"product": "smap_raw", "variable": "VOD"},
+    # ── OMEGA（散射反照率）四层，2026-11-05 追加 ────────────────────────────
+    # 之前只登记了 SM / VOD，于是同一层组的 ω「拖日期完全没反应」——
+    # 其它变量都能取单日，唯独 ω 不行，用户看不出这是没登记还是没数据。
+    #
+    # ⚠ ω 与 SM/VOD **不是同一时间口径**，NAS 上的文件命名就不同：
+    #   · 平均组：``doy_DDD.mat``  ⇒ 该「年内日序」的多年气候态（366 个文件）
+    #   · 动态组：``YYYYMMDD_YYYYMMDD_exp0_….mat`` ⇒ 8 天块，块内各天共用一值
+    # 所以「按天取」在 ω 上是**取到与该日对应的一格**，而不是当天独立观测。
+    # 这一点由 ``temporal_basis_note()`` 如实回给前端，回执必须照说，不能
+    # 让人以为拿到了 2025-11-13 当天的反照率。
+    "imported-72aa577da95e": {"product": "fy_avg", "variable": "OMEGA"},
+    "imported-9a7cf36832cd": {"product": "smap_avg", "variable": "OMEGA"},
+    "imported-c6c55b8a9f4e": {"product": "fy_raw", "variable": "OMEGA"},
+    "imported-94501b455dcd": {"product": "smap_raw", "variable": "OMEGA"},
 }
 
 # NAS 成果的实际覆盖范围（前端据此提前拦掉明显不可能的日期，省一次往返）
@@ -353,3 +367,50 @@ def nas_dir_candidates(product: str, variable: str) -> tuple[str, ...]:
     if isinstance(raw, tuple):
         return raw
     return (raw,)
+
+
+# ── 时间口径（2026-11-05）────────────────────────────────────────────────────
+# 「按天取一帧」在不同变量上代表的东西不一样，回执必须说清，否则就是口径欺骗：
+
+TEMPORAL_BASIS_DAILY = "daily"
+TEMPORAL_BASIS_DOY_CLIM = "doy_climatology"
+TEMPORAL_BASIS_BLOCK = "block_8day"
+
+TEMPORAL_BASIS_LABEL: dict[str, str] = {
+    TEMPORAL_BASIS_DAILY: "逐日观测",
+    TEMPORAL_BASIS_DOY_CLIM: "年内日序气候态",
+    TEMPORAL_BASIS_BLOCK: "8 天块共用值",
+}
+
+
+def temporal_basis(product: str, variable: str) -> str:
+    """这一格数据真实的时间口径：逐日 / 日序气候态 / 8 天块。"""
+    if variable.upper() != "OMEGA":
+        return TEMPORAL_BASIS_DAILY
+    return (
+        TEMPORAL_BASIS_DOY_CLIM
+        if str(product).endswith("_avg")
+        else TEMPORAL_BASIS_BLOCK
+    )
+
+
+def temporal_basis_note(product: str, variable: str, date_tag: str) -> str | None:
+    """给前端的一句话解释；逐日观测返回 ``None``（不需要额外说明）。"""
+    basis = temporal_basis(product, variable)
+    if basis == TEMPORAL_BASIS_DAILY:
+        return None
+    if basis == TEMPORAL_BASIS_DOY_CLIM:
+        try:
+            doy = _parse_tag(date_tag).timetuple().tm_yday
+        except Exception:
+            return "该变量是年内日序（doy）的多年气候态，不是当天观测"
+        return (
+            f"该变量的这一帧是「年内第 {doy} 天」的多年气候态，"
+            f"不是 {date_tag} 当天的观测值"
+        )
+    try:
+        start, end = raw_block_span(date_tag)
+        span = f"{start:%Y-%m-%d} 至 {end:%Y-%m-%d}"
+    except Exception:
+        span = "所属的 8 天块"
+    return f"该变量的这一帧是 {span} 这个 8 天块内共用的一个值，不是当天独立观测"

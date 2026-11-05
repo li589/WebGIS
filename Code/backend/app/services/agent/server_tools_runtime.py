@@ -598,6 +598,131 @@ def _ondemand_frame_dates(catalog_id: Any) -> list[str]:
     return list(out)
 
 
+def _nas_reachable(timeout: float = 5.0) -> bool:
+    """NAS 隧道是否可达（快速 TCP 探测）。
+
+    ``nas_ondemand.config.DOWNLOAD_TIMEOUT`` 是 180 秒且带重试——隧道整个失效时，
+    一次「顺手补一天」能把对话卡三分钟以上。先花 5 秒连一下端口：不通就当场判失败，
+    让用户看到「取数服务不可用」，而不是对着转圈等。拿不到主机名时不预判（返回 True），
+    交给真实请求去处理。
+    """
+    try:
+        import socket
+        from urllib.parse import urlparse
+
+        from app.services.nas_ondemand import config as nas_config
+
+        loader = getattr(nas_config, "_load_nas_config", None)
+        base = str(loader()[0] or "") if callable(loader) else ""
+        parsed = urlparse(base)
+        host = parsed.hostname
+        if not host:
+            return True
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:  # 凭据缺失 / 域名解析失败 / 连接超时 一律按不可达
+        return False
+
+
+def _ensure_ondemand_frame(catalog_id: Any, date8: Any) -> dict[str, Any]:
+    """清单里没有这一天时，去 NAS 现取一张单日帧写进该图层目录。
+
+    2026-11-05 用户实测反馈：NAS 上明明有 2025 年 11 月的逐日成果，助手却只会
+    回「这一层只有 12 月的数据」。根因是助手读的只有 ``meta.time_list``，而补帧
+    接口 ``/nas-ondemand/frame`` 此前**只有前端拖时间轴**这一个入口，助手侧没有
+    任何调用——能力有，就是接不上。这里把它接上。
+
+    调用的是同一个 ``ensure_frame``，因此：配色/量程跟该层 ``meta`` 走、画幅跟该层
+    原有成品走、仍然**不写 meta.json**（时间清单不会被单日帧污染）。补完之后
+    ``_assert_time_available`` 会靠「目录里真有 ``preview_<tag>.png``」认出它。
+
+    任何异常都收敛成结构化字典返回，绝不抛给上层：取不到数不该让整轮对话挂掉。
+    """
+    lid = str(catalog_id or "").strip()
+    tag = _parse_date8(date8)
+    if not tag or not lid.startswith("imported-"):
+        return {"attempted": False, "ok": False, "reason": "invalid_input"}
+    try:
+        from app.services.nas_ondemand import config as nas_config
+
+        target = nas_config.ondemand_target(lid)
+    except Exception:  # 配置层异常不该影响统计主流程
+        logger.debug("ondemand target lookup failed for %s", lid, exc_info=True)
+        return {"attempted": False, "ok": False, "reason": "config_unavailable"}
+    if target is None:
+        return {
+            "attempted": False,
+            "ok": False,
+            "reason": "not_registered",
+            "hint": (
+                "该图层没有登记 NAS 逐日数据源，只能取时间清单里已有的时间片；"
+                "不要暗示「可以从 NAS 取」，也不要自己编日期。"
+            ),
+        }
+    if not _nas_reachable():
+        return {
+            "attempted": True,
+            "ok": False,
+            "reason": "nas_unreachable",
+            "date": tag,
+            "hint": (
+                "NAS 取数服务当前连不上，无法按需补取这一天。必须说成"
+                "「取数服务暂时不可用」，**不能说成「该日没有数据」**，"
+                "也不要建议用户换个区域再试（换区域同样取不到）。"
+            ),
+        }
+    try:
+        from app.services.nas_ondemand import service as nas_service
+
+        res = nas_service.ensure_frame(
+            str(target.get("product") or ""),
+            str(target.get("variable") or ""),
+            tag,
+            target_layer_id=lid,
+        )
+    except Exception as exc:
+        missing = type(exc).__name__ == "NasFileMissing"
+        return {
+            "attempted": True,
+            "ok": False,
+            "reason": "nas_missing" if missing else "fetch_failed",
+            "date": tag,
+            "detail": str(exc)[:220],
+            "hint": (
+                f"已尝试从 NAS 取 {tag} 的原始成果，但该日 NAS 上确实没有可用文件"
+                "——这属于上游这一天没有成果，与所选区域无关。"
+                if missing
+                else f"已尝试从 NAS 取 {tag}，但取数过程出错"
+                f"（{type(exc).__name__}）。必须说成「取数失败」，"
+                "不能谎称「该日没有数据」。"
+            ),
+        }
+    # 补帧刚写入新文件：立刻丢掉该层的单日帧缓存，否则 _value_basis 可能
+    # 把「按需补出」误判成「自带单日帧」，回答的表述就会错。
+    _OND_CACHE.pop(lid, None)
+    return {
+        "attempted": True,
+        "ok": True,
+        "date": tag,
+        "cached": bool(res.get("cached")),
+        "elapsed_ms": res.get("elapsed_ms"),
+        "nas_filename": res.get("nas_filename"),
+        # ω 不是逐日量：补帧服务会带回「气候态 / 块内共用」的口径，必须照传
+        "temporal_basis": res.get("temporal_basis"),
+        "temporal_basis_note": res.get("temporal_basis_note"),
+        "hint": (
+            f"这一帧是刚从 NAS 按需补取的 {tag}，回答里要说明「已按需从 NAS 取到」，"
+            "不要说得好像它原本就登记在时间清单里。"
+            + (
+                f" 口径提醒：{res.get('temporal_basis_note')}"
+                if res.get("temporal_basis_note")
+                else ""
+            )
+        ),
+    }
+
+
 def _temporal_shape_fields(time_list: Any, layer_id: Any = None) -> dict[str, Any]:
     """图层的「时序形态」——模型区分「逐日动态」与「整段合成/平均」的唯一依据。
 
@@ -689,7 +814,59 @@ def _temporal_shape_fields(time_list: Any, layer_id: Any = None) -> dict[str, An
     return out
 
 
-def _value_basis(catalog_id: Any, actual_key: Any) -> dict[str, Any]:
+def _layer_temporal_basis(catalog_id: Any, spec: Any = None) -> str:
+    """这一层的时间口径：逐日 / 日序气候态 / 8 天块。
+
+    2026-11-05：只有 OMEGA（散射反照率）不是逐日 ——
+    平均组 NAS 上是 ``doy_DDD.mat``（年内日序的多年气候态），
+    动态组是 8 天块，块内各天共用同一个 ω。
+
+    判定顺序（前两者任一命中即成立）：
+    1. 补帧登记表 ``ONDEMAND_TARGETS`` 里有这个 overlay 目录编号 ⇒ 直接看 product；
+    2. ``spec.label`` 是 OMEGA（目录里 meta 的变量名，比 catalog id 靠谱）；
+    3. catalog id 里带 ``omega`` / ``ω``（形如 ``method-smap-omega-doy-avg``）。
+    """
+    lid = str(catalog_id or "").strip()
+    cid = lid.lower()
+    is_omega = (
+        "omega" in cid
+        or "\u03c9" in cid
+        or str(getattr(spec, "label", "") or "").strip().upper() == "OMEGA"
+    )
+    if not is_omega:
+        return "daily"
+    try:
+        from app.services.nas_ondemand import config as nas_config
+
+        target = nas_config.ondemand_target(lid)
+        if target:
+            return (
+                "doy_climatology"
+                if str(target.get("product", "")).endswith("_avg")
+                else "block_8day"
+            )
+    except Exception:
+        logger.debug("temporal basis lookup failed: %s", lid, exc_info=True)
+    if cid.endswith("-avg") or "-avg-" in cid or cid.endswith("_avg"):
+        return "doy_climatology"
+    return "block_8day"
+
+
+def _basis_caveat(catalog_id: Any, key: Any, spec: Any = None) -> str | None:
+    """非逐日变量的口径说明；逐日返回 ``None``。措辞与 nas_ondemand 共用一套。"""
+    basis = _layer_temporal_basis(catalog_id, spec)
+    if basis == "daily":
+        return None
+    try:
+        from app.services.nas_ondemand import config as nas_config
+
+        product = "x_avg" if basis == "doy_climatology" else "x_raw"
+        return nas_config.temporal_basis_note(product, "OMEGA", str(key or ""))
+    except Exception:
+        return None
+
+
+def _value_basis(catalog_id: Any, actual_key: Any, spec: Any = None) -> dict[str, Any]:
     """这次的值到底出自哪种帧——回答表述的**唯一依据**。
 
     2026-10-28 实测的翻车：某层 ``time_list`` 只有一个 63 天块，目录里却已按需
@@ -702,6 +879,21 @@ def _value_basis(catalog_id: Any, actual_key: Any) -> dict[str, Any]:
     if not key:
         return {"kind": "none", "note": "没有命中任何时间片，不得给出数值。"}
     span = _format_block_key(key) or key
+    # ω 不是逐日量：先把真实口径定死，免得模型把气候态说成「当天观测」
+    caveat = _basis_caveat(catalog_id, key, spec)
+    if caveat:
+        if _layer_temporal_basis(catalog_id, spec) == "doy_climatology":
+            return {
+                "kind": "climatology",
+                "note": (
+                    f"{caveat}。必须说成「多年气候态 / 同期平均」，"
+                    f"严禁说成 {span} 当天的观测值。"
+                ),
+            }
+        return {
+            "kind": "block_shared",
+            "note": f"{caveat}。必须给块的起止日期，并说明块内各天是同一个值。",
+        }
     if "_" in key:
         return {
             "kind": "block",
@@ -2500,15 +2692,31 @@ def _slice_has_valid_pixels(raster_path: Any) -> bool | None:
 
 
 def _slice_suggest_dates(
-    spec: Any, actual_key: str, *, want: int = 3, scan: int = 8
+    spec: Any,
+    actual_key: str,
+    *,
+    want: int = 3,
+    scan: int = 8,
+    bbox: tuple[float, float, float, float] | None = None,
+    geometry: dict[str, Any] | None = None,
 ) -> list[str]:
     """空片时给出几个**确实有像元**的邻近时间片，供模型如实建议。
 
     只从该层自己的 time_list 里挑（绝不凭空编日期），按与命中片的距离由近到远，
     最多探 ``scan`` 片、返回 ``want`` 片。探测本身是整幅读，单次约几十毫秒，
     所以只在「已经确认是空片」这一条冷路径上调用。
+
+    给了 ``bbox`` / ``geometry`` 时改为**按该区域**探测（2026-11-05 追加）：
+    只建议「你这个区域在这天也真有像元」的日期。否则会出现
+    「建议 11-19」而 11-19 广州同样 0 像元，用户再问一次又是「没有」。
     """
     keys = [str(t) for t in (getattr(spec, "time_list", None) or []) if t]
+    # 补帧落盘的单日帧不进 time_list，但**确实可用**。不并进来时，
+    # 「清单只登记 1 帧」的层（如整月合成的风云平均层）永远给不出任何建议日期。
+    for _extra in _ondemand_frame_dates(getattr(spec, "layer_id", None)):
+        if _extra not in keys:
+            keys.append(_extra)
+    keys.sort()
     if not keys:
         return []
     try:
@@ -2525,7 +2733,17 @@ def _slice_suggest_dates(
             probe = spec.resolve_source_path(key)
         except Exception:
             continue
-        if probe is None or _slice_has_valid_pixels(probe) is not True:
+        if probe is None:
+            continue
+        if bbox is not None or geometry is not None:
+            # 按区域探测：只推荐「这个区域也真有像元」的日期
+            try:
+                probe_stats = _raster_full_stats(probe, bbox=bbox, geometry=geometry)
+            except Exception:
+                continue
+            if not (probe_stats.get("valid_pixels") or 0):
+                continue
+        elif _slice_has_valid_pixels(probe) is not True:
             continue
         out.append(key)
         if len(out) >= want:
@@ -2658,12 +2876,24 @@ def _get_layer_statistics(
     # prefer_finest=True：同一天若同时落在「8 天窗块」和「跨季季均块」里，
     # 取跨度最短的那一片。否则会拿到季均块的 0.166402，回答却说成"这一天"。
     actual_key = spec.resolve_time_key(spec_time, prefer_finest=True)
+    # 清单里没有这一天 ⇒ 先去 NAS 现取一张单日帧（2026-11-05 用户要求：
+    # 「NAS 上面有 25 年 11 月的数据啊，agent 不能调用 NAS 数据计算是吗」）。
+    # 此前补帧只有前端拖时间轴这一个入口，助手只能回「这一层没有这一天」。
+    # 只在「明确要了某一天」时才联网；没给日期时保持零开销。
+    ondemand_fetch: dict[str, Any] | None = None
+    if actual_key is None and requested:
+        ondemand_fetch = _ensure_ondemand_frame(catalog_id, requested)
+        if ondemand_fetch.get("ok"):
+            # 补帧已写入 preview_<requested>.png，同一 spec 对象即可解析出来
+            actual_key = spec.resolve_time_key(spec_time, prefer_finest=True)
     if actual_key is None:
         try:
             blocks = [str(t) for t in (getattr(spec, "time_list", None) or [])][:366]
         except Exception:
             blocks = []
-        return {
+        # 真实可用日期 = 清单里的 + 目录里已存在的按需单日帧（一个都不许自己编）
+        real_keys = sorted({*blocks, *_ondemand_frame_dates(catalog_id)})
+        payload_miss: dict[str, Any] = {
             "ok": False,
             "catalog_id": catalog_id,
             "display_name": _qualified_layer_name(
@@ -2675,8 +2905,21 @@ def _get_layer_statistics(
             "error": "该日期没有对应的栅格时间片",
             "available_blocks": blocks,
             # 报告 第 3 条：替代日期只能从真实时间片里挑，不许自己编
-            "available_dates": _nearby_dates(blocks, requested),
+            "available_dates": _nearby_dates(real_keys, requested),
         }
+        if ondemand_fetch is not None:
+            payload_miss["ondemand_fetch"] = ondemand_fetch
+            # 措辞必须区分「NAS 上没有」和「取数失败」，否则又是把两件事混成一件事
+            if ondemand_fetch.get("ok"):
+                payload_miss["error"] = (
+                    f"已从 NAS 补取 {requested}，但取回后仍解析不出该层的时间片"
+                )
+            elif ondemand_fetch.get("reason") == "nas_missing":
+                payload_miss["error"] = (
+                    f"该图层没有 {requested} 的栅格：已试过从 NAS 按需取这一天，"
+                    "但 NAS 上该日同样没有可用成果"
+                )
+        return payload_miss
 
     try:
         src_path = spec.resolve_source_path(actual_key)
@@ -2751,12 +2994,16 @@ def _get_layer_statistics(
         # 让回答能自证「这一层到底是逐日动态，还是跨段合成」
         **_temporal_shape_fields(getattr(spec, "time_list", None), layer_id=catalog_id),
         # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
-        "value_basis": _value_basis(catalog_id, actual_key),
+        "value_basis": _value_basis(catalog_id, actual_key, spec),
         # 这一片整幅都没有有效像元（≠ 选中的区域没覆盖）：见函数内 empty_slice 注释
         "empty_slice": empty_slice,
         **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
+    if ondemand_fetch is not None:
+        # 走到这里说明「清单里没有这一天、刚从 NAS 补取成功」：
+        # 模型必须说清「已按需补取」，不能讲得好像它本来就在清单里。
+        payload["ondemand_fetch"] = ondemand_fetch
     if empty_slice:
         # 说清「这不是你的区域的问题」，并把可用的替代时间片一起交出去，
         # 免得模型自己编日期、或让用户反复换省换市（2026-11-05 外部测试实测）。
@@ -2766,6 +3013,21 @@ def _get_layer_statistics(
             "回答必须讲明这一点，不能把「算不出均值」说成「该区域没有数据」"
         )
         payload["suggested_times"] = suggested_dates
+    elif not stats.get("ok") and not (stats.get("valid_pixels") or 0):
+        # 第三种状态（2026-11-05 实测）：整幅**有**数据，但所选区域一个有效像元都没有。
+        # 例：风云平均 SM 20251113 整幅 18.7 万有效，广州矩形 0/234——当天华南被云覆盖。
+        # 这既不是「该层没有这一天」，也不是「空片」，必须单独说清，否则用户会以为
+        # 换层/换日期都白搭。
+        payload["region_empty_hint"] = (
+            f"时间片 {actual_key} 整幅是有有效数据的，但所选范围"
+            f"（{region_full_name or '指定范围'}）内没有任何有效像元——"
+            "这是该区域在这一天被云/缺测覆盖，**不是**该图层缺这一天、也不是整幅空片。"
+            "回答必须说成「这一天这个区域没有有效观测」，可以建议换邻近日期或扩大范围，"
+            "禁止说成「该层没有这一天的数据」。"
+        )
+        payload["suggested_times"] = _slice_suggest_dates(
+            spec, str(actual_key or ""), bbox=bbox, geometry=region_geom
+        )
     if time_source == "layer_default":
         payload["time_source_warning"] = (
             "没有拿到页面日期，本次统计用的是该图层的默认时间块 "

@@ -150,6 +150,9 @@ def ensure_frame(
             "png": str(png_path),
             "bounds": str(bounds_path),
             "meta": {"time_list_size": len(time_list)},
+            # 命中本地也要说清这帧代表什么（ω 的帧不是当天观测）
+            "temporal_basis": config.temporal_basis(product, var),
+            "temporal_basis_note": config.temporal_basis_note(product, var, tag),
         }
 
     # ── 2. NAS 取一个 .mat（白名单 + GET）───────────────────────────────────
@@ -305,6 +308,9 @@ def ensure_frame(
         "bounds": str(bounds_path),
         "render": render_info,
         "time_list_size": len(time_list),
+        # ω 的帧不是当天观测：把真实口径一并回给前端，回执必须照说
+        "temporal_basis": config.temporal_basis(product, var),
+        "temporal_basis_note": config.temporal_basis_note(product, var, tag),
         "eviction": {
             "total_before": eviction["total_before"],
             "total_after": eviction["total_after"],

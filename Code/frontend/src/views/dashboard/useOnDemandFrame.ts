@@ -48,6 +48,12 @@ export type OnDemandFrameResult = {
   cached?: boolean
   /** 失败原因（人话，可直接展示） */
   message?: string
+  /**
+   * 这一帧的真实时间口径说明（2026-11-05）。
+   * ω 层「按天取」拿到的是日序气候态 / 8 天块，不是当天观测 ——
+   * 下游回执必须把这句话带上，不能只说「单日图」。
+   */
+  note?: string
 }
 
 /** `20251217` → `2025-12-17` */
@@ -154,11 +160,13 @@ export function useOnDemandFrame(deps: {
       const applied = String(result?.time_key || tag)
       store.setDayTag(layerId, applied)
       deps.onFrameReady()
+      // ω 层的帧不是当天观测：把后端给的口径说明原样带出去（逐日帧为空）
+      const basisNote = String(result?.temporal_basis_note || '').trim()
       deps.logOperation(
         'ondemand-frame',
         `时间轴取单日 ${formatTag(applied)} · ${
           result?.cached ? '本地已有' : 'NAS 取数'
-        } · ${result?.elapsed_ms ?? '?'}ms`,
+        } · ${result?.elapsed_ms ?? '?'}ms${basisNote ? ` · ${basisNote}` : ''}`,
       )
       /**
        * 成功也要给反馈。
@@ -170,7 +178,7 @@ export function useOnDemandFrame(deps: {
       banner.showNotice({
         message: `已切到 ${formatTag(applied)} 的单日图${
           result?.cached ? '（本地已有）' : '（刚从 NAS 取回）'
-        }`,
+        }${basisNote ? `。${basisNote}` : ''}`,
         catalogId: layerId,
         tone: 'info',
       })
@@ -178,6 +186,7 @@ export function useOnDemandFrame(deps: {
         ok: true,
         applied,
         cached: Boolean(result?.cached),
+        note: basisNote || undefined,
       }
     } catch (err) {
       if (noticeTimer) {

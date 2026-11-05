@@ -53,6 +53,14 @@ export type NasFrameResult = {
     bounds?: number[]
     png_bytes?: number
   } | null
+  /**
+   * 这一帧的真实时间口径（2026-11-05）。
+   * `daily` = 当天观测；`doy_climatology` = 年内日序多年气候态（ω 平均组）；
+   * `block_8day` = 8 天块共用值（ω 动态组）。
+   * 只有 `daily` 才能说「这天的单日图」，其余必须照 `temporal_basis_note` 说。
+   */
+  temporal_basis?: 'daily' | 'doy_climatology' | 'block_8day' | null
+  temporal_basis_note?: string | null
 }
 
 export type NasCacheState = {

@@ -66,6 +66,8 @@ export interface EnsureFrameResult {
   applied?: string
   cached?: boolean
   message?: string
+  /** 这一帧的真实时间口径说明（ω 层不是当天观测时由后端给出，必须照说） */
+  note?: string
 }
 
 export type OnDemandFrameProvider = (catalogId: string, date: Date) => Promise<EnsureFrameResult>
@@ -862,6 +864,20 @@ async function executeAgentUiIntentCore(
         )
         const fallback = isBlock ? `画面仍是时间块 ${eff.label}` : `实际显示的是 ${eff.label}`
         if (fetched?.ok) {
+          /**
+           * ω 层「按天取」拿到的不是当天观测（平均组是日序气候态、动态组是 8 天块）。
+           * 后端把口径写在 `note` 里，这里必须原样带上，且**不能再说「单日图」**
+           * —— 说成单日图就是口径欺骗（2026-11-05）。
+           */
+          const basisNote = String(fetched.note || '').trim()
+          if (basisNote) {
+            return {
+              ok: true,
+              message: `${shownName}已切到 ${requested}（${
+                fetched.cached ? '本地已有' : '刚从 NAS 取回'
+              }）。${basisNote}`,
+            }
+          }
           return {
             ok: true,
             message: `${shownName}已切到 ${requested}，显示的是这一天的单日图（${

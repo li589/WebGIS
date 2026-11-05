@@ -76,6 +76,9 @@ class FrameResponse(BaseModel):
     mat_bytes: int | None = None
     eviction: dict | None = None
     render: dict | None = None
+    # 这一帧的真实时间口径（2026-11-05）：ω 不是当天观测，前端回执要照说
+    temporal_basis: str | None = None
+    temporal_basis_note: str | None = None
 
 
 def _run_frame(fn, *args, **kwargs) -> FrameResponse:
