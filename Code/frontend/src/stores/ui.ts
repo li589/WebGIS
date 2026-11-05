@@ -301,6 +301,22 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  /**
+   * 直接把某图层的记忆时刻写成指定日期（不读当前时间轴）。
+   *
+   * 用途（2026-11-05）：默认图层「勾选先看月平均」。物化链改了 `meta.default_time`
+   * 之后，浏览器 localStorage 里可能还留着上个月份的旧记忆，切层时会被
+   * `restoreLayerTime` 恢复回去把默认帧顶掉 ⇒ 打开页面时统一按默认帧重写一次。
+   */
+  function setLayerTimeMemoryAt(catalogId: string | null | undefined, date: Date, hour = 0): void {
+    if (!catalogId) return
+    if (Number.isNaN(date.getTime())) return
+    layerTimeMemory.value = {
+      ...layerTimeMemory.value,
+      [catalogId]: { dateKey: toDateKey(date), hour },
+    }
+  }
+
   /** 恢复某图层记忆；无记忆则返回 false */
   function restoreLayerTime(catalogId: string | null | undefined): boolean {
     if (!catalogId || unifiedTimeLock.value) return false
@@ -420,6 +436,7 @@ export const useUiStore = defineStore('ui', () => {
     setUnifiedTimeLock,
     toggleUnifiedTimeLock,
     rememberLayerTime,
+    setLayerTimeMemoryAt,
     restoreLayerTime,
     applyDateHour,
     applyTimelineFromLayerGranularity,

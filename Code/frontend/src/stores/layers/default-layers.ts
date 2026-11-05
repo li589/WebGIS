@@ -657,6 +657,65 @@ async function alignTimelineToDefaultFrame(
 }
 
 /**
+ * 把「默认帧」写进各成员图层的时间记忆（2026-11-05）。
+ *
+ * 背景：`controlsTimeline: false` 的组不参与落轴，但用户切到它们时
+ * `useTimelineSync` 会走 `restoreLayerTime` 恢复该层上次看到的时刻。
+ * localStorage 里若还留着上个月份（四层以前默认 12 月），切层就会把时间轴
+ * 拽回 12 月，勾选后看到的不是默认帧。
+ *
+ * 做法：按各层 `meta.default_time`（只认区间帧）把记忆统一重写成该帧结束日，
+ * 与 `alignTimelineToDefaultFrame` 同口径。
+ *
+ * 为什么还要探一次接口：从工作区快照恢复的图层**不带** `defaultTime`（持久化字段里
+ * 没它），`timeList` 也可能是加默认帧**之前**的旧清单。清单里没有该帧 ⇒ 解析按
+ * 「最近」回落到上个月，勾选后看到的仍是 12 月。所以缺哪样都现场问一次服务端
+ * （meta 才是真源），并把清单写回内存，刷新生效一次、下次快照即带上。
+ */
+async function seedDefaultFrameMemory(
+  workspace: WorkspaceApi,
+  entry: DefaultLayerEntry,
+): Promise<void> {
+  const uiStore = useUiStore()
+  for (const member of entry.members) {
+    const layer = workspace.activeLayers.value.find(
+      (item) => item.importedRaster?.overlayLayerId === member.overlayId,
+    )
+    if (!layer?.importedRaster) continue
+    const raster = layer.importedRaster
+    let raw = String(raster.defaultTime ?? '').trim()
+    if (!raw || !(raster.timeList ?? []).includes(raw)) {
+      const probed = await probeOverlay(member.overlayId)
+      if (!raw) {
+        raw = String(probed?.defaultTime ?? '').trim()
+        if (raw) raster.defaultTime = raw
+      }
+      const probedList = probed?.timeList ?? []
+      if (raw && probedList.includes(raw) && !(raster.timeList ?? []).includes(raw)) {
+        raster.timeList = [...probedList]
+      }
+    }
+    const matched = /^(\d{8})_(\d{8})$/.exec(raw)
+    if (!matched) continue
+    const end = matched[2]!
+    const date = new Date(
+      Number(end.slice(0, 4)),
+      Number(end.slice(4, 6)) - 1,
+      Number(end.slice(6, 8)),
+      0,
+      0,
+      0,
+      0,
+    )
+    if (Number.isNaN(date.getTime())) continue
+    uiStore.setLayerTimeMemoryAt(layer.catalogId, date, 0)
+    // catalogId 在导入 / 快照恢复入口可能被改写成 imported-<instanceId>，
+    // 切层判定用的是它，这里两个键都记一份（与 alignTimelineToDefaultFrame 同样兜底）。
+    uiStore.setLayerTimeMemoryAt(member.overlayId, date, 0)
+  }
+}
+
+/**
  * 确保默认图层已挂载（幂等、静默降级）。
  *
  * 单项流程：
@@ -748,6 +807,19 @@ export async function ensureDefaultLayers(): Promise<void> {
         await alignTimelineToDefaultFrame(workspace, entry)
       } catch (err) {
         console.warn('[default-layers] 时间轴落点失败', entry.catalogId, err)
+      }
+    }
+
+    /**
+     * 时间轴落完之后，把四组各自的默认帧写进图层时间记忆。
+     * 必须放在落轴**之后**：落轴那一步会用当前时间轴覆盖风云组的记忆，
+     * 这里统一按各层 meta 的 default_time 收口，四组口径一致。
+     */
+    for (const entry of DEFAULT_LAYERS) {
+      try {
+        await seedDefaultFrameMemory(workspace, entry)
+      } catch (err) {
+        console.warn('[default-layers] 默认帧记忆写入失败', entry.catalogId, err)
       }
     }
   } catch (err) {

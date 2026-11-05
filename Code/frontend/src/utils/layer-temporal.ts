@@ -119,6 +119,33 @@ function latestCompleteMonthAnchor(spec: LayerTemporalSpec): {
   return null
 }
 
+/**
+ * 默认帧锚点（2026-11-05）：物化链写在 `meta.json` 的 `default_time` 是**区间帧**
+ * （`YYYYMMDD_YYYYMMDD`）且确实在 `time_list` 里时，落点优先用它。
+ *
+ * 为什么需要：产品口径是「勾选图层先看月平均」。`latestSlice` 取 start 最大的片，
+ * 7 月月均片加进来后最新片仍是 12 月（乃至次年 2 月）那一片 ⇒
+ * 切层 / 新加图层会把时间轴拽回 12 月，默认帧形同虚设。
+ *
+ * 只认区间帧：单日 `default_time` 与「最新切片」本就一致，不动它，
+ * 避免改变既有逐日产品的落点行为。
+ */
+function defaultFrameAnchor(
+  layer: ActiveLayer | null | undefined,
+  spec: LayerTemporalSpec,
+): { date: Date; hour: number; label: string } | null {
+  const raw = String(layer?.importedRaster?.defaultTime ?? '').trim()
+  const matched = /^(\d{8})_(\d{8})$/.exec(raw)
+  if (!matched) return null
+  // 必须真在清单里，否则解析不到任何切片，反而把时间轴拽到空档
+  if (!spec.slices.some((slice) => slice.label === raw)) return null
+  const end = matched[2]
+  const date = parseInstant(end)
+  if (!date) return null
+  // 与 default-layers.ts::alignTimelineToDefaultFrame 同口径：区间帧取结束日
+  return { date, hour: 0, label: raw }
+}
+
 export function snapTargetFromLayer(layer: ActiveLayer | null | undefined): {
   date: Date
   hour: number
@@ -128,6 +155,8 @@ export function snapTargetFromLayer(layer: ActiveLayer | null | undefined): {
   const spec = temporalSpecFromActiveLayer(layer)
   if (!spec) return null
   const granularity = timeStepToLegacyGranularity(spec.nativeStep)
+  const preferred = defaultFrameAnchor(layer, spec)
+  if (preferred) return { ...preferred, granularity }
   // 逐日产品：优先落到最新完整月，别停在月初孤零零的一天。
   if (granularity === 'day' && spec.nativeStep.value <= 1) {
     const monthly = latestCompleteMonthAnchor(spec)
