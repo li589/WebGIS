@@ -20,7 +20,7 @@ _PALETTES_PATH = (
 
 
 def _load_palettes_from_config() -> (
-    tuple[dict[str, list[tuple[int, int, int]]], dict[str, str]]
+    tuple[dict[str, list[tuple[int, int, int]]], dict[str, str], set[str]]
 ):
     def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
         value = hex_str.lstrip("#")
@@ -32,12 +32,21 @@ def _load_palettes_from_config() -> (
         for key, entry in raw.get("palettes", {}).items()
     }
     aliases = {str(k): str(v) for k, v in raw.get("backend_aliases", {}).items()}
+    # 2026-11-05：色带级可选开关 ``zeroTransparent``。
+    # 置 true 的色带在着色时把「值 <= 0」与 nodata 一样处理成全透明。
+    # 背景：土壤水分等物理量上 0 表示无观测/海面，若按色带起点（橙黄/浅土黄）
+    # 涂色，会被误读成「极干」。默认 false —— 其余色带行为完全不变。
+    zero_transparent = {
+        str(key)
+        for key, entry in raw.get("palettes", {}).items()
+        if bool(entry.get("zeroTransparent"))
+    }
     if not palettes or "viridis" not in palettes:
         raise ValueError("palettes.json invalid: viridis baseline missing")
-    return palettes, aliases
+    return palettes, aliases, zero_transparent
 
 
-_PALETTES, _PALETTE_ALIASES = _load_palettes_from_config()
+_PALETTES, _PALETTE_ALIASES, _ZERO_TRANSPARENT_PALETTES = _load_palettes_from_config()
 
 
 def resolve_palette_id(palette: str | None) -> str:
@@ -111,6 +120,7 @@ def _colorize_masked_band(
     max_value: float | None,
     nodata_mode: NodataMode = "transparent",
     nodata_rgb: tuple[int, int, int] = (32, 36, 48),
+    zero_transparent: bool = False,
 ):
     count = int(masked_array.count()) if hasattr(masked_array, "count") else 0
     if min_value is None:
@@ -155,6 +165,12 @@ def _colorize_masked_band(
     green = numpy.interp(norm, anchors, palette_colors[:, 1]).astype("uint8")
     blue = numpy.interp(norm, anchors, palette_colors[:, 2]).astype("uint8")
     mask = numpy.ma.getmaskarray(masked_array)
+    if zero_transparent:
+        # 色带声明了 zeroTransparent：把「<= 0」并入透明掩膜（外观与 nodata 一致）。
+        # 用 nan_to_num 规避 NaN 参与比较的 RuntimeWarning。
+        raw = numpy.ma.filled(masked_array, numpy.nan).astype("float64")
+        cmp = numpy.nan_to_num(raw, nan=1.0, posinf=1.0, neginf=-1.0)
+        mask = mask | ~numpy.isfinite(raw) | (cmp <= 0.0)
     if nodata_mode == "solid":
         nr, ng, nb = nodata_rgb
         red = numpy.where(mask, nr, red).astype("uint8")
@@ -191,6 +207,7 @@ def colorize_array_to_rgba(
         max_value=max_value,
         nodata_mode=normalize_nodata_mode(nodata_mode),
         nodata_rgb=parse_nodata_color(nodata_color),
+        zero_transparent=resolve_palette_id(palette) in _ZERO_TRANSPARENT_PALETTES,
     )
     return numpy.stack([red, green, blue, alpha], axis=-1)
 
@@ -286,6 +303,7 @@ class RasterPreviewService:
             max_value=max_value,
             nodata_mode=normalize_nodata_mode(nodata_mode),
             nodata_rgb=parse_nodata_color(nodata_color),
+            zero_transparent=resolve_palette_id(palette) in _ZERO_TRANSPARENT_PALETTES,
         )
 
         with memory_file_cls() as memory_file:
