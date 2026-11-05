@@ -283,7 +283,7 @@ export const GENERATED_WEATHER_PALETTES: Record<string, GeneratedPaletteDefiniti
       '#3C3B57',
     ],
     lineColor: 'rgba(255,255,255,0.08)',
-    label: '土壤水分·经典七色（≤0.02 透明）',
+    label: '土壤水分·经典七色（≤0.05 透明）',
     type: 'sequential',
     exposed: true,
   },
