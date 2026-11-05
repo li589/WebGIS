@@ -22,6 +22,7 @@ the bridge service itself.
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 import re
@@ -136,7 +137,36 @@ def _legend_ticks_from_range(vmin: object | None, vmax: object | None) -> list[f
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
 # 整月合成块 YYYYMM01_YYYYMM(月末).mat（D2 composite_period=month 产出）
-_CALENDAR_MONTH_MAT_RE = re.compile(r"^(\d{6})01_\1(\d{2})\.mat$", re.IGNORECASE)
+_CALENDAR_MONTH_MAT_RE = re.compile(r"^(\d{6})01_(\d{8})\.mat$", re.IGNORECASE)
+
+
+def _is_calendar_month_block(name: str) -> bool:
+    """是否是「整自然月」合成块：``YYYYMM01_YYYYMM{该月最后一天}.mat``。
+
+    2026-11-04 修：原正则 ``^(\\d{6})01_\\1(\\d{2})\\.mat$`` **只校验了"同月"，
+    没校验第二段是不是月末** —— 于是 8 天块 ``20251101_20251108.mat`` 也能命中
+    （前 6 位都是 202511，后两位 08 正好满足 \\d{2}），被当成整月块 ⇒
+    该图层被降级成 ``native_step=1M``：时间轴只剩"月"刻度，目录里明明有逐日/8天
+    数据却一片都不显示，用户看到的就是"选了单日没反应"。
+
+    现在要求第二段恰为该月最后一天才算整月块；跨月窗口（如
+    ``20260101_20260202.mat``，1 月的 32 天窗口）不是自然月，**不算**整月块。
+    """
+    m = _CALENDAR_MONTH_MAT_RE.match(str(name or ""))
+    if not m:
+        return False
+    month_key, end = m.group(1), m.group(2)
+    if end[:6] != month_key:  # 必须同一个月
+        return False
+    try:
+        year, month, day = int(end[:4]), int(end[4:6]), int(end[6:8])
+        if not 1 <= month <= 12:
+            return False
+        return day == calendar.monthrange(year, month)[1]
+    except (ValueError, calendar.IllegalMonthError):
+        return False
+
+
 _FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
 _DISPLAYABLE_RASTER_SUFFIXES = {".tif", ".tiff", ".geotiff", ".cog"}
 _SCIENCE_RASTER_SUFFIXES = {".hdf", ".h5", ".he5", ".nc", ".mat"}
@@ -1022,7 +1052,7 @@ class PythonProviderResultBuilder:
             # （如 20251201_20251231.mat）。存在整月块即切月口径：native_step=1M，
             # 且清单只登记月块（日帧文件保留在盘上，可随时切回日粒度）。
             has_monthly_block = any(
-                path.is_file() and _CALENDAR_MONTH_MAT_RE.match(path.name)
+                path.is_file() and _is_calendar_month_block(path.name)
                 for path in local_path.iterdir()
             )
             # 目录含单日 YYYYMMDD.mat（omega_avg_daily 逐日产品）→ 步长 1d，
@@ -1859,7 +1889,7 @@ class PythonProviderResultBuilder:
                     # 就按 1M 发布，否则保持原 8d/日帧行为（2026-10-18）。
                     try:
                         has_monthly_block = any(
-                            item.is_file() and _CALENDAR_MONTH_MAT_RE.match(item.name)
+                            item.is_file() and _is_calendar_month_block(item.name)
                             for item in block_dir.iterdir()
                         )
                     except OSError:
