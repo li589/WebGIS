@@ -22,6 +22,8 @@ const props = defineProps<{
   getSymbologyUnit: (layer: ActiveLayerDisplayLike) => string
   getSymbologyVmin: (layer: ActiveLayerDisplayLike) => string
   getSymbologyVmax: (layer: ActiveLayerDisplayLike) => string
+  /** 图例刻度（2026-11-05）：内部分档 + 右端 ">vmax" 标签 */
+  getLegendTicks: (layer: ActiveLayerDisplayLike) => { ticks: string[]; maxLabel: string }
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
@@ -273,18 +275,33 @@ const emit = defineEmits<{
               "
               class="layer-legend"
             >
+              <!-- 2026-11-05 用户口径：色带上方标「低 / 高」，下方标 0 / 0.2 / 0.4 / >0.6。
+                   内部刻度用 space-between 铺满，正好落在色带的 0%、33%、67%、100% 处；
+                   右端写 ">0.6" 是因为渲染端把 ≥0.6 的值都 clip 到同一个端点色。 -->
+              <div class="legend-direction" aria-hidden="true">
+                <span>低</span>
+                <span>高</span>
+              </div>
               <div class="legend-ramp" :style="getColorRampStyle(row.layer)"></div>
               <div class="legend-labels">
-                <span class="legend-min">{{ getSymbologyVmin(row.layer) }}</span>
-                <span class="legend-max">
-                  {{ getSymbologyVmax(row.layer) }}
+                <span
+                  v-for="(tick, tickIndex) in getLegendTicks(row.layer).ticks"
+                  :key="`tick-${tickIndex}`"
+                  class="legend-tick"
+                  >{{ tick }}</span
+                >
+                <span
+                  class="legend-max"
+                  :title="`≥ ${getLegendTicks(row.layer).maxLabel.slice(1)} 的值统一用端点色`"
+                >
+                  {{ getLegendTicks(row.layer).maxLabel }}
                   <!-- 2026-10-15 用户要求：colorbar 标注单位。SM（体积含水量）= m³/m³；
                        VOD / ω 为无量纲量 ⇒ 不显示单位（空串即不渲染）。
                       2026-10-16 用户要求：单位用括号括起来（如「0.5（m³/m³）」）。
                        单位来源见 useSidebarSymbology.getSymbologyUnit（按产物角色判定，
                        先排掉后端把变量标签写成 unit 的情况）。 -->
                   <span
-                    v-if="getSymbologyVmax(row.layer) && getSymbologyUnit(row.layer)"
+                    v-if="getSymbologyUnit(row.layer)"
                     class="legend-unit"
                     :title="`单位：${getSymbologyUnit(row.layer)}`"
                     >（{{ getSymbologyUnit(row.layer) }}）</span

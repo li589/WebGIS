@@ -146,6 +146,56 @@ export function useSidebarSymbology(
     return ''
   }
 
+  /** 刻度数字去尾零：0.6 → "0.6"，1.5 → "1.5"，0 → "0"，0.30000000000000004 → "0.3" */
+  function formatTickValue(value: number): string {
+    if (!Number.isFinite(value)) return ''
+    const rounded = Math.round(value * 1000) / 1000
+    return String(rounded)
+  }
+
+  /**
+   * 图例的完整刻度（2026-11-05 用户口径）。
+   *
+   * 用户要的四段式：内部分成 `0 / 0.2 / 0.4`，右端显示 `>0.6`。
+   * 之所以右端写成 `>`：渲染端把 ≥vmax 的值统一 clip 到端点色
+   * （`_colorize_masked_band` 的 `numpy.clip(norm, 0, 1)`），
+   * 所以 0.6 与 0.7 是**同一个颜色**，标成 ">0.6" 比标 "0.6" 更诚实。
+   *
+   * 内部分档数固定为 3 段（即 2 个内部刻度）：对 0–0.6 正好落在
+   * 0.2 / 0.4，与用户要求的刻度一致；其它变量（如 VOD 0–1.5）会得到
+   * 0.5 / 1.0，同样是三等分的自然刻度。
+   */
+  function getLegendTicks(layer: ActiveLayerDisplayLike): {
+    ticks: string[]
+    maxLabel: string
+  } {
+    void overlaySymbologyStore.version
+    const { hint } = resolveEffectiveLayerSymbology({
+      paletteOverride: layer.paletteOverride,
+      vminOverride: layer.vminOverride,
+      vmaxOverride: layer.vmaxOverride,
+      renderHint: (layer.renderHint ?? null) as WeatherLayerRenderHint | null,
+      overlayMeta: overlaySymbologyStore.getMeta(resolveOverlayMetaId(layer)),
+    })
+    const raw = hint?.legend_ticks
+    if (!raw || raw.length < 2) {
+      // 拿不到声明刻度就退回旧的「首 / 末」两段，至少不空着
+      const lo = getSymbologyVmin(layer)
+      const hi = getSymbologyVmax(layer)
+      return { ticks: lo ? [lo] : [], maxLabel: hi }
+    }
+    const lo = Number(raw[0])
+    const hi = Number(raw[raw.length - 1])
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) {
+      return { ticks: [String(raw[0])], maxLabel: String(raw[raw.length - 1] ?? '') }
+    }
+    const step = (hi - lo) / 3
+    return {
+      ticks: [lo, lo + step, lo + 2 * step].map(formatTickValue),
+      maxLabel: `>${formatTickValue(hi)}`,
+    }
+  }
+
   function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string> {
     void overlaySymbologyStore.version
     const overlayMeta = overlaySymbologyStore.getMeta(resolveOverlayMetaId(layer))
@@ -176,6 +226,7 @@ export function useSidebarSymbology(
     getSymbologyUnit,
     getSymbologyVmin,
     getSymbologyVmax,
+    getLegendTicks,
     getColorRampStyle,
   }
 }

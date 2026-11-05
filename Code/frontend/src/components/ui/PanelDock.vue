@@ -229,6 +229,9 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
             <span></span><span></span><span></span>
           </button>
           <span class="panel-dock__label">{{ panelLabel }}</span>
+          <!-- 标题栏附加内容（2026-11-05）：图层面板用它放「收起后仍可见的迷你色标」。
+               插槽把 collapsed 透传出去，由调用方决定何时显示。 -->
+          <slot name="head-extra" :collapsed="collapsed" />
           <div class="panel-dock__actions">
             <button
               v-if="collapsible"

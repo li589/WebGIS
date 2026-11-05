@@ -398,6 +398,11 @@ def _preserve_existing_time_slices(
             continue
         if not (isinstance(old_bounds, list) and len(old_bounds) == 4):
             continue
+        # 2026-11-05：历史切片里「整片无有效像元」的也跳过——否则本次新算的
+        # 空块刚被摘掉，又被这里按旧 meta 并回清单，等于前功尽弃
+        # （SMAP 动态层 11-01~11-24 三块就是这么一直挂在时间轴上的）。
+        if _count_valid_geotiff_pixels(tif_old) <= 0:
+            continue
         kept.append(old_label)
         bounds_by_time[old_label] = [float(v) for v in old_bounds]
     if not kept:
@@ -432,10 +437,17 @@ def _upsert_block_dir_timeseries_locked(
     time_list: list[str] = []
     bounds_by_time: dict[str, list[float]] = {}
     valid_count_by_time: dict[str, int] = {}
+    # 2026-11-05：整片无有效像元的时间块**不进时间轴**。
+    # 现场：SMAP 动态散射约束产品 11-01~11-24 三块，源 mat 里 SM/VOD/OMEGA
+    # 全是 NaN（上游 SMAP_Origin_Data 在 2025-11 一天数据都没有），却照样被
+    # 物化成全透明的空帧挂上时间轴 ⇒ 用户点进去统计返回「有效像元 0」，
+    # 反复反馈「这一块为什么全是 0」。空帧对用户没有信息量，摘掉更诚实；
+    # 同时把标签记下来，在运行日志里说清是哪几天缺数据（而不是静默消失）。
+    all_labels: list[str] = [str(lbl) for lbl, _ in mats]
+    empty_labels: list[str] = []
     source_crs = "EPSG:6933"
 
     for time_label, mat_path in mats:
-        time_list.append(time_label)
         png_path = dest_dir / f"preview_{time_label}.png"
         tif_path = dest_dir / f"source_{time_label}.tif"
         bounds_path = dest_dir / f"bounds_{time_label}.json"
@@ -451,6 +463,10 @@ def _upsert_block_dir_timeseries_locked(
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 pass
             valid_count_by_time[time_label] = _count_valid_geotiff_pixels(tif_path)
+            if valid_count_by_time[time_label] > 0:
+                time_list.append(time_label)
+            else:
+                empty_labels.append(time_label)
             continue
 
         tmp_tif = import_paths.imports_dir() / "_tmp" / f"{layer_id}_{time_label}.tif"
@@ -464,6 +480,10 @@ def _upsert_block_dir_timeseries_locked(
         shutil.copy2(tmp_tif, tif_path)
         tmp_tif.unlink(missing_ok=True)
         valid_count_by_time[time_label] = _count_valid_geotiff_pixels(tif_path)
+        if valid_count_by_time[time_label] > 0:
+            time_list.append(time_label)
+        else:
+            empty_labels.append(time_label)
 
         # 时间序列必须用全网格框（勿按有效像元裁剪），否则各时刻 bounds 不一致。
         # 预览渲染到 EPSG:3857：MapLibre 底图为 Web Mercator，ImageSource 按 WGS84
@@ -517,6 +537,29 @@ def _upsert_block_dir_timeseries_locked(
         bounds_by_time,
         calendar_month_only=calendar_month_only,
     )
+
+    if empty_labels:
+        logger.warning(
+            "upsert_block_dir_timeseries: %s 有 %d 个时间块整片无有效像元，"
+            "已从时间轴摘除（文件保留在盘上）：%s",
+            dest_dir.name,
+            len(empty_labels),
+            "、".join(empty_labels[:12]),
+        )
+
+    if not time_list and empty_labels:
+        # 极端兜底：整层所有块都是空的（上游整段时间没数据）。此时若照摘不误，
+        # 会抛「未能物化任何时间切片」并把 run 判失败 —— 那是把「数据缺」
+        # 说成「程序坏」。保留全部标签，让上层按「有效像元 0 / 无数据」如实
+        # 告知用户（统计链路已会明确回「整片无有效像元」）。
+        time_list.extend(all_labels)
+        time_list.sort()
+        logger.warning(
+            "upsert_block_dir_timeseries: %s 全部 %d 个时间块都没有有效像元，"
+            "保留清单以避免误判为运行失败",
+            dest_dir.name,
+            len(all_labels),
+        )
 
     if not time_list:
         raise RuntimeError("未能物化任何时间切片")

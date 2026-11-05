@@ -14,6 +14,7 @@ import { useDataImportFlow } from '../data-manager/core/workspace-store'
 import PanelDock from '../components/ui/PanelDock.vue'
 import InfoPanel from '../components/InfoPanel.vue'
 import LayerSidebar from '../components/LayerSidebar.vue'
+import SidebarMiniLegend from '../components/layer-sidebar/SidebarMiniLegend.vue'
 import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
 import TimelineActionBanner from '../components/TimelineActionBanner.vue'
@@ -826,6 +827,10 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           :max-height="layerPanelDimensions.maxHeight"
         >
           <LayerSidebar @select-layer="handleLayerSelect" @zoom-to-layer="handleZoomToLayer" />
+          <!-- 2026-11-05 用户要求：面板收起时保留一个小色标（当前选中层的配色） -->
+          <template #head-extra="{ collapsed: panelCollapsed }">
+            <SidebarMiniLegend v-if="panelCollapsed" />
+          </template>
         </PanelDock>
       </div>
 

@@ -4,6 +4,7 @@
 import { nextTick } from 'vue'
 import type { AgentUiIntent } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { useOnDemandFrameStore, toCompactDate } from '../../stores/layers/ondemand-frame'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import { safeLog } from '../../stores/log'
 import { useUiStore } from '../../stores/ui'
@@ -410,6 +411,18 @@ function describeSettledTimeline(catalogId: string, moved: boolean): string {
   const layer = workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
   const list = (layer?.importedRaster?.timeList ?? []).map((t) => String(t))
   if (!list.length) return head
+  /**
+   * ★ 2026-11-05 修（外部测试报告第 2 条的现场）：
+   * 「按需补出的单日帧」**不在** `importedRaster.timeList` 里（补帧刻意不写 meta），
+   * 所以下面按 time_list 判块时，明明画面已经换成 12-15 的单日图，
+   * 回执仍然补一句「该日落在时间块 20251211_20251218 内」——
+   * 用户看到的就是「说切了单日，又说是块」，自相矛盾。
+   * 判块之前先问补帧登记表：这一层这天到底有没有单日帧。
+   */
+  const ondemand = useOnDemandFrameStore()
+  const ondemandKey = layer?.importedRasterOverlayLayerId || catalogId
+  const dayTag = ondemand.displayedDayTag(ondemandKey, toCompactDate(ui.currentDate))
+  if (dayTag) return `${head}，显示的是这一天的单日图`
   const eff = resolveEffectiveFrame(list, ui.currentDate, ui.currentHour)
   if (!eff) return head
   // 时间块 key 形如 20251211_20251218：落在块内 ≠ 真切到了那一天

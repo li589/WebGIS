@@ -1699,6 +1699,28 @@ h2 {
   gap: 0.2rem;
 }
 
+/* 2026-11-05 用户要求：色带上方一行「低 / 高」，说明色带方向。
+   两端与色带首末对齐，字号比刻度再小半档，避免抢视觉。 */
+.legend-direction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+/* 内部刻度（0 / 0.2 / 0.4）：与 .legend-max 同款字体，靠 space-between 落位 */
+.legend-tick {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+  line-height: 1;
+}
+
 .legend-min,
 .legend-max {
   color: var(--text-muted);

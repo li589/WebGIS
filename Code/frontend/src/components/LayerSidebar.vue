@@ -1049,6 +1049,7 @@ onMounted(() => {
       :get-symbology-unit="symbology.getSymbologyUnit"
       :get-symbology-vmin="symbology.getSymbologyVmin"
       :get-symbology-vmax="symbology.getSymbologyVmax"
+      :get-legend-ticks="symbology.getLegendTicks"
       :availability-class="availabilityClass"
       :get-category-name="getCategoryName"
       :supports-online-temporal="supportsOnlineTemporal"
