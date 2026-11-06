@@ -1854,9 +1854,20 @@ h2 {
   gap: 0.2rem;
 }
 
+/* 2026-11-06 用户要求：「数据时间」要跟同一行其它文字一个颜色。
+   ⚠ 原因：.admin-tip-inline 用的是 var(--accent)，而 .layer-item 上被注入
+   `--accent: row.layer.accentColor`（每个图层自己的主题色），于是日期变成粉/紫/橙等
+   彩色，而图层名是 var(--text-primary) 的白色，同一行两种颜色。
+   日期是信息、不是品牌标识 ⇒ 直接取中性正文色，不再跟随图层强调色。
+   选择器写成 .layer-item .admin-tip-inline.layer-date（0,3,0）是为了压过
+   文件末尾 `:global([data-theme='light']) .admin-tip-inline` 那条浅色覆盖。 */
+.layer-item .admin-tip-inline.layer-date {
+  color: var(--text-primary);
+}
+
 .layer-date-icon {
   flex-shrink: 0;
-  opacity: 0.85;
+  /* 与文字完全同色：不再降透明度（0.85 会让图标看着比文字浅一档） */
   user-select: none;
 }
 
