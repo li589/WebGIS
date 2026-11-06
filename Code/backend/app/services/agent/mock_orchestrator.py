@@ -730,11 +730,29 @@ def resolve_entities(
             layer_from = "variable"
     # 以上都不成立才看页面选中 / 唯一可见（保留旧行为，但降到最后）
     if target is None:
-        target, why = _pick_stat_target(layers)
-        if target is not None:
-            layer_from = "page"
-        elif prior.get("layer_name"):
-            # 上一轮算的那一层已经不在地图上了：宁可说不知道，也不要用别的层顶上
+        # ★ 2026-11-06 修：用户已经点明变量时，兜底**只能在同变量的层里挑**。
+        # 旧实现把全部图层交给 _pick_stat_target，于是「土壤水分的平均值是多少」
+        # 会拿页面上选中的「等效散射 ω」算完、再印一个很正式的标题——变量明明
+        # 认对了（sm），选层却没受它约束，等于自己打自己。
+        same_var = _var_layers()
+        if variable and same_var:
+            target, why = _pick_stat_target(same_var)
+            if target is not None:
+                layer_from = "page"
+        elif variable:
+            # 页面上压根没有这个变量的层：说清楚，不要换一个顶上去
+            why = (
+                f"当前地图上没有「{dialogue_state.VARIABLE_LABELS.get(variable, variable)}」"
+                "这一层的可统计版本。请先把它加回地图，或直接说图层名。"
+            )
+        else:
+            target, why = _pick_stat_target(layers)
+            if target is not None:
+                layer_from = "page"
+        if target is None and not (variable and same_var) and prior.get("layer_name"):
+            # 上一轮算的那一层已经不在地图上了：宁可说不知道，也不要用别的层顶上。
+            # （用户本轮已点明变量、且页面上确有该变量的层时除外——那种情况
+            #   上面给的「这几个同变量层，你要哪个」更贴题。）
             why = (
                 f"你上一轮问的是「{prior['layer_name']}」，这一层现在不在页面上，"
                 "我不确定该统计哪一层。请先把它加回地图，或直接说要统计的图层名。"
@@ -839,6 +857,23 @@ def _statistics_reply(
         return {
             "session_id": sid,
             "reply": entities.get("why") or "请先指定一个图层。",
+            "ui_intents": intents,
+            "topic_state": {},
+        }
+
+    # ★ 通用防线：与选层逻辑解耦。将来谁再改选层、正则或兜底顺序，只要「用户
+    # 说的变量」和「实际挑中的层变量」对不上，就在这里被拦住——绝不拿另一个
+    # 变量算完、再印一个看着很正式的标题（2026-11-06：问土壤水分、答等效散射 ω）。
+    said_var = str(entities.get("variable") or "")
+    target_var = dialogue_state.variable_from_name(_display(target))
+    if said_var and target_var and said_var != target_var:
+        return {
+            "session_id": sid,
+            "reply": (
+                f"你说的是「{dialogue_state.VARIABLE_LABELS.get(said_var, said_var)}」，"
+                f"但按当前页面能统计的是「{_display(target)}」——两个不是同一个变量，"
+                "我不拿它顶替。请先确认要统计哪一层（也可以直接说完整图层名）。"
+            ),
             "ui_intents": intents,
             "topic_state": {},
         }

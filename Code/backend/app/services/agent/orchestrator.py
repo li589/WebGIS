@@ -831,6 +831,10 @@ def _build_system(
         "- 这类追问里，**页面当前选中哪一层与取数对象无关**。哪怕 client_context 的 "
         "selected 指向另一层，也要用本会话记录的那一层；真要改用别的层，必须在回答里"
         "写明「这次改用 X 层」。\n"
+        "- 用户点名了变量（土壤水分 / VOD / 等效散射 ω）时，取数工具的 catalog_id 必须"
+        "是**同一变量**的层：页面选中的是别的变量时，改用同变量的层，或用一句话反问"
+        "「哪一个（来源+口径）」，**绝不拿页面选中层顶替**——那会答出一个看着很正式、"
+        "其实答非所问的数字。\n"
         "- 区域一旦确认过，就不要再退回「整幅」。只有在用户明确说「全图 / 全球 / 整层 / "
         "不限区域」时才去掉区域。回答里要点明「按 XX 边界统计」，让用户核对。\n"
         "- 用户点了新的产品形态或来源（「换成 SMAP 动态」「风云那套」）时，按新点名换层；"
@@ -1158,6 +1162,56 @@ def _merge_intents(
         index[key] = len(merged)
         merged.append({"name": name, "args": dict(args)})
     return merged
+
+
+def _state_patch_from_tool_calls(
+    uses: list[dict[str, Any]], client_context: dict[str, Any] | None
+) -> dict[str, str]:
+    """从本轮**真正执行过的取数工具**里回填「这一轮讲的是哪一层 / 哪天 / 哪个区域」。
+
+    2026-11-06 补：``_state_patch_from_intents`` 只覆盖「模型下发界面意图」的情况。
+    但更常见的路径是模型**直接调 get_layer_statistics / get_layer_coverage /
+    get_layer_meta 作答**（用户问「SMAP 动态的土壤水分」就是这么答的），那条路
+    一个字都不写会话状态。于是下一句「土壤水分的平均值是多少」手里什么都没有，
+    只能看页面选中层——而页面停在上一次看的那一层（等效散射 ω），答非所问。
+    模型查了哪一层，本身就是「这一轮的对象」，照实记下来就行。
+    """
+    patch: dict[str, str] = {}
+    layers: list[dict[str, Any]] = []
+    if isinstance(client_context, dict) and isinstance(
+        client_context.get("active_layers"), list
+    ):
+        layers = [x for x in client_context["active_layers"] if isinstance(x, dict)]
+
+    for item in uses:
+        if not isinstance(item, dict):
+            continue
+        # 只看**真执行了的服务端工具**：界面意图（set_layer_visibility 等）此刻
+        # 还没被浏览器执行，拿它记对象会把「想切但没切」记成「就在看它」。
+        if str(item.get("name") or "") not in _SERVER_TOOLS:
+            continue
+        args = item.get("args") if isinstance(item.get("args"), dict) else {}
+        cid = str(args.get("catalog_id") or "").strip()
+        if not cid:
+            continue
+        patch["layer_id"] = cid
+        for la in layers:
+            if str(la.get("catalog_id") or "") != cid:
+                continue
+            name = str(la.get("name") or "").strip()
+            if name:
+                patch["layer_name"] = name
+                var = dialogue_state.variable_from_name(name)
+                if var:
+                    patch["variable"] = var
+            break
+        region = str(args.get("region") or args.get("boundary") or "").strip()
+        if region:
+            patch["region"] = region
+        when = str(args.get("time") or args.get("date") or "").strip()[:10]
+        if len(when) == 10 and when[4] == "-":
+            patch["date"] = when
+    return patch
 
 
 def _state_patch_from_intents(
@@ -2012,6 +2066,11 @@ def _run_chat_impl(
                 all_uses = _anthropic_tool_uses(data.get("content"))
                 if not all_uses:
                     break
+                # 模型查过哪一层 = 这一轮的对象，记进会话状态（否则下一句追问只能靠页面猜）
+                topic_state = dialogue_state.merge(
+                    topic_state,
+                    **_state_patch_from_tool_calls(all_uses, client_context),
+                )
                 steps.append(
                     {
                         "type": "thought",
@@ -2186,6 +2245,10 @@ def _run_chat_impl(
             if not calls:
                 break
             hops_used = hop
+            # 同 Anthropic 分支：模型查过的层要记进会话状态
+            topic_state = dialogue_state.merge(
+                topic_state, **_state_patch_from_tool_calls(calls, client_context)
+            )
             steps.append(
                 {
                     "type": "thought",
