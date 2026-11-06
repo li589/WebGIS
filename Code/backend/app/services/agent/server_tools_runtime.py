@@ -59,7 +59,9 @@ def execute_server_tool(
     if tool == "get_workflow_run":
         return _get_workflow_run(args, cred=cred)
     if tool == "get_layer_coverage":
-        return _get_layer_coverage(args, cred=cred)
+        # client_context 必传：目录层 id（method-*）在盘上没有同名目录，要靠页面
+        # 上下文映射到它实际挂着的 overlay 产物，否则「有哪些日期」永远答成空。
+        return _get_layer_coverage(args, cred=cred, client_context=client_context)
     if tool == "get_layer_statistics":
         # client_context 必传：统计要默认用「页面当前日期 + 页面选中图层」，
         # 否则会静默退回 meta.default_time（曾导致页面停在 12-15 却统计 01-25~02-01）。
@@ -1269,6 +1271,12 @@ def _sample_layer_point(
         return parsed
     lng, lat = parsed
     time_key = str(args.get("time") or "").strip() or None
+    # 2026-11-06：模型经常不传 time，旧实现于是落到 spec 默认帧（= meta.default_time，
+    # 该层时间清单里最早的一整块，实测是 2025-07 整月），而用户当时时间轴停在 12-15。
+    # 用户问「地图上我点的这个位置」时，语义就是屏幕上正在看的那一帧，不是整卷第一卷。
+    # 缺时间就取页面时间轴日期；页面没给才继续往默认帧退。
+    if not time_key:
+        time_key = _page_timeline_date(client_context)
 
     catalog_id = _normalize_layer_id(str(args.get("catalog_id") or ""))
     targets: list[str] = []
@@ -1618,6 +1626,41 @@ def _page_layer_index(
                 continue
             out.setdefault(lid, info)
     return out
+
+
+def _page_overlay_for_catalog(
+    client_context: dict[str, Any] | None, catalog_id: str
+) -> str | None:
+    """目录层 id → 页面上那一层实际挂着的运行时产物 id（imported-* / wf-run-*）。
+
+    为什么要这一步：``method-smap-omega-doy-dynamic`` 这类目录 id 在盘上**没有**
+    同名目录，产物目录名是 ``imported-<sha1>``。直接拿目录 id 去查本地时间帧
+    永远是空列表，而空列表在旧实现里会被解释成「这一层没有数据」。
+
+    一个 catalog_id 可能同时挂 SM / VOD / ω 三个产物，所以：selected 优先，
+    去重后仍不唯一就**放弃映射**——宁可让模型反问是哪个变量，也不能随手挑
+    第一个去统计（挑错变量比查不到更容易让人拿着错数下判断）。
+    """
+    if not isinstance(client_context, dict) or not catalog_id:
+        return None
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list):
+        return None
+    hits: list[tuple[bool, str]] = []
+    for item in layers:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("catalog_id") or "").strip() != catalog_id:
+            continue
+        oid = _normalize_layer_id(str(item.get("overlay_layer_id") or ""))
+        if oid:
+            hits.append((bool(item.get("selected")), oid))
+    if not hits:
+        return None
+    selected = [oid for sel, oid in hits if sel]
+    pool = selected or [oid for _, oid in hits]
+    uniq = list(dict.fromkeys(pool))
+    return uniq[0] if len(uniq) == 1 else None
 
 
 def _page_timeline_date(client_context: dict[str, Any] | None) -> str | None:
@@ -2267,7 +2310,12 @@ def _resolve_coverage(
     }
 
 
-def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+def _get_layer_coverage(
+    args: dict[str, Any],
+    *,
+    cred: Any,
+    client_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     catalog_id = _normalize_layer_id(
         str(args.get("catalog_id") or args.get("layer_id") or "")
     )
@@ -2300,6 +2348,15 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
             "页面图层的可用 id 见 client_context.active_layers[].overlay_layer_id，"
             "目录层 id 不能直接拿来查产物。",
         }
+    # ★ 2026-11-06（第二轮）：「目录层 id 查不到产物」也不许答成「没有数据」。
+    # method-* 这类 id 在盘上没有同名目录，local_dates 必然为空，旧实现据此回
+    # 「本地盘上目前没有登记任何时间片」，模型原样转述 ⇒ 用户以为这一层白跑了。
+    # 实测该层有 39 个 preview 帧。用页面上下文映射到它挂着的产物再查。
+    local_id = catalog_id
+    if descriptor is not None and not _known_overlay:
+        mapped = _page_overlay_for_catalog(client_context, catalog_id)
+        if mapped:
+            local_id = mapped
     cap = descriptor.online_temporal if descriptor else None
     if cap is None or not getattr(cap, "enabled", False):
         online: dict[str, Any] = {
@@ -2318,7 +2375,7 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     # 本地时间帧：唯一入口（与 get_layer_meta / get_layer_statistics 同源）。
     # 注：旧实现直接调 overlay_asset_workflow_service.get_overlay_state()，
     # 但该方法并不存在 ⇒ 异常被吞 ⇒ local 永远为空（报告 R09/R10 的根因）。
-    local_dates: list[str] = _local_time_keys(catalog_id)
+    local_dates: list[str] = _local_time_keys(local_id)
     resolved = _resolve_coverage(
         requested=requested, local_dates=local_dates, online=online
     )
@@ -2333,12 +2390,12 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         try:
             from app.services.overlay_registry import get_overlay_spec
 
-            _spec = get_overlay_spec(catalog_id)
+            _spec = get_overlay_spec(local_id)
             if _spec is not None:
                 hit_key = _spec.resolve_time_key(requested, prefer_finest=True)
         except Exception:
             logger.debug(
-                "coverage resolve_time_key failed for %s", catalog_id, exc_info=True
+                "coverage resolve_time_key failed for %s", local_id, exc_info=True
             )
         if hit_key:
             hit_source = "block" if str(hit_key) in local_dates else "ondemand_frame"
@@ -2373,10 +2430,28 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         # 报告 第 3 条：不许自己编「改查 12 月 15 日」。
         # 这里给的就是该层真实有的日期，模型要提替代日期只能从这里挑。
         "available_dates": _nearby_dates(local_dates, requested),
-        # 时序形态：与 meta / statistics 三处同源，避免「覆盖说混装、统计说单块」
-        **_temporal_shape_fields(local_dates, layer_id=catalog_id),
+        # 时序形态：与 meta / statistics 三处同源，避免「覆盖说混装、统计说单块」。
+        # layer_id 传 local_id：_ondemand_frame_dates 要扫产物目录里的补帧文件，
+        # 传目录层 id 扫不到任何东西（会把 hybrid 误判成「非逐日」）。
+        **_temporal_shape_fields(local_dates, layer_id=local_id),
         # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
         "value_basis": _value_basis(catalog_id, hit_key),
+        # 拿目录层 id（method-*）查、又没有页面上下文可以映射时，本地帧一定为空。
+        # 这不是「该层没数据」，而是「没定到具体变量产物」——必须让模型知道区别，
+        # 否则它会把「查不到」说成「没跑过」。
+        **(
+            {
+                "local_scope_warning": (
+                    "本次查的是产品族级目录 id，没定位到具体变量产物"
+                    "（同一 catalog 会挂土壤水分 / 植被光学厚度 / 等效散射 ω 三个"
+                    "不同的产物目录），所以本地时间帧这里查不到是正常的、"
+                    "**不代表该层没有数据**。要列具体日期，请用页面上那一层的"
+                    "overlay_layer_id，或先确认用户要哪个变量。"
+                )
+            }
+            if descriptor is not None and not _known_overlay and local_id == catalog_id
+            else {}
+        ),
         # 模型查完"有没有这片"就停手、把"是多少"推回给用户（实测 2026-10-29：
         # 「取具体数值需要先在地图上选一个点」）。这里直接给出下一步该调什么。
         **_coverage_next_step(catalog_id, requested, hit_source),
@@ -2893,8 +2968,19 @@ def _get_layer_statistics(
         bbox = None  # 行政区掩膜不走矩形 bbox
     from app.services.overlay_registry import get_overlay_spec
 
+    # 2026-11-06（第二轮）：目录层 id（method-*）在盘上没有同名产物目录，直接用
+    # 它取 spec 必然失败。旧实现于是先报错一次、模型再换成 overlay id 重试，
+    # 每轮白烧 1~2 次工具调用（实测 A1/A2/C 三条全部如此）。
+    # 这里先用页面上下文把它映射到实际挂着的产物；catalog_id 本身保持不变，
+    # 因为显示名、来源、变量身份都还要靠它解析。
+    local_id = catalog_id
     try:
         spec = get_overlay_spec(catalog_id)
+        if spec is None:
+            _mapped = _page_overlay_for_catalog(client_context, catalog_id)
+            if _mapped:
+                local_id = _mapped
+                spec = get_overlay_spec(local_id)
     except Exception:
         logger.debug("overlay spec unavailable for %s", catalog_id, exc_info=True)
         spec = None
@@ -2931,7 +3017,7 @@ def _get_layer_statistics(
     # 只在「明确要了某一天」时才联网；没给日期时保持零开销。
     ondemand_fetch: dict[str, Any] | None = None
     if actual_key is None and requested:
-        ondemand_fetch = _ensure_ondemand_frame(catalog_id, requested)
+        ondemand_fetch = _ensure_ondemand_frame(local_id, requested)
         if ondemand_fetch.get("ok"):
             # 补帧已写入 preview_<requested>.png，同一 spec 对象即可解析出来
             actual_key = spec.resolve_time_key(spec_time, prefer_finest=True)
@@ -2941,7 +3027,7 @@ def _get_layer_statistics(
         except Exception:
             blocks = []
         # 真实可用日期 = 清单里的 + 目录里已存在的按需单日帧（一个都不许自己编）
-        real_keys = sorted({*blocks, *_ondemand_frame_dates(catalog_id)})
+        real_keys = sorted({*blocks, *_ondemand_frame_dates(local_id)})
         payload_miss: dict[str, Any] = {
             "ok": False,
             "catalog_id": catalog_id,
@@ -3041,7 +3127,7 @@ def _get_layer_statistics(
         "temporal_summary": facts["temporal_summary"],
         # 时序形态（daily_series / block_series / single_block / mixed）：
         # 让回答能自证「这一层到底是逐日动态，还是跨段合成」
-        **_temporal_shape_fields(getattr(spec, "time_list", None), layer_id=catalog_id),
+        **_temporal_shape_fields(getattr(spec, "time_list", None), layer_id=local_id),
         # 这个值出自补帧单日 / 自带单日 / 多日块——回答只能照此表述
         "value_basis": _value_basis(catalog_id, actual_key, spec),
         # 这一片整幅都没有有效像元（≠ 选中的区域没覆盖）：见函数内 empty_slice 注释
