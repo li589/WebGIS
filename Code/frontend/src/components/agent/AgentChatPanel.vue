@@ -180,6 +180,12 @@ let stickToBottom = true
 let sendAbort: AbortController | null = null
 /** 由「开启新会话」触发的中止：不再往清空后的列表里补「已停止生成」 */
 let suppressStopHint = false
+/**
+ * 上一轮界面意图的真实执行结果。
+ * 服务端下发意图时只能告诉模型「已下发、未执行」，模型据此不敢说「已完成」；
+ * 真正成没成要靠这里回报——下一轮 client_context.intent_results 带给它。
+ */
+let lastIntentResults: Array<{ name: string; ok?: boolean; message?: string }> = []
 
 const sessionTokenTotal = computed(() => sumSessionTokens(messages.value))
 
@@ -825,6 +831,7 @@ function buildClientContext() {
     dataRange: summarizeTimeRange(dominantTimeList()),
     mapReady: props.isMapReady?.(),
     mapError: props.getMapError?.() ?? null,
+    intentResults: lastIntentResults,
   })
 }
 
@@ -999,6 +1006,13 @@ async function applyChatResult(
       // 2026-11-02：切日期＝替用户拖日历，必须真去 NAS 取那一天的单日图。
       ensureOnDemandFrame: props.ensureOnDemandFrame,
     })
+    // 记下真实执行结果：下一轮随 client_context 汇报给服务端，
+    // 模型才知道「上次那条到底生效没有」（服务端即时回执只有「已下发」）。
+    lastIntentResults = results.map((r, i) => ({
+      name: String(res.ui_intents[i]?.name || ''),
+      ok: r.ok,
+      message: r.message || '',
+    }))
     const noteBodies = results
       .filter((r) => r.message)
       .map((r) => ({
@@ -1140,6 +1154,8 @@ async function send() {
     session_id: sessionId.value,
     client_context: buildClientContext(),
   }
+  // 只回报一次：避免几轮之后模型还把「上一轮执行成功」当成这一轮的结果
+  lastIntentResults = []
 
   const onStep = (step: AgentStep) => {
     const msg = messages.value.find((m) => m.id === assistantId)

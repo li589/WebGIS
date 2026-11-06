@@ -14,6 +14,7 @@ import re
 import uuid
 from typing import Any
 
+from app.services.agent import dialogue_state
 from app.services.agent.naming import (
     build_layer_name_map,
     human_layer_name,
@@ -374,6 +375,16 @@ def _readable_date(date_s: str) -> str:
     return date_s
 
 
+def _context_date(client_context: dict[str, Any] | None) -> str:
+    """前端上报的当前时间轴日期（没有就是空串）。"""
+    if not isinstance(client_context, dict):
+        return ""
+    timeline = client_context.get("timeline")
+    if not isinstance(timeline, dict):
+        return ""
+    return str(timeline.get("date") or "").strip()
+
+
 def _nas_coverage_range() -> tuple[str, str]:
     """NAS 逐日成果的覆盖范围（``YYYYMMDD``）。
 
@@ -477,6 +488,50 @@ _REGION_CANDIDATE_RE = re.compile(
     r"[\u4e00-\u9fa5]{2,10}?(?:特别行政区|自治区|自治州|省|市|地区|盟)"
 )
 
+#: 行政区名尾词（用于从全名里剥出简称，如「河南省」→「河南」）
+_REGION_SUFFIX_RE = re.compile(
+    r"(?:特别行政区|自治区|自治州|自治县|地区|省|市|盟|区|县)$"
+)
+
+
+def _known_region_names() -> tuple[str, ...]:
+    """所有可识别的行政区全名（省 + 地级市），按长度从长到短。
+
+    2026-11-06：原来只靠正则抓「XX省/XX市」，用户的自然说法会把动词一起吞进去
+    （``findall('再回到河南省2025年12月15日')`` → ``['再回到河南省']``），
+    校验必然失败、整句放弃，最后退回整幅全图统计——数字看着很正式，其实是全球均值。
+    改成「拿已知行政区名去句子里扫」，无论前后挂什么动词都能认出来，也支持
+    「河南」这种不带后缀的口语简称。
+    """
+    try:
+        from app.services.agent.region import list_cities, list_provinces
+    except Exception:  # noqa: BLE001 - 区域库缺失时退回纯正则
+        return ()
+    names = [*list_provinces(), *list_cities()]
+    return tuple(sorted({n for n in names if n}, key=len, reverse=True))
+
+
+def _region_from_known_names(text: str) -> str | None:
+    """在句子里扫已知行政区名，返回命中全名（交给 resolve_region 归一）。
+
+    同名不同级（吉林省 / 吉林市）时按「更长的名字优先、同长取位置更靠后」裁决
+    —— 中文习惯是先大后小（「河南省郑州市」），所以靠后的那个才是用户真指的对象。
+    """
+    if not text:
+        return None
+    best: tuple[int, int, str] | None = None
+    for full in _known_region_names():
+        core = _REGION_SUFFIX_RE.sub("", full)
+        pos = text.rfind(full)
+        if pos < 0 and len(core) >= 2:
+            pos = text.rfind(core)
+        if pos < 0:
+            continue
+        key = (len(full), pos)
+        if best is None or key > (best[0], best[1]):
+            best = (len(full), pos, full)
+    return best[2] if best else None
+
 
 def _parse_region_arg(message: str) -> str | None:
     """从中文句子里抓行政区名（省/自治区/地级市），抓不到返回 None。
@@ -486,8 +541,9 @@ def _parse_region_arg(message: str) -> str | None:
     其实是全球均值，比答不出来更糟。这里把行政区名解析出来，交给
     ``_get_layer_statistics(region=...)`` 走行政边界掩膜。
 
-    校验一律回落到 ``resolve_region``：候选串先按长度从长到短试，
-    命中即返回（「广州市天河区」这种会先试长的、失败再试短的）。
+    2026-11-06 改：先按「已知行政区名」扫全句（抗动词干扰、支持简称），
+    再用旧正则候选兜底（区域库加载失败时仍能工作）。
+    校验一律回落到 ``resolve_region``，宁可返回 None 也不猜。
     """
     text = str(message or "")
     if not text:
@@ -496,6 +552,15 @@ def _parse_region_arg(message: str) -> str | None:
         from app.services.agent.region import resolve_region
     except Exception:  # noqa: BLE001 - 区域库缺失时退化为「不做区域统计」
         return None
+
+    scanned = _region_from_known_names(text)
+    if scanned:
+        try:
+            if resolve_region(scanned) is not None:
+                return scanned
+        except Exception:  # noqa: BLE001
+            pass
+
     candidates = sorted(
         {m for m in _REGION_CANDIDATE_RE.findall(text)}, key=len, reverse=True
     )
@@ -508,35 +573,279 @@ def _parse_region_arg(message: str) -> str | None:
     return None
 
 
+#: 追问标志：出现这些说法，说明用户是在**改上一轮那个对象**，不是另起一句。
+#: 这是「只改日期，其余不变」能成立的前提——没提到的项必须原样带过去。
+_FOLLOWUP_RE = re.compile(
+    r"其余不变|其他不变|其余保持|其他保持|保持不变|其余照旧|其余相同|"
+    r"只改|仅改|只把|仅把|只设|只调|"
+    r"改成|改为|换到|换成|换个|"
+    r"原来的日期|原日期|原来那天|刚才|还是那个|同一个地方|同样的地方|沿用|照旧",
+)
+
+#: 「那 12 月 16 日呢？」这类以「呢」收尾的追问，等于「沿用上一轮，只换这一项」
+_TAIL_NE_RE = re.compile(r"呢[？?]?\s*$")
+
+#: 明确要求「沿用上一轮那个日期」（用户没重新给日期）
+_DATE_CARRY_RE = re.compile(
+    r"原来的日期|原日期|原来那天|同一个日期|同一个日子|那天|那一天"
+)
+
+#: 来源词 → 层名里的来源写法（用于同变量多层时把用户点的那一层挑出来）
+_SOURCE_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"smap|斯玛普", re.I), "smap"),
+    (re.compile(r"风云|fy-?\s*\d|fy3|fy4", re.I), "风云"),
+)
+
+#: 产品形态词 → 层名里的形态写法。同源两套只差「平均 / 动态」，不认这一层就会
+#: 退回落点层（2026-11-06 实测：「SMAP 动态」被答成「风云平均」）。
+#: 注意「平均**值**」是统计动词、不是产品形态：不收这个口子，用户每次问
+#: 「平均值是多少」都会被当成点了「平均版」那一层（回溯测试当场踩到）。
+_FORM_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"动态|逐日|每天|日尺度", re.I), "动态"),
+    (re.compile(r"平均(?!值)|月均|季均|气候态|多年", re.I), "平均"),
+)
+
+
+def _has_layer_hints(text: str) -> bool:
+    """这句话里有没有「来源 / 产品形态」线索（用来判断值不值得收窄候选）。"""
+    return any(p.search(text) for p, _ in _SOURCE_HINTS) or any(
+        p.search(text) for p, _ in _FORM_HINTS
+    )
+
+
+def _narrow_by_hints(
+    text: str,
+    candidates: list[dict[str, Any]],
+    *,
+    prefer_variable: str | None = None,
+) -> dict[str, Any] | None:
+    """同变量多层时，用「来源 + 产品形态」把用户点名的那一层挑出来。
+
+    「SMAP 动态土壤水分」既不是完整层名、也不是唯一别名：旧实现别名命中多个
+    就直接放放弃（返回 None），于是落到页面选中层——用户明明点了 SMAP 动态，
+    拿到的是另一层的数据。这里按用户给的两个线索逐级收窄，只有收到唯一
+    一个时才返回，仍然不收窄就返回 None（宁可反问，不猜）。
+    """
+    if not candidates:
+        return None
+    pool = list(candidates)
+    for pattern, marker in _SOURCE_HINTS:
+        if pattern.search(text):
+            narrowed = [la for la in pool if marker in _display(la).lower()]
+            if narrowed:
+                pool = narrowed
+            break
+    for pattern, marker in _FORM_HINTS:
+        if pattern.search(text):
+            narrowed = [la for la in pool if marker in _display(la)]
+            if narrowed:
+                pool = narrowed
+            break
+    if len(pool) > 1 and prefer_variable:
+        # 「换成 SMAP 动态那套」没说变量：按上一轮那个变量收敛（同一变量换产品形态，
+        # 是最常见的追问），仍然多于一个就不猜。
+        narrowed = [
+            la
+            for la in pool
+            if dialogue_state.variable_from_name(_display(la)) == prefer_variable
+        ]
+        if len(narrowed) == 1:
+            pool = narrowed
+    return pool[0] if len(pool) == 1 else None
+
+
+def resolve_entities(
+    message: str,
+    layers: list[dict[str, Any]],
+    *,
+    client_context: dict[str, Any] | None = None,
+    state: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """把「这一轮到底在讲哪一层、哪个区域、哪一天」解析成一组实体。
+
+    优先级（与系统提示词「选层顺序」一致，只是多了第 ⓪ 条）：
+
+    ⓪ **上一轮记着的那个对象** —— 用户这轮没点名新产品/变量时沿用它；
+    ① 本轮点名的层（完整层名 / 变量名 + 来源 + 形态 能收到唯一一层）；
+    ② 页面选中层 → 唯一可见层 → 唯一候选（``_pick_stat_target``，仅前三步都落空时）。
+
+    区域与日期同理：本轮提到了就用本轮的；没提到但用户明显在「改上一轮的
+    对象」时，沿用上一轮的值——**这就是「其余不变」不丢东西的地方**。
+    """
+    text = str(message or "")
+    prior = dialogue_state.sanitize(state)
+    follow_up = bool(_FOLLOWUP_RE.search(text)) or bool(_TAIL_NE_RE.search(text))
+    variable = dialogue_state.variable_from_text(text)
+
+    target: dict[str, Any] | None = None
+    layer_from = ""
+    why: str | None = None
+
+    def _var_layers() -> list[dict[str, Any]]:
+        if not variable:
+            return []
+        return [
+            la
+            for la in layers
+            if dialogue_state.variable_from_name(_display(la)) == variable
+        ]
+
+    picked = _resolve_layer(text, layers, allow_demo_fallback=False)
+    if picked is not None:
+        target = next(
+            (la for la in layers if la.get("catalog_id") == picked.catalog_id), None
+        )
+        if target is not None:
+            layer_from = "message"
+
+    # 层名对不上、但用户点了变量并且给了来源/形态线索（「SMAP 动态土壤水分」）
+    if target is None and (variable or _has_layer_hints(text)):
+        target = _narrow_by_hints(
+            text,
+            _var_layers() or layers,
+            prefer_variable=prior.get("variable"),
+        )
+        if target is not None:
+            layer_from = "message"
+
+    # 仍然定不下来 ⇒ 沿用上一轮那一层（前提：它还挂在页面上、变量也对得上）
+    if target is None:
+        prior_id = prior.get("layer_id") or ""
+        if prior_id:
+            candidate = next(
+                (la for la in layers if la.get("catalog_id") == prior_id), None
+            )
+            if candidate is not None:
+                prior_var = prior.get("variable") or dialogue_state.variable_from_name(
+                    _display(candidate)
+                )
+                if variable is None or variable == prior_var:
+                    target = candidate
+                    layer_from = "state"
+    # 页面上只有这一层的同变量版本 ⇒ 只能是它
+    if target is None:
+        var_only = _var_layers()
+        if len(var_only) == 1:
+            target = var_only[0]
+            layer_from = "variable"
+    # 以上都不成立才看页面选中 / 唯一可见（保留旧行为，但降到最后）
+    if target is None:
+        target, why = _pick_stat_target(layers)
+        if target is not None:
+            layer_from = "page"
+        elif prior.get("layer_name"):
+            # 上一轮算的那一层已经不在地图上了：宁可说不知道，也不要用别的层顶上
+            why = (
+                f"你上一轮问的是「{prior['layer_name']}」，这一层现在不在页面上，"
+                "我不确定该统计哪一层。请先把它加回地图，或直接说要统计的图层名。"
+            )
+
+    region = _parse_region_arg(text)
+    region_from = "message" if region else ""
+    if not region and follow_up and prior.get("region"):
+        region = prior["region"]
+        region_from = "state"
+
+    day = _parse_date_arg(text)
+    date_from = "message" if day else ""
+    if not day:
+        # 「12 月 16 日」这种省了年份的说法：年份只能从上一轮/时间轴继承，
+        # 继承不到就不猜（宁可回落到时间轴当天的口径，也不能编个年份出来）。
+        partial = re.search(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]", text)
+        if partial:
+            month, dom = int(partial.group(1)), int(partial.group(2))
+            year_hint = ""
+            for candidate in (prior.get("date"), _context_date(client_context)):
+                head = str(candidate or "")[:4]
+                if head.isdigit():
+                    year_hint = head
+                    break
+            if year_hint and 1 <= month <= 12 and 1 <= dom <= 31:
+                day = f"{year_hint}-{month:02d}-{dom:02d}"
+                date_from = "message"
+    if not day and prior.get("date") and _DATE_CARRY_RE.search(text):
+        day = prior["date"]
+        date_from = "state"
+
+    if target is not None:
+        variable = variable or dialogue_state.variable_from_name(_display(target))
+
+    return {
+        "layer": target,
+        "layer_from": layer_from,
+        "why": why,
+        "variable": variable,
+        "region": region,
+        "region_from": region_from,
+        "date": day,
+        "date_from": date_from,
+        "follow_up": follow_up,
+    }
+
+
+def _entities_state_patch(entities: dict[str, Any]) -> dict[str, str]:
+    """把实体解析结果收敛成要写回会话的对象（只存用户真正说过的项）。"""
+    patch: dict[str, str] = {}
+    layer = entities.get("layer") or None
+    if isinstance(layer, dict) and layer.get("catalog_id"):
+        patch["layer_id"] = str(layer["catalog_id"])
+        patch["layer_name"] = _display(layer)
+    if entities.get("variable"):
+        patch["variable"] = str(entities["variable"])
+    if entities.get("region"):
+        patch["region"] = str(entities["region"])
+    # 日期只记用户明确说过 / 明确要求沿用的那一个；页面上的当前日期不算承诺
+    if entities.get("date") and entities.get("date_from") in ("message", "state"):
+        patch["date"] = str(entities["date"])
+    return patch
+
+
+def _carry_note(entities: dict[str, Any]) -> str:
+    """「沿用了上一轮的 X」提示句：用了旧对象就必须说，不能让用户以为换了。"""
+    carried: list[str] = []
+    layer = entities.get("layer")
+    if entities.get("layer_from") == "state" and isinstance(layer, dict):
+        carried.append(f"图层「{_display(layer)}」")
+    if entities.get("region_from") == "state":
+        carried.append(f"区域「{entities.get('region')}」")
+    if entities.get("date_from") == "state":
+        carried.append(f"日期 {_readable_date(str(entities.get('date')))}")
+    if not carried:
+        return ""
+    return f"- 本轮没有重新指定的部分沿用上一轮：{'、'.join(carried)}\n"
+
+
 def _statistics_reply(
     text: str,
     layers: list[dict[str, Any]],
     client_context: dict[str, Any] | None,
     sid: str,
     intents: list[dict[str, Any]],
+    *,
+    state: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """整层只读统计（规则演示模式也能算，不再回答「没有统计能力」）。"""
-    # 先看用户在句子里点了哪个图层（「VOD 的均值」不能说成土壤水分），
-    # 点不出来才回落到「当前选中 / 唯一可见」。
-    picked = _resolve_layer(text, layers, allow_demo_fallback=False)
-    target: dict[str, Any] | None = None
-    why: str | None = None
-    if picked is not None:
-        target = next(
-            (la for la in layers if la.get("catalog_id") == picked.catalog_id), None
-        )
-    if target is None:
-        target, why = _pick_stat_target(layers)
-    if target is None:
+    """整层只读统计（规则演示模式也能算，不再回答「没有统计能力」）。
+
+    2026-11-06：取数对象改由 ``resolve_entities`` 决定——先认本轮点名的层与
+    区域，认不出来再沿用会话里记着的那个对象，最后才回落到页面选中层。
+    旧实现只做「本轮点名 → 页面选中」，于是「其余不变」这类追问必然换成页面
+    上那一层、区域也一并丢失（外部测试第 2/3 条）。
+    """
+    entities = resolve_entities(
+        text, layers, client_context=client_context, state=state
+    )
+    target = entities.get("layer")
+    if not isinstance(target, dict):
         return {
             "session_id": sid,
-            "reply": why or "请先指定一个图层。",
+            "reply": entities.get("why") or "请先指定一个图层。",
             "ui_intents": intents,
+            "topic_state": {},
         }
 
     from app.services.agent.server_tools_runtime import _get_layer_statistics
 
-    day = _parse_date_arg(text)
+    day = entities.get("date")
     if not day and isinstance(client_context, dict):
         timeline = client_context.get("timeline")
         if isinstance(timeline, dict):
@@ -545,7 +854,7 @@ def _statistics_reply(
                 day = raw_date
     # 「广州市」「四川省」这类行政区名必须进 region，否则算出来的是全球均值，
     # 用户会当成该市的值（外部测试 2026-11-04 就是这么错答的）。
-    region = _parse_region_arg(text)
+    region = entities.get("region")
     stat_args: dict[str, Any] = {
         "catalog_id": target["catalog_id"],
         "time": day or None,
@@ -553,6 +862,8 @@ def _statistics_reply(
     if region:
         stat_args["region"] = region
     res = _get_layer_statistics(stat_args, cred=None)
+    topic_state = _entities_state_patch(entities)
+    carry_note = _carry_note(entities)
 
     name = _display(target)
     scope_prefix = f"按「{region}」行政边界" if region else "整层"
@@ -584,14 +895,19 @@ def _statistics_reply(
                     "本次只读统计，未创建图层、未提交工作流。"
                 ),
                 "ui_intents": intents,
+                "topic_state": topic_state,
             }
         if res.get("available_blocks"):
             blocks = "、".join(str(b) for b in res["available_blocks"][:3])
             reason = f"{reason}（该图层可用时间块：{blocks}）"
         return {
             "session_id": sid,
-            "reply": f"「{name}」{scope_prefix}统计没有完成：{reason}。未创建图层、未提交工作流。",
+            "reply": (
+                f"「{name}」{scope_prefix}统计没有完成：{reason}。"
+                f"{carry_note}未创建图层、未提交工作流。"
+            ),
             "ui_intents": intents,
+            "topic_state": topic_state,
         }
 
     source = str(res.get("source_label") or "").strip()
@@ -610,12 +926,16 @@ def _statistics_reply(
     suffix = f"（{source}）" if source and source not in name else ""
     lines = [
         f"「{name}」{suffix}{scope_prefix}的只读统计：",
-        f"- 均值：{float(mean):.4f} {unit}".rstrip()
-        if mean is not None
-        else "- 均值：—",
-        f"- 范围：{float(res['min']):.4f} ~ {float(res['max']):.4f}"
-        if res.get("min") is not None and res.get("max") is not None
-        else "- 范围：—",
+        (
+            f"- 均值：{float(mean):.4f} {unit}".rstrip()
+            if mean is not None
+            else "- 均值：—"
+        ),
+        (
+            f"- 范围：{float(res['min']):.4f} ~ {float(res['max']):.4f}"
+            if res.get("min") is not None and res.get("max") is not None
+            else "- 范围：—"
+        ),
         f"- 有效像元：{res.get('valid_pixels')} / {res.get('total_pixels')}"
         + (f"（占 {float(pct) * 100:.1f}%）" if pct is not None else ""),
         f"- 实际数据时间块：{block}",
@@ -628,6 +948,9 @@ def _statistics_reply(
             if res.get("is_single_block")
             else f"- 你请求的日期是 {_readable_date(requested)}，实际取的是上面那个时间块。"
         )
+    if carry_note:
+        # 沿用旧对象必须写明，否则用户会以为「其余不变」真的什么都没变
+        lines.append(carry_note.rstrip("\n"))
     lines.append(
         f"统计范围是「{region}」行政边界内的有效像元（已排除 NoData），"
         "不是矩形框，也未按视口裁剪。"
@@ -635,7 +958,12 @@ def _statistics_reply(
         else "统计范围是整幅栅格的有效像元（已排除 NoData），不是点样本均值，也未按视口裁剪。"
     )
     lines.append("本次只读统计，未创建图层、未写入产物、未提交工作流。")
-    return {"session_id": sid, "reply": "\n".join(lines), "ui_intents": intents}
+    return {
+        "session_id": sid,
+        "reply": "\n".join(lines),
+        "ui_intents": intents,
+        "topic_state": topic_state,
+    }
 
 
 def forced_statistics_reply(
@@ -643,16 +971,23 @@ def forced_statistics_reply(
     *,
     client_context: dict[str, Any] | None = None,
     session_id: str | None = None,
+    state: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """服务端强制走一次「整层/行政边界统计」，不走关键词分流。
 
     2026-11-04 新增，给 ``orchestrator._statistics_fallback_reply`` 用：
     模型这一轮**一个取数工具都没调**时，不能再靠 ``_STAT_VERB`` 那串关键词判断
     （「是多少」压根不在里面，正是漏判的原因），直接进统计分支，算出真值。
+
+    2026-11-06：多收一个 ``state``（本会话已确认的取数对象）。兜底是**唯一**
+    能在模型不说话时给数字的路径，如果它没有上下文，就会拿「页面当前层 + 全幅」
+    算出一个看着很正式、其实答非所问的数字——外部测试第 3 条就是这么错的。
     """
     sid = (session_id or "").strip() or str(uuid.uuid4())
     layers = _normalize_layers(client_context)
-    return _statistics_reply(str(message or ""), layers, client_context, sid, [])
+    return _statistics_reply(
+        str(message or ""), layers, client_context, sid, [], state=state
+    )
 
 
 def mock_chat(
@@ -660,12 +995,14 @@ def mock_chat(
     *,
     session_id: str | None = None,
     client_context: dict[str, Any] | None = None,
+    state: dict[str, str] | None = None,
     _allow_stats: bool = True,
 ) -> dict[str, Any]:
     """Return reply + optional ui_intents from keyword rules.
 
     ``_allow_stats=False`` 仅供内部递归调用（处理复合指令的第二个子句）使用，
     避免子句里再出现「均值」二字时又跳回统计分支造成死循环。
+    ``state`` 是本会话已确认的取数对象，只影响统计分支的选层/选区域。
     """
     sid = (session_id or "").strip() or str(uuid.uuid4())
     text = (message or "").strip()
@@ -699,13 +1036,16 @@ def mock_chat(
     # 后半句被吞掉、界面纹丝不动。现在把非统计子句交给下一个分支递归执行，
     # 意图合并返回，正文另起一段说明。
     if _allow_stats and _STAT_VERB.search(text):
-        result = _statistics_reply(text, layers, client_context, sid, intents)
+        result = _statistics_reply(
+            text, layers, client_context, sid, intents, state=state
+        )
         side = _side_clauses(text)
         if side and side.strip() != text.strip():
             follow = mock_chat(
                 side,
                 session_id=sid,
                 client_context=client_context,
+                state=state,
                 _allow_stats=False,
             )
             extra = list(follow.get("ui_intents") or [])

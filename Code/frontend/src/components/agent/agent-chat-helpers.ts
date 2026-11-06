@@ -164,6 +164,12 @@ export function buildAgentClientContextPayload(input: {
   mapReady?: boolean
   /** 地图初始化失败原因（仅 mapReady=false 时有意义） */
   mapError?: string | null
+  /**
+   * 上一轮界面意图的**真实执行结果**（浏览器执行完才有）。
+   * 服务端给模型的即时回执只能写「已下发、未执行」，模型必须靠这一项才知道
+   * 到底成没成——否则就会出现「嘴上说已完成、页面没变」（2026-11-06 外部测试）。
+   */
+  intentResults?: Array<{ name: string; ok?: boolean; message?: string }>
 }): {
   active_catalog_ids: string[]
   active_layers: Array<{
@@ -189,6 +195,7 @@ export function buildAgentClientContextPayload(input: {
     bbox?: number[]
   }
   basemap_id: string
+  intent_results?: Array<{ name: string; ok?: boolean; message?: string }>
 } {
   const layers = input.layers.filter((l) => !l.isAdminBoundary)
   const ctx: ReturnType<typeof buildAgentClientContextPayload> = {
@@ -224,6 +231,14 @@ export function buildAgentClientContextPayload(input: {
   }
   if (input.mapPoint) {
     ctx.map_point = { lng: input.mapPoint.lng, lat: input.mapPoint.lat }
+  }
+  if (input.intentResults?.length) {
+    // 只带最后 5 条、每条截 160 字：够模型判断成败，又不至于撑爆上下文预算。
+    ctx.intent_results = input.intentResults.slice(-5).map((r) => ({
+      name: r.name,
+      ok: r.ok,
+      message: (r.message || '').slice(0, 160),
+    }))
   }
   const c = input.viewport.center
   const z = input.viewport.zoom

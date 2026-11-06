@@ -188,19 +188,56 @@ def load_history(*, user_id: int | None, session_id: str) -> list[dict[str, str]
     return out[-_MAX_TURNS:]
 
 
+def load_topic_state(*, user_id: int | None, session_id: str) -> dict[str, str]:
+    """读取该会话「已确认的取数对象」（图层/变量/区域/日期）。
+
+    与消息同一个文件（``state`` 键），因此共用 TTL 与配额；文件缺失、过期、
+    内容非法一律返回空 dict —— 调用方按「没有历史」处理，不要凭空补默认值。
+    """
+    from app.services.agent import dialogue_state
+
+    user_key = str(user_id) if user_id is not None else "anon"
+    try:
+        path = _session_path(user_key, session_id)
+    except ValueError:
+        return {}
+    with _lock:
+        with interprocess_file_lock(path, label="Agent 会话"):
+            if not path.exists():
+                return {}
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return {}
+            if not isinstance(data, dict):
+                return {}
+            updated = _parse_updated_at(data.get("updated_at"))
+            if updated is None:
+                try:
+                    updated = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                except OSError:
+                    updated = None
+            if _is_expired(updated):
+                return {}
+            return dialogue_state.sanitize(data.get("state"))
+
+
 def append_turn(
     *,
     user_id: int | None,
     session_id: str,
     user_message: str,
     assistant_message: str,
+    state: dict[str, Any] | None = None,
 ) -> None:
+    """追加一轮问答；``state`` 非空时一并写入本会话的取数对象。"""
     user_key = str(user_id) if user_id is not None else "anon"
     path = _session_path(user_key, session_id)
     now = datetime.now(UTC)
     with _lock:
         with interprocess_file_lock(path, label="Agent 会话"):
             history: list[Any] = []
+            previous_state: Any = None
             if path.exists():
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
@@ -217,6 +254,8 @@ def append_turn(
                                 updated = None
                         if not _is_expired(updated, now=now):
                             history = list(data["messages"])
+                            # 过期会话不继承旧对象，否则「上次聊的是哪层」会跨天残留
+                            previous_state = data.get("state")
                 except (OSError, json.JSONDecodeError):
                     history = []
             history.append({"role": "user", "content": user_message})
@@ -227,6 +266,13 @@ def append_turn(
                 "messages": history,
                 "updated_at": now.isoformat(),
             }
+            from app.services.agent import dialogue_state
+
+            saved_state = dialogue_state.sanitize(
+                state if state is not None else previous_state
+            )
+            if saved_state:
+                payload["state"] = saved_state
             tmp = path.with_suffix(".tmp")
             tmp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),

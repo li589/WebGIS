@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_request_id
+from app.services.agent import dialogue_state
 from app.services.agent.clients import anthropic_compat, openai_compat
 from app.services.agent.clients.openai_compat import LlmClientError
 from app.services.agent.config_service import (
@@ -28,7 +29,11 @@ from app.services.agent.server_tools_runtime import (
     load_server_tools_anthropic,
     load_server_tools_openai,
 )
-from app.services.agent.session_store import append_turn, load_history
+from app.services.agent.session_store import (
+    append_turn,
+    load_history,
+    load_topic_state,
+)
 from app.services.agent.usage import (
     estimate_tokens,
     usage_from_anthropic,
@@ -627,6 +632,29 @@ def sanitize_client_context(
         bid = str(client_context.get("basemap_id") or "").strip()[:64]
         if bid:
             cleaned["basemap_id"] = bid
+    if "intent_results" in client_context:
+        # 上一轮界面意图的**真实执行结果**（前端执行完才上报）。
+        # 服务端给模型的即时回执只能是「已下发、未执行」，模型要等这一项才知道
+        # 到底成没成——这是"嘴上说已完成、页面没变"的唯一闭环。
+        raw_results = client_context.get("intent_results")
+        if isinstance(raw_results, list):
+            slim_results: list[dict[str, Any]] = []
+            for item in raw_results[-5:]:
+                if not isinstance(item, dict):
+                    continue
+                entry_r: dict[str, Any] = {}
+                name_r = str(item.get("name") or "").strip()[:64]
+                if name_r:
+                    entry_r["name"] = name_r
+                if item.get("ok") is not None:
+                    entry_r["ok"] = bool(item.get("ok"))
+                msg_r = str(item.get("message") or "").strip()[:160]
+                if msg_r:
+                    entry_r["message"] = msg_r
+                if entry_r:
+                    slim_results.append(entry_r)
+            if slim_results:
+                cleaned["intent_results"] = slim_results
     if "timeline" in client_context:
         tl = client_context.get("timeline")
         if isinstance(tl, dict):
@@ -716,6 +744,7 @@ def _build_system(
     client_context: dict[str, Any] | None,
     *,
     cred: Any,
+    topic_state: dict[str, str] | None = None,
 ) -> str:
     system = load_system_prompt()
     parts: list[str] = [system]
@@ -726,6 +755,37 @@ def _build_system(
             parts.append(f"## Current client_context\n```json\n{blob}\n```")
         except (TypeError, ValueError):
             pass
+    if safe_ctx and isinstance(safe_ctx.get("intent_results"), list):
+        # 单独列出来，避免被上面 4000 字符的 blob 截掉——这条决定模型敢不敢说「已完成」
+        rows: list[str] = []
+        for item in safe_ctx["intent_results"]:
+            if not isinstance(item, dict):
+                continue
+            mark = "成功" if item.get("ok") else "失败"
+            rows.append(
+                f"- {item.get('name') or '界面操作'}：{mark}"
+                f"（{str(item.get('message') or '无说明')[:120]}）"
+            )
+        if rows:
+            parts.append(
+                "## 上一轮界面意图的真实执行结果（浏览器回报）\n"
+                + "\n".join(rows)
+                + "\n- 有失败项时，先承认「上次那条没有生效」再往下说，"
+                "**不许把失败说成成功**；都成功就正常继续。"
+            )
+    topic_desc = dialogue_state.describe(topic_state)
+    if topic_desc:
+        # 服务端记住的取数对象。它不一定等于页面上选中的那一层——用户上一轮
+        # 可能明确点名了另一层。追问（「其余不变」「只改日期」）必须以它为准。
+        parts.append(
+            "## 本会话已确认的取数对象\n"
+            f"{topic_desc}\n"
+            "- 用户说「其余不变 / 只改日期 / 还是那个 / 回到原来的」时，**只替换他这轮"
+            "真正提到的那一项**，其余项用上面这份记录，不许改用页面选中层，也不许把"
+            "区域悄悄丢掉改算全幅。\n"
+            "- 上面这份记录与 client_context 的 selected 冲突时，**以这份记录为准**；"
+            "确实要换对象，就在回答里写明「这次改用 X 层」。"
+        )
     try:
         # 只放前 14 条做「目录里大概有什么」的提示：完整清单靠 search_layers。
         # 原来 40 条截 3000 字符要 843 token，是系统词里最贵又最不精确的一块。
@@ -764,6 +824,25 @@ def _build_system(
         "- 同源同时存在「反演产品」与「L3 官方参考产品」两类时（search_layers 结果里 "
         "`product_class` 分别是 derived_product / reference_layer），**先反问一句**要哪一个，"
         "不许自己挑。选定后回答里用用户看到的名字，不要念编号。\n"
+        "## 跨轮追问：只改用户提到的那一项\n"
+        "- 用户说「其余不变 / 其他不变 / 只改日期 / 只换区域 / 还是那个 / 回到原来的」时，"
+        "**先读『本会话已确认的取数对象』**（系统提示里若给了这一段），把没提到的项原样"
+        "沿用：他说改日期，就只换日期；**产品、变量、区域一个都不许变**。\n"
+        "- 这类追问里，**页面当前选中哪一层与取数对象无关**。哪怕 client_context 的 "
+        "selected 指向另一层，也要用本会话记录的那一层；真要改用别的层，必须在回答里"
+        "写明「这次改用 X 层」。\n"
+        "- 区域一旦确认过，就不要再退回「整幅」。只有在用户明确说「全图 / 全球 / 整层 / "
+        "不限区域」时才去掉区域。回答里要点明「按 XX 边界统计」，让用户核对。\n"
+        "- 用户点了新的产品形态或来源（「换成 SMAP 动态」「风云那套」）时，按新点名换层；"
+        "换完在回答里写出新层名，不要悄悄换。\n"
+        "## 界面意图回执是「已下发」，不是「已执行」\n"
+        "- 下发 set_layer_visibility / set_timeline / remove_layer / set_layer_symbology "
+        "后，工具回执只表示**已交给浏览器**（executed=false）。此时正文只能写"
+        "「已下发 / 已提交」，**不许写「已显示 / 已切换成功 / 已完成」**。\n"
+        "- 真实结果看 `client_context.intent_results`（前端执行完才上报，"
+        "每项含意图名、ok 与说明）。"
+        "上一轮 ok=false 时，这一轮要先承认「上次那条没有生效」并说明原因，"
+        "**不许把失败说成成功，也不许当没发生过**。\n"
         "## 页面状态问答（必须逐项回答）\n"
         "- 被问到“现在显示的是什么/选中哪个/什么日期/哪颗卫星/地图好了吗”这类状态问题时，"
         "**必须基于 client_context 逐项回答**：已加载图层数、**可见**图层（visible=true）、"
@@ -822,10 +901,14 @@ def _build_system(
         "严禁说成“该日没有数据”**。"
         "④ reason=not_registered → 该层没有登记逐日数据源，只能取清单里已有的时间片。\n"
         "- **所选区域没数据 ≠ 整层没数据**：返回带 region_empty_hint 时，"
-        "说明整幅有有效数据、只是这个区域在这一天被云或缺测覆盖。"
+        "说明整幅有有效数据、只是这个区域在这一天没有有效像元。"
         "必须说“这一天这个区域没有有效观测”，不能说成“该图层没有这一天”；"
         "若用户要换日期，可从 suggested_times 里挑（这些已按该区域逐个核实过真有像元），"
         "也可以建议扩大范围。\n"
+        "- **缺测原因不许自己编**：工具不返回质量标记（没有 qc / 云量字段），"
+        "所以只能说“没有有效观测 / 缺测”，**禁止归因成“云覆盖 / 云遮挡 / 天气不好”**"
+        "这类未经核实的解释（SMAP 等微波产品本来就能穿云）。用户追问原因时，"
+        "如实说“这次没有质量标记，具体原因需要查该产品的处理记录”。\n"
         "- 该日确实没有数据时，只说“该日没有数据”。若用户要替代日期，**只能从 "
         "available_dates 的 before / after（或 time_blocks）里原样挑**，并注明"
         "“这是该图层实际有的日期”；**禁止自己推断、凑整或编造日期**"
@@ -1051,14 +1134,106 @@ def _server_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [c for c in calls if c.get("name") in _SERVER_TOOLS]
 
 
+def _merge_intents(
+    base: list[dict[str, Any]], extra: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """合并两批界面意图（同名同参的只留一份，后到的覆盖同名的旧参数）。
+
+    2026-11-06：原来写的是 ``intents = more_intents``——**覆盖**而不是合并。
+    模型在一次复合指令里先下发「显示 VOD」、下一跳再下发「切日期」时，第一跳
+    的意图会被第二跳整批顶掉，用户看到的就是「说显示却什么都没变」。
+    """
+    merged: list[dict[str, Any]] = []
+    index: dict[str, int] = {}
+    for item in [*base, *extra]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        args = item.get("args") if isinstance(item.get("args"), dict) else {}
+        key = json.dumps([name, args], ensure_ascii=False, sort_keys=True)
+        if key in index:
+            continue
+        index[key] = len(merged)
+        merged.append({"name": name, "args": dict(args)})
+    return merged
+
+
+def _state_patch_from_intents(
+    intents: list[dict[str, Any]],
+    client_context: dict[str, Any] | None,
+) -> dict[str, str]:
+    """从界面意图里回填「这一轮讲的是哪一层 / 哪一天」。
+
+    用户说「显示风云 VOD，算一下均值」时，模型下发的 set_layer_visibility 就是
+    他对「这一轮的对象」最明确的表达；不记下来，下一轮追问又只能靠页面猜。
+    隐藏某一层（visible=false）不算——那是在说「别看了」，不是「就它」。
+    """
+    patch: dict[str, str] = {}
+    layers: list[dict[str, Any]] = []
+    if isinstance(client_context, dict) and isinstance(
+        client_context.get("active_layers"), list
+    ):
+        layers = [x for x in client_context["active_layers"] if isinstance(x, dict)]
+
+    def _remember(cid: str) -> None:
+        if not cid:
+            return
+        patch["layer_id"] = cid
+        for la in layers:
+            if str(la.get("catalog_id") or "") != cid:
+                continue
+            layer_name = str(la.get("name") or "").strip()
+            if layer_name:
+                patch["layer_name"] = layer_name
+                var = dialogue_state.variable_from_name(layer_name)
+                if var:
+                    patch["variable"] = var
+            break
+
+    for item in intents:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        args = item.get("args") if isinstance(item.get("args"), dict) else {}
+        if name == "set_layer_visibility":
+            if args.get("visible") is False:
+                continue
+            _remember(str(args.get("catalog_id") or "").strip())
+        elif name == "set_timeline":
+            date = str(args.get("date") or "").strip()[:10]
+            if date:
+                patch["date"] = date
+            _remember(str(args.get("catalog_id") or "").strip())
+    return patch
+
+
 # 一轮里模型可能同时下发「界面意图」和「服务端工具」（例如
 # “切到 X 图层、日期设为 Y，然后算均值”）。OpenAI / Anthropic 都要求
 # 每个 tool_call 都有配对的 tool 结果，否则第二次请求整轮直接 400：
 #   An assistant message with 'tool_calls' must be followed by tool messages
 #   responding to each 'tool_call_id'.
 # 所以界面意图也要回一条占位结果，不能只回服务端工具那几条。
+#
+# ★ 2026-11-06：这条回执原来是写死的「成功」——
+#     {"ok": true, "applied": "前端界面意图，由浏览器执行…"}
+#   而此刻浏览器**还没执行**。模型读到 ok=true 就理直气壮地答「已完成」，
+#   页面却纹丝不动（外部测试第 1 条「首次要求显示风云 VOD，回答称成功，
+#   但页面仍选中 ω」）。现在如实标成「已下发、未执行」，真实结果由前端在
+#   下一轮通过 client_context.intent_results 回报。
 _UI_TOOL_ACK = json.dumps(
-    {"ok": True, "applied": "前端界面意图，由浏览器执行，服务端无需返回数据"},
+    {
+        "ok": True,
+        "status": "queued",
+        "executed": False,
+        "note": (
+            "界面意图已下发给浏览器，此刻尚未执行。"
+            "不要在正文里写「已显示 / 已切换 / 已设置成功」这类完成态；"
+            "只能说「已下发，执行结果见气泡下方的提示」。"
+            "真实执行结果会在下一轮的 client_context.intent_results 里回报。"
+        ),
+    },
     ensure_ascii=False,
 )
 
@@ -1329,7 +1504,9 @@ def _statistics_fallback_reply(
     steps: "_EventSteps",
     sid: str,
     client_context: dict[str, Any] | None,
-) -> str:
+    *,
+    state: dict[str, str] | None = None,
+) -> tuple[str, dict[str, str] | None]:
     r"""统计请求的确定性兜底：模型没调过任何取数工具时，正文里的数字一律不可信。
 
     报告第二轮 P1：「统计请求即使包含『当前图层』也不能只列图层或说明计划，
@@ -1355,18 +1532,23 @@ def _statistics_fallback_reply(
          的数值换成一句如实的「未取到」，绝不让无出处的数字流出去。
     """
     if not _wants_statistics(message) or _statistics_tool_called(list(steps)):
-        return reply
+        return reply, None
     try:
         # 直接进统计分支，不走关键词分流：「是多少」这类说法不在 _STAT_VERB 里，
         # 经 mock_chat 会被当成普通对话，返回一段能力介绍，救不了场。
         from app.services.agent.mock_orchestrator import forced_statistics_reply
 
         fallback = forced_statistics_reply(
-            message, client_context=client_context, session_id=sid
+            message,
+            client_context=client_context,
+            session_id=sid,
+            state=state,
         )
     except Exception:
         logger.debug("statistics fallback failed", exc_info=True)
-        return _UNGROUNDED_REPLY if _looks_numeric(reply) else reply
+        return _UNGROUNDED_REPLY if _looks_numeric(reply) else reply, None
+    patch = fallback.get("topic_state") if isinstance(fallback, dict) else None
+    topic_patch = dialogue_state.sanitize(patch) if patch else None
     text = str(fallback.get("reply") or "").strip()
     if text and _grounded_statistics(text):
         steps.append(
@@ -1376,7 +1558,7 @@ def _statistics_fallback_reply(
                 "detail": text[:800],
             }
         )
-        return text
+        return text, topic_patch
     # 规则引擎也算不出来：模型若给了数字，就是无出处的，必须收回
     if _looks_numeric(reply):
         steps.append(
@@ -1386,8 +1568,8 @@ def _statistics_fallback_reply(
                 "detail": (text or "规则引擎未得到有效统计结果")[:400],
             }
         )
-        return _UNGROUNDED_REPLY
-    return reply
+        return _UNGROUNDED_REPLY, None
+    return reply, None
 
 
 def _run_chat_impl(
@@ -1400,6 +1582,10 @@ def _run_chat_impl(
     on_event: EventCallback | None = None,
 ) -> dict[str, Any]:
     sid = (session_id or "").strip() or uuid.uuid4().hex
+    # 本会话「已确认的取数对象」（图层 / 变量 / 区域 / 日期）。
+    # 跨轮追问的唯一事实源：没有它，「其余不变」「只改日期」只能靠页面选中层猜，
+    # 兜底补算也只能拿页面当前层 + 全幅顶上（2026-11-06 定位结论）。
+    topic_state = load_topic_state(user_id=user_id, session_id=sid)
     profile = get_effective_profile_raw(user_id=user_id)
     if profile is None:
         raise ValueError("无可用 Agent 配置档")
@@ -1660,8 +1846,13 @@ def _run_chat_impl(
                 }
             )
 
-        result = mock_chat(message, session_id=sid, client_context=client_context)
+        result = mock_chat(
+            message, session_id=sid, client_context=client_context, state=topic_state
+        )
         reply = str(result["reply"])
+        topic_state = dialogue_state.merge(
+            topic_state, **(result.get("topic_state") or {})
+        )
         if confirmations:
             reply = (
                 f"{reply}\n\n已生成工作流确认卡，请点击「确认提交」后才会真正排队。"
@@ -1673,7 +1864,7 @@ def _run_chat_impl(
             reply, list(steps), fallback=reply or "（无回复）"
         )
         if history:
-            reply = f"（已结合此前 {len(history)//2} 轮对话）\n{reply}"
+            reply = f"（已结合此前 {len(history) // 2} 轮对话）\n{reply}"
         usage = {
             "prompt_tokens": estimate_tokens(message),
             "completion_tokens": estimate_tokens(reply),
@@ -1686,6 +1877,7 @@ def _run_chat_impl(
             session_id=str(result["session_id"]),
             user_message=_compress_history_user(message),
             assistant_message=_compress_history_reply(reply),
+            state=topic_state,
         )
         ui_intents = result.get("ui_intents") or []
         logger.info(
@@ -1722,7 +1914,7 @@ def _run_chat_impl(
     if needs_key and not api_key:
         raise ValueError("当前配置档未设置 API Key，请在「设置 → Agent 配置」中填写")
 
-    system = _build_system(client_context, cred=cred)
+    system = _build_system(client_context, cred=cred, topic_state=topic_state)
     max_out = min(4096, int(profile.get("context_window_output") or 2048))
 
     # 输入预算守卫：超限直接中止，绝不外呼（防公众乱问消耗项目额度）
@@ -1785,7 +1977,7 @@ def _run_chat_impl(
         {
             "type": "thought",
             "summary": f"调用模型 {model}",
-            "detail": f"protocol={protocol} history_turns={len(history)//2}",
+            "detail": f"protocol={protocol} history_turns={len(history) // 2}",
         }
     )
 
@@ -1899,7 +2091,8 @@ def _run_chat_impl(
                 if reply2:
                     reply = reply2
                 if intents2:
-                    intents = intents2
+                    # 合并而不是覆盖：复合指令里第一跳的「显示某层」不能被第二跳顶掉
+                    intents = _merge_intents(intents, intents2)
             if server_calls:
                 steps.append(
                     {
@@ -1911,15 +2104,23 @@ def _run_chat_impl(
             if not reply and not intents:
                 reply = "（模型未返回文本）"
             reply = _ensure_visible_reply(reply, list(steps))
-            reply = _statistics_fallback_reply(
-                message, reply, steps, sid, client_context
+            reply, state_patch = _statistics_fallback_reply(
+                message, reply, steps, sid, client_context, state=topic_state
             )
+            if state_patch:
+                topic_state = dialogue_state.merge(topic_state, **state_patch)
             if not intents:
                 fallback = mock_chat(
-                    message, session_id=sid, client_context=client_context
+                    message,
+                    session_id=sid,
+                    client_context=client_context,
+                    state=topic_state,
                 )
                 if fallback.get("ui_intents"):
                     intents = fallback.get("ui_intents") or []
+            topic_state = dialogue_state.merge(
+                topic_state, **_state_patch_from_intents(intents, client_context)
+            )
             usage = usage_from_anthropic(
                 data, prompt_fallback=system + message, completion_fallback=reply
             )
@@ -1928,6 +2129,7 @@ def _run_chat_impl(
                 session_id=sid,
                 user_message=_compress_history_user(message),
                 assistant_message=_compress_history_reply(reply),
+                state=topic_state,
             )
             out = {
                 "session_id": sid,
@@ -2069,7 +2271,7 @@ def _run_chat_impl(
             calls = _parse_openai_tool_calls(message_obj)
             more_intents = _intents_from_tool_calls(calls)
             if more_intents:
-                intents = more_intents
+                intents = _merge_intents(intents, more_intents)
             server_calls = _server_calls(calls)
 
         if server_calls:
@@ -2083,12 +2285,24 @@ def _run_chat_impl(
         if not reply and not intents:
             reply = "（模型未返回文本）"
         reply = _ensure_visible_reply(reply, list(steps))
-        reply = _statistics_fallback_reply(message, reply, steps, sid, client_context)
+        reply, state_patch = _statistics_fallback_reply(
+            message, reply, steps, sid, client_context, state=topic_state
+        )
+        if state_patch:
+            topic_state = dialogue_state.merge(topic_state, **state_patch)
         if not intents:
-            fallback = mock_chat(message, session_id=sid, client_context=client_context)
+            fallback = mock_chat(
+                message,
+                session_id=sid,
+                client_context=client_context,
+                state=topic_state,
+            )
             heur = fallback.get("ui_intents") or []
             if heur:
                 intents = heur
+        topic_state = dialogue_state.merge(
+            topic_state, **_state_patch_from_intents(intents, client_context)
+        )
         usage = usage_from_openai(
             data,
             prompt_fallback=system + message,
@@ -2099,6 +2313,7 @@ def _run_chat_impl(
             session_id=sid,
             user_message=_compress_history_user(message),
             assistant_message=_compress_history_reply(reply),
+            state=topic_state,
         )
         logger.info(
             "agent.reply request_id=%s provider=%s finish_reason=%s reply_chars=%d"
