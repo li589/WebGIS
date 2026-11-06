@@ -885,6 +885,12 @@ def _build_system(
         "period_start~period_end 才能下这种判断；没查就说“已按你给的日期下发，"
         "实际命中哪一片以时间轴回显为准”。（2026-11-06 实测：7 月 1 日明明落在 "
         "2025-07-01~07-31 这一块内，回答却说“不在时间块范围内”。）\n"
+        "- 同上，**不许**说某层的时间块“是 8 天块 / 正好是一整月 / 这一段就是一片”。"
+        "块的长度只认 get_layer_coverage / get_layer_meta 返回的 native_step、"
+        "time_blocks、period_start~period_end。各层粒度并不一样：动态产品是 8 天块，"
+        "平均产品是**整月**一块（native_step=1M），同一个日期区间在两者身上根本不是"
+        "一回事。（2026-11-06 实测：风云平均那层是整月合成，回答却称“12-11~12-18 "
+        "正好是一个 8 天块”，把动态产品的粒度安到了平均产品头上。）\n"
         "## 来源与单位\n"
         "- 来源只认工具/目录返回的 source_label（SMAP / 风云卫星 / 地面站点 / 多源融合 / 未标注来源），"
         "**不要用图层名字去猜卫星**，也不要自己编造。返回 unknown 时如实说“未标注来源”。\n"
@@ -1201,16 +1207,24 @@ def _state_patch_from_message(
     except Exception:  # noqa: BLE001 - 状态维护失败不该拦住这一轮对话
         logger.warning("解析会话对象失败", exc_info=True)
         return {}
-    # 「页面当前选中层」不是用户点名的对象，不记（否则又会把它固化成事实）
-    if got.get("layer_from") == "page":
-        return {}
+    # 「页面当前选中层」不是用户点名的对象，但它**确实是这一轮实际取数的那一层**。
+    # 2026-11-06 实测（外部复测）：恢复历史会话后说「只改 12 月 16 日，其余不变」，
+    # 结果换成风云平均并返回 0.2413 / 1282 像元——串了产品。
+    # 根因就在原来这里直接 `return {}`：连 region/date 一起丢掉，于是下一句
+    # 「其余不变」手里什么都没有，只能回退到页面当前 selected；页面此时停在别的
+    # 产品上，就换成了另一颗卫星。显式点名能过、隐式继承不能过，差别就在这里。
+    # 现在的规则：区域/日期/变量照记；页面上来的层**只在还没有基线时**记一次，
+    # 已有基线就不覆盖（用户没点名换层，不该被页面悄悄改掉）。
+    prev = dialogue_state.sanitize(topic_state or {})
+    is_page_layer = got.get("layer_from") == "page"
     patch: dict[str, str] = {}
     layer = got.get("layer")
     if isinstance(layer, dict) and layer.get("catalog_id"):
-        patch["layer_id"] = str(layer["catalog_id"])
-        name = mock_orchestrator._display(layer)
-        if name:
-            patch["layer_name"] = name
+        if not is_page_layer or not prev.get("layer_id"):
+            patch["layer_id"] = str(layer["catalog_id"])
+            name = mock_orchestrator._display(layer)
+            if name:
+                patch["layer_name"] = name
     if got.get("variable"):
         patch["variable"] = str(got["variable"])
     if got.get("region"):
@@ -1221,7 +1235,6 @@ def _state_patch_from_message(
     # 肯定不是他要的对象，必须清掉——留着它下一次就会被当成「已确认的层」，
     # 于是变量和层名互相矛盾，又回到「问土壤水分答 ω」的老路上。
     if not patch.get("layer_id") and patch.get("variable"):
-        prev = dialogue_state.sanitize(topic_state or {})
         prev_var = dialogue_state.variable_from_name(str(prev.get("layer_name") or ""))
         if prev_var and prev_var != patch["variable"]:
             patch["clear"] = ("layer_id", "layer_name")
@@ -1567,13 +1580,23 @@ def _wants_statistics(message: str) -> bool:
 
 
 def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
-    """本轮是否真的调过取数类工具（统计 / 覆盖 / 元数据）。
+    """本轮是否真的调过取数类工具（统计 / 覆盖 / 元数据 / 点采样）。
 
     2026-10-29 补充：原先只认 get_layer_statistics，但身份类、时间口径类提问
     正确路径是 get_layer_coverage；它一被调用就说明模型确实在查这一层，
     此时规则引擎（只认页面选中层）不得介入。
+
+    2026-11-06 补充 ``sample_layer_point``：点采样同样是「确实取到数了」。漏掉它
+    的后果是——问「地图上我点的那个位置土壤水分是多少」时，工具正正常常返回
+    0.193，兜底却因为「没认到统计工具」判成无出处，把整段正确答案换成一句
+    「这次没有取到统计结果」。点采样功能因此对用户 100% 不可用（2026-11-06 实测）。
     """
-    _data_tools = ("get_layer_statistics", "get_layer_coverage", "get_layer_meta")
+    _data_tools = (
+        "get_layer_statistics",
+        "get_layer_coverage",
+        "get_layer_meta",
+        "sample_layer_point",
+    )
     for step in steps:
         if str(step.get("type") or "") != "tool":
             continue
@@ -1584,10 +1607,9 @@ def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
 
 
 _UNGROUNDED_REPLY = (
-    "这次没有取到统计结果，所以不能给出均值和有效像元数。"
-    "（本轮没有调用统计工具，服务端补算也没有拿到有效值。）"
-    "请再说一次要统计的图层和日期，我重新取数；"
-    "如果该日期落在没有数据的时间块里，我会直接告诉你哪几天是空的。"
+    "这次没能取到可用的数值，所以我不给结论——免得给你一个查不到出处的数。"
+    "麻烦再说明一次要看哪一层、哪一天，我重新取；"
+    "如果那天落在这个图层没有数据的时间段里，我会直接告诉你是哪几天。"
 )
 
 

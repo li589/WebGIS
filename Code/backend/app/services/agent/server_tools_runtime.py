@@ -511,6 +511,30 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
     }
 
 
+_IMPORTS_PREFIX_RE = re.compile(r"^imports/+", re.I)
+
+
+def _normalize_layer_id(layer_id: str) -> str:
+    """把可能带上的 ``imports/`` 前缀剥掉，还原成注册表认识的裸 id。
+
+    2026-11-06：注册表键是 ``imported-xxxx``，``get_overlay_spec('imports/imported-xxxx')``
+    一律返回 None；而 None 在下游会被当成「本地没有任何时间帧」，于是「id 写法不对」
+    变成了「这层没有数据」，模型据此劝用户去重跑反演。实测同一图层：
+    ``imported-a8940443fd6d`` → count=12 / available，``imports/imported-a8940443fd6d``
+    → count=0 / "本地没有任何已物化的时间帧"。
+
+    只剥 ``imports/`` 且剥完确实是本地运行时 id 才替换，其它命名空间（目录层
+    ``method-*`` / ``ref-*``、工作流 ``wf-run-*``）原样返回，不猜。
+    """
+    lid = str(layer_id or "").strip()
+    if not lid:
+        return lid
+    stripped = _IMPORTS_PREFIX_RE.sub("", lid, count=1).lstrip("/")
+    if stripped and stripped != lid and stripped.startswith(("imported-", "imports-")):
+        return stripped
+    return lid
+
+
 def _local_time_keys(catalog_id: str) -> list[str]:
     """图层的本地时间帧（覆盖 / 元数据 / 统计三处共用的唯一入口）。
 
@@ -1246,7 +1270,7 @@ def _sample_layer_point(
     lng, lat = parsed
     time_key = str(args.get("time") or "").strip() or None
 
-    catalog_id = str(args.get("catalog_id") or "").strip()
+    catalog_id = _normalize_layer_id(str(args.get("catalog_id") or ""))
     targets: list[str] = []
     if catalog_id:
         targets = [catalog_id]
@@ -2244,7 +2268,9 @@ def _resolve_coverage(
 
 
 def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
-    catalog_id = str(args.get("catalog_id") or args.get("layer_id") or "").strip()
+    catalog_id = _normalize_layer_id(
+        str(args.get("catalog_id") or args.get("layer_id") or "")
+    )
     if not catalog_id:
         return {"ok": False, "error": "catalog_id 不能为空"}
     requested = _parse_date8(args.get("time") or args.get("date"))
@@ -2254,6 +2280,26 @@ def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     from app.services.layer_catalog import get_layer_descriptor
 
     descriptor = get_layer_descriptor(catalog_id)
+    # ★ 2026-11-06：「认不出这个 id」必须报错，不许伪装成「这层没有数据」。
+    # 旧实现下 get_overlay_spec 返回 None ⇒ local_dates 为空 ⇒ 回一句
+    # 「本地没有任何已物化的时间帧，且该图层未开放在线获取」，模型照着回答
+    # 「这一层没有可用的栅格数据，建议先跑一次工作流」。用户会去重跑几小时反演，
+    # 而真实原因只是 id 写法不对（实测：目录层 id 或带 imports/ 前缀的写法都会踩）。
+    try:
+        from app.services.overlay_registry import get_overlay_spec as _get_spec
+
+        _known_overlay = _get_spec(catalog_id) is not None
+    except Exception:
+        _known_overlay = False
+    if descriptor is None and not _known_overlay:
+        return {
+            "ok": False,
+            "catalog_id": catalog_id,
+            "error": "无法识别这个图层标识：它既不是本地运行时产物"
+            "（imported-* / wf-run-*），也不在图层目录里。请核对写法——"
+            "页面图层的可用 id 见 client_context.active_layers[].overlay_layer_id，"
+            "目录层 id 不能直接拿来查产物。",
+        }
     cap = descriptor.online_temporal if descriptor else None
     if cap is None or not getattr(cap, "enabled", False):
         online: dict[str, Any] = {
@@ -2772,7 +2818,9 @@ def _get_layer_statistics(
     并且**如实回报来源**（``time_source``），模型才不会把"图层默认块"当成"那天"。
     """
     # ① 图层：不点名就用页面那一层（只认运行时产物，参考层没有本地栅格）
-    catalog_id = str(args.get("catalog_id") or args.get("layer_id") or "").strip()
+    catalog_id = _normalize_layer_id(
+        str(args.get("catalog_id") or args.get("layer_id") or "")
+    )
     layer_source = "requested" if catalog_id else "page"
     if not catalog_id:
         catalog_id = _page_default_layer(client_context) or ""
@@ -2853,8 +2901,9 @@ def _get_layer_statistics(
     if spec is None:
         return {
             "ok": False,
-            "error": "该图层不是本地栅格产物，暂不支持整层统计"
-            "（请给出已加载的 imported 图层 ID）",
+            "error": f"「{catalog_id}」不是本地运行时产物，整层统计只认已物化的栅格"
+            "（imported-*）。页面图层的可用 id 见 client_context.active_layers[]"
+            ".overlay_layer_id；目录层 id 要先用工作流物化后才能统计。",
             "catalog_id": catalog_id,
         }
 
