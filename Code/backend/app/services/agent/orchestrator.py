@@ -318,6 +318,38 @@ def _reply_needs_tool_synthesis(reply: str) -> bool:
     return (reply or "").strip() in _EMPTY_REPLY_MARKERS
 
 
+#: 写进 steps[].detail 的体积上限。超过就换成"可解析的摘要"，绝不硬切 JSON。
+_TOOL_DETAIL_LIMIT = 20000
+
+
+def _tool_detail(payload: Any) -> str:
+    """把工具返回写进 ``steps[].detail``，**保证仍然可以被 json.loads 还原**。
+
+    2026-11-06 实测（P0）：旧写法是 ``json.dumps(res)[:800]``，直接切断 JSON。
+    ``search_layers`` 正常返回就有 3306 字符，切完必然是 ``JSONDecodeError``；
+    ``_synthesize_reply_from_tool_steps`` 于是静默 ``continue`` 到底、返回 None，
+    最终用户看到的正文是「（模型未返回文本）」。
+
+    触发条件很日常：模型连搜几次没搜到满意的层（撞满工具跳上限 4），这一轮就
+    没有文本了 —— 三连测里两次空白。所以这里改成：不超限就原样存完整 JSON；
+    超限则包一层仍然合法的摘要对象（``truncated=true``），让合成兜底至少能读到
+    ``ok``/``preview``，而不是解析失败。
+    """
+    if isinstance(payload, str):
+        return payload[:_TOOL_DETAIL_LIMIT]
+    try:
+        text = json.dumps(payload, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(payload)[:_TOOL_DETAIL_LIMIT]
+    if len(text) <= _TOOL_DETAIL_LIMIT:
+        return text
+    ok = bool(payload.get("ok")) if isinstance(payload, dict) else True
+    return json.dumps(
+        {"ok": ok, "truncated": True, "preview": text[: _TOOL_DETAIL_LIMIT - 200]},
+        ensure_ascii=False,
+    )
+
+
 def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None:
     """Turn the latest useful tool_result into user-visible Chinese text.
 
@@ -398,6 +430,15 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
         layer_meta = data.get("layer")
         if isinstance(layer_meta, dict) and layer_meta.get("layer_id"):
             return _describe_layer_meta(layer_meta)
+    # 一条都没合成出来，但这一轮确实调过工具（模型话没说完 / 撞满跳数）：
+    # 绝不能把「（模型未返回文本）」这种占位符交给用户，给一句能继续往下走的话。
+    if any(
+        isinstance(s, dict) and s.get("type") in ("tool", "tool_result") for s in steps
+    ):
+        return (
+            "这次查到的结果没能整理成结论。"
+            "你可以把条件说得更具体一点（哪一层、哪一天、哪个区域），我再查一次。"
+        )
     return None
 
 
@@ -838,6 +879,13 @@ def _build_system(
         "是**同一变量**的层：页面选中的是别的变量时，改用同变量的层，或用一句话反问"
         "「哪一个（来源+口径）」，**绝不拿页面选中层顶替**——那会答出一个看着很正式、"
         "其实答非所问的数字。\n"
+        "- **页面上根本没有这个变量的层时**（search_layers 结果里同变量的条目全是 "
+        "`on_page=false` 的目录层 / 参考层），不许把这些目录层当成答案报出来，也不许"
+        "用另一颗卫星的同族产品顶替。用一句话说清：「页面上现在挂的是〈当前层〉，"
+        "〈要的变量〉这一片还没加载」，再给出两条明确的出路（把该变量图层加到页面，"
+        "或者按当前这层取数）。\n"
+        "- 同一个问题**最多换两种说法搜**。搜两次仍没有可用层，就按上一条如实说明缺层，"
+        "不要用第三种、第四种措辞继续搜——那只会把工具跳数耗尽、最后答不出话。\n"
         "- 区域一旦确认过，就不要再退回「整幅」。只有在用户明确说「全图 / 全球 / 整层 / "
         "不限区域」时才去掉区域。回答里要点明「按 XX 边界统计」，让用户核对。\n"
         "- 用户点了新的产品形态或来源（「换成 SMAP 动态」「风云那套」）时，按新点名换层；"
@@ -1568,6 +1616,29 @@ _TIME_STRUCTURE_RE = re.compile(
     r"时间片|时间块|时间清单|时间轴|多少天|几天|片数|补了几天|几个时次|多少时次", re.I
 )
 
+#: 改色标 / 改量程是**写操作**，不是统计请求。
+#: 2026-11-06 实测：「把这个图层的最大值改成 0.5，最小值改成 0.1」里的「最大值」
+#: 命中了 _STATISTICS_WORDS，兜底于是判成统计请求、整段替换成一段均值说明，而
+#: 界面上的色标其实已经被 set_layer_symbology 改掉了 —— 正文说「本次只读统计，
+#: 未写入产物」，实际已经改了视图，用户拿到的是自相矛盾的回执。
+_THRESHOLD_WORD_RE = re.compile(
+    r"最大值|最小值|上限|下限|量程|色标|阈值|vmax|vmin", re.I
+)
+_THRESHOLD_SET_VERB_RE = re.compile(
+    r"改成|改为|设成|设为|调到|调成|调整为|调整到|改到|调到|改成", re.I
+)
+#: 只有「纯改阈值」才排除；「改完阈值再算平均」这种复合指令仍要出数
+_STAT_KEEP_RE = re.compile(r"平均|均值|统计|像元|mean|average", re.I)
+
+
+def _is_threshold_write(text: str) -> bool:
+    """这句话是不是在改色标阈值（而不是要统计结果）。"""
+    if not text:
+        return False
+    if not (_THRESHOLD_WORD_RE.search(text) and _THRESHOLD_SET_VERB_RE.search(text)):
+        return False
+    return not _STAT_KEEP_RE.search(text)
+
 
 def _wants_statistics(message: str) -> bool:
     """用户这句话是不是在要整层统计（报告第二轮 A06~A08 的判据）。"""
@@ -1575,6 +1646,9 @@ def _wants_statistics(message: str) -> bool:
     # 排除「时间结构」类提问：它们同样含「多少/几个」，但答案在 time_list /
     # 覆盖信息里，跑统计只会把「本层共 13 片」换成一段无关的均值。
     if _TIME_STRUCTURE_RE.search(text):
+        return False
+    # 排除「改阈值/量程」：那是界面写操作，答案该由下发的意图说了算
+    if _is_threshold_write(text):
         return False
     return bool(_STATISTICS_WORDS.search(text))
 
@@ -1799,7 +1873,7 @@ def _run_chat_impl(
                 {
                     "type": "tool_result",
                     "summary": f"命中 {tool_res.get('count', 0)} 条",
-                    "detail": json.dumps(tool_res, ensure_ascii=False)[:800],
+                    "detail": _tool_detail(tool_res),
                 }
             )
 
@@ -1848,7 +1922,7 @@ def _run_chat_impl(
                         "summary": "待确认"
                         if wf_res.get("needs_confirmation")
                         else "工具返回",
-                        "detail": json.dumps(wf_res, ensure_ascii=False)[:800],
+                        "detail": _tool_detail(wf_res),
                     }
                 )
                 conf = _confirmation_from_tool_result(wf_res)
@@ -1881,7 +1955,7 @@ def _run_chat_impl(
                     "summary": f"采样 {sample_res.get('count', 0)} 层"
                     if sample_res.get("ok")
                     else "采样失败",
-                    "detail": json.dumps(sample_res, ensure_ascii=False)[:800],
+                    "detail": _tool_detail(sample_res),
                 }
             )
 
@@ -1908,7 +1982,7 @@ def _run_chat_impl(
                     {
                         "type": "tool_result",
                         "summary": "图层元数据" if lm.get("ok") else "图层元数据失败",
-                        "detail": json.dumps(lm, ensure_ascii=False)[:800],
+                        "detail": _tool_detail(lm),
                     }
                 )
 
@@ -1925,7 +1999,7 @@ def _run_chat_impl(
                 {
                     "type": "tool_result",
                     "summary": f"工作流 {lw.get('count', 0)} 条",
-                    "detail": json.dumps(lw, ensure_ascii=False)[:800],
+                    "detail": _tool_detail(lw),
                 }
             )
             # If user mentions a specific id-like token, try get_workflow_meta
@@ -1955,7 +2029,7 @@ def _run_chat_impl(
                         "summary": "工作流元数据"
                         if wm.get("ok")
                         else "工作流元数据失败",
-                        "detail": json.dumps(wm, ensure_ascii=False)[:800],
+                        "detail": _tool_detail(wm),
                     }
                 )
 
@@ -1982,7 +2056,7 @@ def _run_chat_impl(
                     "summary": f"搜索 {ws.get('count', 0)} 条"
                     if ws.get("ok")
                     else "搜索失败",
-                    "detail": json.dumps(ws, ensure_ascii=False)[:800],
+                    "detail": _tool_detail(ws),
                 }
             )
 
@@ -2200,7 +2274,7 @@ def _run_chat_impl(
                             "summary": "待确认"
                             if tres.get("needs_confirmation")
                             else "工具返回",
-                            "detail": json.dumps(tres, ensure_ascii=False)[:800],
+                            "detail": _tool_detail(tres),
                         }
                     )
                     conf = _confirmation_from_tool_result(tres)
@@ -2381,7 +2455,7 @@ def _run_chat_impl(
                         "summary": "待确认"
                         if tres.get("needs_confirmation")
                         else "工具返回",
-                        "detail": json.dumps(tres, ensure_ascii=False)[:800],
+                        "detail": _tool_detail(tres),
                     }
                 )
                 conf = _confirmation_from_tool_result(tres)

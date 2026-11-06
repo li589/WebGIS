@@ -1320,7 +1320,13 @@ def _sample_layer_point(
                 if not isinstance(layer, dict):
                     continue
                 cid = str(layer.get("catalog_id") or "").strip()
-                oid = str(layer.get("overlay_layer_id") or "").strip()
+                # 2026-11-06：前端下发的 overlay_layer_id 带 ``imports/`` 前缀，
+                # 而 get_overlay_spec 只认裸 id。不剥前缀时 _sample_one_layer 会
+                # 把它当成「没有 overlay 能力」，回一句「该图层暂不支持按点取数」
+                # 再附上 group_members，模型只好自己从三个变量里挑一个重试。
+                # 实测：每问一次点值都白烧一次工具调用，且从 group_members 挑错
+                # 变量就会答成另一个变量的数（土壤水分 ↔ 等效散射 ω）。
+                oid = _normalize_layer_id(str(layer.get("overlay_layer_id") or ""))
                 name = str(layer.get("name") or "").strip()
                 if cid and oid:
                     overlay_id_by_catalog[cid] = oid
@@ -1466,7 +1472,9 @@ def _sample_one_layer(
         display = str(getattr(desc, "display_name", "") or display or catalog_id)
 
     # 运行时栅格图层：catalog_id 无 overlay spec，须用实际 overlay id 采样
-    spec = get_overlay_spec(overlay_id or catalog_id)
+    # 2026-11-06：传入的 overlay id 可能带 ``imports/`` 前缀（前端字段原样），
+    # 注册表键是裸 id，这里再归一化一次，避免上层漏剥就退化成「不支持点采样」。
+    spec = get_overlay_spec(_normalize_layer_id(overlay_id or catalog_id))
     if spec is not None:
         # R07：来源 / 变量 / 物理单位由身份证统一给出（spec.unit 可能是变量标签）
         # 2026-11-06：优先用 overlay id 取身份。目录 id 是**产品族**入口
