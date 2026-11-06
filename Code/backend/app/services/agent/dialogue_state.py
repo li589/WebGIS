@@ -99,6 +99,13 @@ def sanitize(raw: Any) -> dict[str, str]:
     variable = out.get("variable")
     if variable and variable not in VARIABLE_LABELS:
         out.pop("variable", None)
+    # 层名与变量自相矛盾时**以层名为准**：层名是「这一层到底是什么」的直接证据，
+    # variable 是从它推出来的。2026-11-06 实盘见过 {layer_name: 等效散射 ω,
+    # variable: sm}——这种状态会让提示词自己打架，模型于是再去挑一个「同变量」
+    # 的层，越挑越偏。
+    name_var = variable_from_name(out.get("layer_name") or "")
+    if name_var and out.get("variable") and name_var != out["variable"]:
+        out["variable"] = name_var
     return out
 
 

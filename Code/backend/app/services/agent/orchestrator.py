@@ -831,6 +831,9 @@ def _build_system(
         "- 这类追问里，**页面当前选中哪一层与取数对象无关**。哪怕 client_context 的 "
         "selected 指向另一层，也要用本会话记录的那一层；真要改用别的层，必须在回答里"
         "写明「这次改用 X 层」。\n"
+        "- **只说了变量、没另指来源或口径时**（「土壤水分的平均值是多少」「那 VOD 呢」），"
+        "就统计『本会话已确认的取数对象』里的那一层，**不要重新挑**：同一变量有风云/SMAP、"
+        "平均/动态好几支，重挑必然挑到别的支，数就不是他刚看的那一份了。\n"
         "- 用户点名了变量（土壤水分 / VOD / 等效散射 ω）时，取数工具的 catalog_id 必须"
         "是**同一变量**的层：页面选中的是别的变量时，改用同变量的层，或用一句话反问"
         "「哪一个（来源+口径）」，**绝不拿页面选中层顶替**——那会答出一个看着很正式、"
@@ -1162,6 +1165,62 @@ def _merge_intents(
         index[key] = len(merged)
         merged.append({"name": name, "args": dict(args)})
     return merged
+
+
+def _state_patch_from_message(
+    message: str,
+    client_context: dict[str, Any] | None,
+    topic_state: dict[str, str] | None,
+) -> dict[str, Any]:
+    """从**用户这一句话**里解析「他在说哪一层 / 哪里 / 哪天」，写进会话状态。
+
+    2026-11-06 补（同日第二次）：上一版只靠「模型调了工具」回写状态，实测模型
+    会直接复述历史作答、一次工具都不调（用户第 1 句「SMAP 动态的土壤水分」就是
+    这样），于是状态仍是空的，下一句「土壤水分的平均值是多少」只好自己挑一个
+    同变量层——挑成了「风云卫星 平均」，答的不是刚才那一层。
+
+    结论：状态要靠**确定性解析**维护，不能指望模型的调用习惯。
+    解析不出唯一对象（返回 ``why``）或只是页面兜底时，一律不写——宁缺勿错。
+    """
+    if not (message or "").strip():
+        return {}
+    try:
+        from app.services.agent import mock_orchestrator
+    except Exception:  # pragma: no cover - 理论上不会发生
+        return {}
+    try:
+        layers = mock_orchestrator._normalize_layers(client_context)
+        got = mock_orchestrator.resolve_entities(
+            message, layers, client_context=client_context, state=topic_state or {}
+        )
+    except Exception:  # noqa: BLE001 - 状态维护失败不该拦住这一轮对话
+        logger.warning("解析会话对象失败", exc_info=True)
+        return {}
+    # 「页面当前选中层」不是用户点名的对象，不记（否则又会把它固化成事实）
+    if got.get("layer_from") == "page":
+        return {}
+    patch: dict[str, str] = {}
+    layer = got.get("layer")
+    if isinstance(layer, dict) and layer.get("catalog_id"):
+        patch["layer_id"] = str(layer["catalog_id"])
+        name = mock_orchestrator._display(layer)
+        if name:
+            patch["layer_name"] = name
+    if got.get("variable"):
+        patch["variable"] = str(got["variable"])
+    if got.get("region"):
+        patch["region"] = str(got["region"])
+    if got.get("date"):
+        patch["date"] = str(got["date"])
+    # 用户换了变量（「换成 VOD」），但这一句定位不到具体某层：旧的 layer_id 已经
+    # 肯定不是他要的对象，必须清掉——留着它下一次就会被当成「已确认的层」，
+    # 于是变量和层名互相矛盾，又回到「问土壤水分答 ω」的老路上。
+    if not patch.get("layer_id") and patch.get("variable"):
+        prev = dialogue_state.sanitize(topic_state or {})
+        prev_var = dialogue_state.variable_from_name(str(prev.get("layer_name") or ""))
+        if prev_var and prev_var != patch["variable"]:
+            patch["clear"] = ("layer_id", "layer_name")
+    return patch
 
 
 def _state_patch_from_tool_calls(
@@ -1967,6 +2026,13 @@ def _run_chat_impl(
     needs_key = provider_kind not in {"ollama", "demo"}
     if needs_key and not api_key:
         raise ValueError("当前配置档未设置 API Key，请在「设置 → Agent 配置」中填写")
+
+    # 用户这句话自己点名的对象，先落进会话状态：模型这一轮可能一次工具都不调
+    # （复述历史就答了），那条路否则一个字都不会记。
+    topic_state = dialogue_state.merge(
+        topic_state,
+        **_state_patch_from_message(message, client_context, topic_state),
+    )
 
     system = _build_system(client_context, cred=cred, topic_state=topic_state)
     max_out = min(4096, int(profile.get("context_window_output") or 2048))

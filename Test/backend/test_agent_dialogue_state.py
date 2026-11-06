@@ -262,3 +262,43 @@ def test_tool_calls_write_topic_state():
     )
     assert patch["layer_id"] == "sm-smap-dyn"
     assert patch["variable"] == "sm"
+
+
+def test_state_written_from_message_without_tool_calls():
+    """模型一次工具都不调（复述历史就答了），也必须记住用户点名的层。
+
+    11-06 实测：第 1 句「SMAP 动态的土壤水分」没调工具 ⇒ 状态空 ⇒ 第 2 句
+    「土壤水分的平均值是多少」被挑成「风云卫星 平均」。
+    """
+    from app.services.agent.orchestrator import _state_patch_from_message
+
+    ctx = {"active_layers": SM_LAYERS}
+    patch = _state_patch_from_message("SMAP 动态的土壤水分", ctx, {})
+    assert patch["layer_id"] == "sm-smap-dyn"
+    assert patch["variable"] == "sm"
+    # 只是页面兜底（没说对象）时不许写
+    assert _state_patch_from_message("平均值是多少", ctx, {}) == {}
+
+
+def test_switching_variable_clears_stale_layer():
+    """「换成土壤水分」时旧记的 ω 层必须清掉，否则两轮后又被当成本轮对象。"""
+    from app.services.agent.orchestrator import _state_patch_from_message
+
+    stale = {
+        "layer_id": "om-smap-avg",
+        "layer_name": "SMAP 平均散射约束产品 · 等效散射 ω",
+        "variable": "omega",
+    }
+    patch = _state_patch_from_message(
+        "换成土壤水分", {"active_layers": SM_LAYERS + [OMEGA_LAYER]}, stale
+    )
+    assert patch["variable"] == "sm"
+    assert set(patch["clear"]) == {"layer_id", "layer_name"}
+
+
+def test_sanitize_trusts_layer_name_over_variable():
+    """层名与变量矛盾时以层名为准（实盘见过 {等效散射 ω, sm}）。"""
+    got = dialogue_state.sanitize(
+        {"layer_id": "x", "layer_name": "等效散射 ω", "variable": "sm"}
+    )
+    assert got["variable"] == "omega"
