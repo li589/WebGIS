@@ -854,11 +854,17 @@ def _layer_temporal_basis(catalog_id: Any, spec: Any = None) -> str:
     """
     lid = str(catalog_id or "").strip()
     cid = lid.lower()
-    is_omega = (
-        "omega" in cid
-        or "\u03c9" in cid
-        or str(getattr(spec, "label", "") or "").strip().upper() == "OMEGA"
-    )
+    label = str(getattr(spec, "label", "") or "").strip().upper()
+    if label:
+        # 2026-11-06：spec.label 是产物 meta 里的真实变量名（SM / VOD / OMEGA），
+        # 比 id 里的字面量靠谱。目录 id 形如 method-smap-omega-doy-dynamic，
+        # 这里的 "omega" 是「散射约束产品」这个**族名**的一部分，不代表这个产物
+        # 就是 ω。按 id 判断会把土壤水分也当成 ω ⇒ basis=block_8day ⇒
+        # value_basis 说「这是 8 天块共用的一个值」，而工具同时报 is_daily_frame
+        # =true（命中的确实是单日帧），两个字段互相打架，模型照错的那个答。
+        is_omega = label == "OMEGA"
+    else:
+        is_omega = "omega" in cid or "\u03c9" in cid
     if not is_omega:
         return "daily"
     try:
@@ -1381,7 +1387,10 @@ def _layer_identity_fields(
     try:
         from app.services.agent.layer_identity import identity_fields
 
-        return identity_fields(catalog_id, display_name=display)
+        # 2026-11-06：前端 active_layers[].overlay_layer_id 实际可能带 imports/ 前缀，
+        # 而 identity_fields 只认裸 id —— 不剥前缀会整段降级成
+        # source=unknown / variable=unknown，回答里就会出现「变量标记为未识别」。
+        return identity_fields(_normalize_layer_id(catalog_id), display_name=display)
     except Exception:  # pragma: no cover
         logger.debug("layer identity unavailable for %s", catalog_id, exc_info=True)
         return {}
@@ -1460,7 +1469,10 @@ def _sample_one_layer(
     spec = get_overlay_spec(overlay_id or catalog_id)
     if spec is not None:
         # R07：来源 / 变量 / 物理单位由身份证统一给出（spec.unit 可能是变量标签）
-        identity = _layer_identity_fields(catalog_id, display=display)
+        # 2026-11-06：优先用 overlay id 取身份。目录 id 是**产品族**入口
+        # （method-* 一族挂 SM/VOD/ω 三个产物），拿它取身份只能得到
+        # variable=unknown，回答里就出现「变量标记为未识别」这种废话。
+        identity = _layer_identity_fields(overlay_id or catalog_id, display=display)
         try:
             raw = spec.resolve_value(lng, lat, time)
             quality, quality_label = _overlay_quality(spec, raw)
@@ -2406,7 +2418,12 @@ def _get_layer_coverage(
     # period_* 描述「这次实际命中的那一片」，is_single_block/span 描述「整层只有几片」。
     facts = _temporal_facts(local_dates)
     hit_start, hit_end = _block_period(hit_key)
-    _cov_display = _qualified_layer_name(catalog_id, _layer_display_name(catalog_id))
+    # 映射到具体产物时用产物名（「SMAP 动态散射约束产品 · 土壤水分」）：
+    # 只报族名，用户和模型都分不清这一族三个变量里说的是哪个。
+    _cov_name_id = local_id if local_id != catalog_id else catalog_id
+    _cov_display = _qualified_layer_name(
+        _cov_name_id, _layer_display_name(_cov_name_id)
+    )
     return {
         "ok": True,
         "catalog_id": catalog_id,
@@ -3085,7 +3102,11 @@ def _get_layer_statistics(
     # 旧实现把 facts["period_*"]（整层首尾 20251101~20260208）当成 period_*，
     # 模型据此说「不是当天独立观测」——而提示词要的是「实际命中的数据时间块」。
     hit_start, hit_end = _block_period(actual_key)
-    _stats_display = _qualified_layer_name(catalog_id, _layer_display_name(catalog_id))
+    # 同上：已映射到具体产物就用产物名，带上变量名，避免「族名对了、变量错了」
+    _stats_name_id = local_id if local_id != catalog_id else catalog_id
+    _stats_display = _qualified_layer_name(
+        _stats_name_id, _layer_display_name(_stats_name_id)
+    )
     payload: dict[str, Any] = {
         "ok": bool(stats.get("ok")),
         "catalog_id": catalog_id,
@@ -3132,7 +3153,7 @@ def _get_layer_statistics(
         "value_basis": _value_basis(catalog_id, actual_key, spec),
         # 这一片整幅都没有有效像元（≠ 选中的区域没覆盖）：见函数内 empty_slice 注释
         "empty_slice": empty_slice,
-        **_layer_identity_fields(catalog_id, display=_layer_display_name(catalog_id)),
+        **_layer_identity_fields(local_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
     if ondemand_fetch is not None:

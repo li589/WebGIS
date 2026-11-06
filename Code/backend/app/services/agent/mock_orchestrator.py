@@ -891,12 +891,16 @@ def _statistics_reply(
     # 用户会当成该市的值（外部测试 2026-11-04 就是这么错答的）。
     region = entities.get("region")
     stat_args: dict[str, Any] = {
-        "catalog_id": target["catalog_id"],
+        # 2026-11-06：必须用页面那一层实际挂着的产物 id（imported-*）。
+        # 目录层 id（method-*）在盘上没有同名目录，拿它统计只会得到
+        # 「不是本地运行时产物」，兜底路径就会退化成一句「本次未取到数值」——
+        # 而模型正常调工具时是同一条链路、同一天，本来能算出数。
+        "catalog_id": str(target.get("overlay_layer_id") or target["catalog_id"]),
         "time": day or None,
     }
     if region:
         stat_args["region"] = region
-    res = _get_layer_statistics(stat_args, cred=None)
+    res = _get_layer_statistics(stat_args, cred=None, client_context=client_context)
     topic_state = _entities_state_patch(entities)
     carry_note = _carry_note(entities)
 
