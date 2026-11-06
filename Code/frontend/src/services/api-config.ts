@@ -236,7 +236,27 @@ export const EXTERNAL_API_CONFIGS: ExternalApiConfig[] = _data.externalApis
 export const GEE_INTEGRATION_CONFIG: GeeIntegrationConfig = _data.geeIntegration
 export const UNIFIED_INTEGRATION_CONFIG_TEMPLATE: UnifiedIntegrationConfig = _data.unifiedTemplate
 
-export const TILE_SOURCES: TileSourceConfig[] = BASEMAP_PROVIDER_CONFIGS.flatMap((provider) =>
+/**
+ * 合规屏蔽名单（2026-11-06 用户要求）。
+ *
+ * 下列底图数据源**未取得我国审图号**，国界画法不符合国务院批准的
+ * 《中国国界线画法标准样图》——藏南/阿克赛钦按境外立场绘制、台湾单独表示、
+ * 南海诸岛与断续线不合规，属《公开地图内容表示规范》禁止对外展示的"问题地图"。
+ * 依据：自然资源部公开通报，OSM / ArcGIS(Esri) / Bing / HERE 等境外地图均不可合法使用。
+ *
+ * 处理方式：**只从界面清单中过滤，配置与代码一律保留**（不改 JSON、不删端点）。
+ * 恢复其中某一个：把它的 id 从下面数组里注释掉即可，其它地方无需改动。
+ */
+export const BLOCKED_BASEMAP_PROVIDER_IDS: readonly string[] = [
+  'esri', // Esri 世界街道 / 影像 / 地形 / 晕渲 / 深色
+  'bing', // Bing 道路 / 航空 / 深色
+  'osm', // OSM 标准 / 人道主义 / OpenTopoMap
+  'carto', // CARTO 深色（数据来自 OSM）
+]
+
+export const TILE_SOURCES: TileSourceConfig[] = BASEMAP_PROVIDER_CONFIGS.filter(
+  (provider) => !BLOCKED_BASEMAP_PROVIDER_IDS.includes(provider.id),
+).flatMap((provider) =>
   provider.endpoints
     .filter((endpoint) => endpoint.enabled)
     .map((endpoint) => ({
