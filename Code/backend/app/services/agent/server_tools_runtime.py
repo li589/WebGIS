@@ -35,8 +35,14 @@ def execute_server_tool(
     *,
     cred: Any = None,
     client_context: dict[str, Any] | None = None,
+    user_message: str = "",
 ) -> dict[str, Any]:
-    """Execute an allowed server tool. Unknown tools return ok=False."""
+    """Execute an allowed server tool. Unknown tools return ok=False.
+
+    ``user_message`` 是用户这一轮的原话，只给「跨来源取数守卫」用
+    （见 ``_cross_source_guard``）：判断他有没有点名换一颗卫星。
+    不传也安全——守卫会直接放行，行为与改动前一致。
+    """
     tool = (name or "").strip()
     if tool not in _ALLOWED_TOOLS:
         return {"ok": False, "error": f"未知或未授权的服务端工具: {tool}"}
@@ -51,7 +57,9 @@ def execute_server_tool(
     if tool == "get_workflow_meta":
         return _get_workflow_meta(args, cred=cred)
     if tool == "sample_layer_point":
-        return _sample_layer_point(args, cred=cred, client_context=client_context)
+        return _sample_layer_point(
+            args, cred=cred, client_context=client_context, user_message=user_message
+        )
     if tool == "web_search":
         return _web_search(args)
     if tool == "list_workflow_runs":
@@ -65,7 +73,9 @@ def execute_server_tool(
     if tool == "get_layer_statistics":
         # client_context 必传：统计要默认用「页面当前日期 + 页面选中图层」，
         # 否则会静默退回 meta.default_time（曾导致页面停在 12-15 却统计 01-25~02-01）。
-        return _get_layer_statistics(args, cred=cred, client_context=client_context)
+        return _get_layer_statistics(
+            args, cred=cred, client_context=client_context, user_message=user_message
+        )
     if tool == "list_workflow_timers":
         return _list_workflow_timers(args, cred=cred)
     if tool == "run_workflow":
@@ -1270,6 +1280,7 @@ def _sample_layer_point(
     *,
     cred: Any,
     client_context: dict[str, Any] | None = None,
+    user_message: str = "",
 ) -> dict[str, Any]:
     """Sample overlay/weather value(s) at a map point."""
     parsed = _parse_lng_lat(args, client_context)
@@ -1308,6 +1319,14 @@ def _sample_layer_point(
             "lat": lat,
             "error": "未指定 catalog_id，且客户端无活动图层",
         }
+
+    # 跨来源守卫：点了别的卫星的同族产品（页面上没有该变量）就不取数
+    if catalog_id:
+        blocked = _cross_source_guard(
+            catalog_id, client_context=client_context, user_message=user_message
+        )
+        if blocked:
+            return {**blocked, "lng": lng, "lat": lat}
 
     # 运行时栅格（imported-*/wf-run-*）：client_context 携带 overlay_layer_id，
     # catalog_id → overlay id 映射（overlay 采样以实际 overlay id 为准）
@@ -1400,6 +1419,127 @@ def _layer_identity_fields(
     except Exception:  # pragma: no cover
         logger.debug("layer identity unavailable for %s", catalog_id, exc_info=True)
         return {}
+
+
+#: 来源 → 用户嘴里的叫法。守卫靠它判断「他是不是明确点名要换一颗卫星」。
+#: 只放「点名」用的强标识，不放「土壤/植被」这类会大面积误命中的词。
+_SOURCE_ALIASES: dict[str, tuple[str, ...]] = {
+    "smap": ("smap", "s-map"),
+    "fy": ("风云", "fy-3", "fy-4", "fy3", "fy4", "风三", "风四", "nsmc"),
+}
+
+
+def _mentions_source(message: str, source: str) -> bool:
+    """用户原话里有没有点名这个来源（"风云那套""用 SMAP 的"）。"""
+    text = (message or "").casefold()
+    if not text:
+        return False
+    return any(alias in text for alias in _SOURCE_ALIASES.get(source, (source,)))
+
+
+def _page_layer_pairs(client_context: dict[str, Any] | None) -> list[dict[str, str]]:
+    """页面上每一层的（来源, 变量）。解析不出的层直接跳过，不猜。"""
+    if not isinstance(client_context, dict):
+        return []
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list):
+        return []
+    pairs: list[dict[str, str]] = []
+    for lay in layers:
+        if not isinstance(lay, dict):
+            continue
+        lid = str(lay.get("overlay_layer_id") or lay.get("catalog_id") or "").strip()
+        if not lid:
+            continue
+        fields = _layer_identity_fields(lid)
+        source = str(fields.get("source") or "")
+        variable = str(fields.get("variable") or "")
+        if not source or not variable or variable == "unknown":
+            continue
+        pairs.append(
+            {
+                "source": source,
+                "source_label": str(fields.get("source_label") or source),
+                "variable": variable,
+                "variable_label": str(fields.get("variable_label") or variable),
+            }
+        )
+    return pairs
+
+
+def _cross_source_guard(
+    catalog_id: str,
+    *,
+    client_context: dict[str, Any] | None,
+    user_message: str,
+) -> dict[str, Any] | None:
+    """跨卫星同族产品顶替的硬拦（返回非 None 表示拦截）。
+
+    2026-11-06 实测：页面只挂「SMAP 动态 · 等效散射 ω」，用户问「河南省
+    12-15 的土壤水分平均值」，模型搜到「风云卫星 动态散射约束产品 · 土壤水分」
+    直接统计出 0.219 / 13 像元 —— 数字是真的，但那是另一颗卫星、另一套反演
+    口径，用户以为自己看的是页面上这套。提示词里早已写明「不许用另一颗卫星
+    的同族产品顶替」，实测 5 次仍破防 1 次 ⇒ 只能落到工具层硬拦。
+
+    只在**同时满足**下面四条时才拦：
+      1. 用户原话非空（拿不到原话就放行，宁可漏拦不可误拦）；
+      2. 页面能解析出至少一层（解析不出说明前端没传够信息，不能瞎判）；
+      3. 页面上**没有任何同变量层**；
+      4. 页面上**没有同来源层**，且原话**没点名**这个来源。
+
+    第 4 条是防误拦的关键：用户说「看看风云的土壤水分」是合法换源，必须放行。
+    """
+    if not user_message:
+        return None
+    page_pairs = _page_layer_pairs(client_context)
+    if not page_pairs:
+        return None
+    fields = _layer_identity_fields(catalog_id)
+    req_source = str(fields.get("source") or "")
+    req_variable = str(fields.get("variable") or "")
+    if not req_source or not req_variable or req_variable == "unknown":
+        return None
+    if any(item["variable"] == req_variable for item in page_pairs):
+        return None
+    if any(item["source"] == req_source for item in page_pairs):
+        return None
+    if _mentions_source(user_message, req_source):
+        return None
+    page_desc = "、".join(
+        dict.fromkeys(
+            f"{item['source_label']}·{item['variable_label']}" for item in page_pairs
+        )
+    )
+    req_desc = f"{fields.get('source_label') or req_source}·{fields.get('variable_label') or req_variable}"
+    req_var_label = str(fields.get("variable_label") or req_variable)
+    return {
+        "ok": False,
+        "need_confirm": True,
+        "error_code": "cross_source_needs_confirm",
+        "catalog_id": catalog_id,
+        "requested_layer": req_desc,
+        "page_layers": page_pairs,
+        # 面向用户的兜底文案：模型没吐正文时由 _synthesize_reply_from_tool_steps 直接用，
+        # 不能把下面那段「给模型的指令」原样甩给用户。
+        "user_facing": (
+            f"页面上现在挂的是「{page_desc}」，"
+            f"「{req_var_label}」这一层还没加载，"
+            "所以这次没有取数——换一颗卫星的同族产品会给出另一套反演口径的数，"
+            "拿它当答案就是答非所问。\n\n"
+            f"两条路：① 把「{req_var_label}」那层加到页面，我再按你的区域和日期统计；"
+            "② 就按当前这层取数（但那不是同一个变量，我会把区别说清楚）。要哪一个？"
+        ),
+        "error": (
+            f"没有取数：{req_desc} 不在页面上，页面上挂的是「{page_desc}」。"
+            "这是另一颗卫星的同族产品、反演口径不同，用户没有点名要它，"
+            "拿来当答案就是答非所问。"
+            "接下来只能这样回答：说明页面上现在挂的是哪一层、这个变量的层还没加载，"
+            "给出两条出路（把该变量图层加到页面后我再统计 / 就按当前这层取数），"
+            "并问他要哪一个。"
+            "**回答里不得出现任何统计数值、有效像元数或范围**，也不要拿其它卫星的"
+            "同族产品凑一个数出来。"
+        ),
+    }
 
 
 # 产品族名里的通用尾词：去掉后得到「SMAP 动态」「风云卫星 平均」这种短名，
@@ -2902,6 +3042,7 @@ def _get_layer_statistics(
     *,
     cred: Any,
     client_context: dict[str, Any] | None = None,
+    user_message: str = "",
 ) -> dict[str, Any]:
     """整层只读统计（mean/min/max/std/有效像元数）——不建图层、不跑工作流。
 
@@ -3017,6 +3158,14 @@ def _get_layer_statistics(
             ".overlay_layer_id；目录层 id 要先用工作流物化后才能统计。",
             "catalog_id": catalog_id,
         }
+
+    # 跨来源守卫：拿另一颗卫星的同族产品顶替页面上的变量时，直接不给数
+    # （2026-11-06 实测：页面只有 SMAP·ω，问土壤水分拿到风云的 0.219/13 像元）
+    _blocked = _cross_source_guard(
+        local_id, client_context=client_context, user_message=user_message
+    )
+    if _blocked:
+        return _blocked
 
     # 只支持 GeoTIFF 源：catalog 里部分老图层是 .mat/.nc，rasterio 直接读会抛异常
     reader = str(getattr(spec, "source_reader", "") or "").strip().lower()

@@ -374,6 +374,12 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
         if not isinstance(data, dict):
             continue
         if not data.get("ok"):
+            # 跨来源拦截的 error 是写给模型的操作指令（含「不得出现数值」这类话），
+            # 不能原样当正文；用工具给出的 user_facing 文案。
+            if data.get("error_code") == "cross_source_needs_confirm":
+                friendly = str(data.get("user_facing") or "").strip()
+                if friendly:
+                    return friendly
             err = _friendly_tool_error(str(data.get("error") or ""))
             if err:
                 return err
@@ -2297,6 +2303,8 @@ def _run_chat_impl(
                         dict(sc.get("args") or {}),
                         cred=cred,
                         client_context=client_context,
+                        # 用户原话交给工具侧的跨来源守卫：判断他有没有点名换卫星
+                        user_message=message,
                     )
                     steps.append(
                         {
