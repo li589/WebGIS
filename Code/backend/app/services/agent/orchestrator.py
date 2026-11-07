@@ -2117,6 +2117,29 @@ _STAT_VALUE_RE = re.compile(
 )
 
 
+#: 正文里**写着百分号**的统计值：``平均值约 20.25%``。
+#: 工具只返回 0.2025 这种小数，百分数是模型自己乘 100 的换算——不能拿原值直接比，
+#: 也不能一律放行（2026-11-07 实测 R：写对了 20.25% 却被判「均值对不上」整段重写；
+#: 而 r27 那次因为 20.25% 没挨着「平均值」就过掉了，同一个问法两种结果）。
+#: 这里单独收出来，按 ÷100 与之比对，既留校验力又不误伤换算。
+_STAT_PERCENT_RE = re.compile(
+    r"(?:平均值|均值|平均|最大值|最小值|最高值|最低值|最高|最低|标准差|中位数)"
+    r"\s*(?:是|为|约|大约|在|[:：])?\s*[*_`]*\s*(\d+(?:\.\d+)?)\s*[%％]"
+)
+
+
+def _stat_percent_values(text: str) -> set[float]:
+    """正文里以百分数形式写出的统计值（``平均值约 20.25%``）。"""
+    raw = _DATE_LIKE_RE.sub(" ", text or "")
+    out: set[float] = set()
+    for token in _STAT_PERCENT_RE.findall(raw):
+        try:
+            out.add(float(token))
+        except ValueError:
+            continue
+    return out
+
+
 def _stat_values(text: str) -> set[float]:
     """正文里「必须与本轮取数对上」的那些数。
 
@@ -2408,8 +2431,15 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     # 只是河南不在本轮白名单里。逐个强校验会把这段正确的对比整段打掉，
     # 换成一句只有广州的话，用户问的「差多少」反而没答。
     stat_values = _stat_values(text)
-    if stat_values and not _has_cross_round_region(text, facts):
-        numbers_ok = all(_number_matches(value, whitelist) for value in stat_values)
+    pct_values = _stat_percent_values(text)
+    plain_values = stat_values - pct_values
+    if (plain_values or pct_values) and not _has_cross_round_region(text, facts):
+        numbers_ok = all(_number_matches(v, whitelist) for v in plain_values)
+        # 0.2025 → 20.25% 是模型乘 100 的换算，工具从不返回百分数：按 ÷100 比。
+        # 保留校验力——20.25% 对上的是 0.2025，写成 15.07% 仍然拦得住。
+        numbers_ok = numbers_ok and all(
+            _number_matches(round(v / 100.0, 10), whitelist) for v in pct_values
+        )
     else:
         numbers_ok = any(_number_matches(value, whitelist) for value in mentioned)
     # 数值对得上还不够：正文可能把这一层说成另一颗卫星/另一个区域/另一天。

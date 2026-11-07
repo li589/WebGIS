@@ -24,6 +24,7 @@ from app.services.agent.naming import (
 from app.services.agent.orchestrator import (
     _build_system,
     _guard_reply_numbers,
+    _stat_percent_values,
     _stat_values,
     _synthesize_reply_from_tool_steps,
     _wants_statistics,
@@ -408,6 +409,32 @@ class TestNumberGuard:
         out, changed = _guard_reply_numbers(reply, _tool_steps(_SM_1216))
         assert changed is True
         assert "河南省" in out
+
+    def test_percent_conversion_after_mean_is_kept(self) -> None:
+        """0.2025 换算成 20.25% 是模型自己乘 100，不能判成「均值对不上」。
+
+        2026-11-07 实测 R：把 20.25% 写在「平均值」后面，被 `_stat_values` 抓成
+        统计值、与工具返回的 0.2025 比不过 ⇒ 整段重写，换算白做；而同一个问法
+        另一次因为百分数没挨着「平均值」就过掉了——同一问题两种结果。
+        """
+        reply = (
+            "按河南省行政边界，2025-12-16 平均值 0.2025 m³/m³，"
+            "换算后平均值约 20.25%（体积含水量）。"
+        )
+        out, changed = _guard_reply_numbers(reply, _tool_steps(_SM_1216))
+        assert changed is False
+        assert out == reply
+
+    def test_wrong_percent_conversion_is_still_rewritten(self) -> None:
+        """换算错了照样拦：0.2025 换成 15.07% 对不上。"""
+        reply = "按河南省行政边界，2025-12-16 平均值约 15.07%。"
+        out, changed = _guard_reply_numbers(reply, _tool_steps(_SM_1216))
+        assert changed is True
+        assert "0.2025" in out
+
+    def test_percent_values_are_split_out(self) -> None:
+        assert _stat_values("平均值约 20.25%，有效像元 1995 个") == {20.25, 1995.0}
+        assert _stat_percent_values("平均值约 20.25%，有效像元 1995 个") == {20.25}
 
 
 class TestRealDateIsInjected:
