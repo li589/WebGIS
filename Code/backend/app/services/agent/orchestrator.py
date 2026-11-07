@@ -1879,6 +1879,25 @@ _QUALITY_QUESTION_RE = re.compile(
 )
 
 
+#: 「把 0.2025 换成每亩多少吨水」——用户已经把数值给出来了，要的是**单位换算**，
+#: 不是一次新的取数。句中的「多少」会命中 _STATISTICS_WORDS，于是规则引擎把整段
+#: 换成整层统计。2026-11-07 r42-i 实测：问「每亩多少吨水」，答的是整幅
+#: 0.1653 m³/m³ / 363201 个有效像元（5.8%）—— 数值没错，但一个都没回答他的问题；
+#: 正确做法是说明「换成水量需要容重和土层厚度，这两项这层没有」。
+#: 判据必须**同时**满足「有换算动词」和「消息里已经有小数」：
+#: R 那种「把河南省这个平均值换算成百分比是多少」没给数值，仍要走统计取数，
+#: 不能被这条误伤（那是本轮唯一需要先出数再换算的问法）。
+_UNIT_CONVERSION_RE = re.compile(r"换算|折合|相当于|换成|转换为", re.I)
+_GIVEN_DECIMAL_RE = re.compile(r"(?<![\d.])\d+\.\d+(?![\d])")
+
+
+def _is_given_value_conversion(text: str) -> bool:
+    """是不是「拿我给的这个数去换算单位」（不需要再取一次统计）。"""
+    if not text:
+        return False
+    return bool(_UNIT_CONVERSION_RE.search(text) and _GIVEN_DECIMAL_RE.search(text))
+
+
 def _is_threshold_write(text: str) -> bool:
     """这句话是不是在改色标阈值（而不是要统计结果）。"""
     if not text:
@@ -1907,6 +1926,9 @@ def _wants_statistics(message: str) -> bool:
     # 排除「数据质量」类提问：问的是准不准/精度/误差，答案不在这层数据里。
     # 放行的话会被规则引擎换成整幅均值（r25 实测 3/3），口径完全不对。
     if _QUALITY_QUESTION_RE.search(text):
+        return False
+    # 排除「拿用户自己给的数去换单位」：他要的是换算，不是再取一次数（r42-i）
+    if _is_given_value_conversion(text):
         return False
     return bool(_STATISTICS_WORDS.search(text))
 

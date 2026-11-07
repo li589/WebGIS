@@ -1345,6 +1345,31 @@ def _percent_hint(unit: str | None, mean: Any, text: str) -> str | None:
     return f"- 换算成体积百分比：{value * 100:.2f}%（m³/m³ × 100，仅换单位不换口径）"
 
 
+def _extreme_hint(unit: str | None, res: dict[str, Any], text: str) -> str | None:
+    """用户问「最大值 / 最小值」时，直接把那个值点出来，别只给一个区间。
+
+    2026-11-07 实测 r42-j：问「那最大值呢？」，规则引擎接管后只回了
+    「范围：0.0820 ~ 0.4564」——答案藏在区间右端，前面还压着一条无关的均值，
+    用户得自己找。这里补一句结论，口径照旧：这是**空间最大值**，不是时间峰值，
+    也不代表测量精度。
+    """
+    body = str(text or "")
+    try:
+        if re.search(r"最大|最高|峰值", body):
+            value = float(res.get("max"))
+            label = "最大值"
+        elif re.search(r"最小|最低", body):
+            value = float(res.get("min"))
+            label = "最小值"
+        else:
+            return None
+    except (TypeError, ValueError):
+        return None
+    unit_text = str(unit or "").strip()
+    tail = f" {unit_text}" if unit_text and unit_text != "1" else ""
+    return f"- {label}：{value:.4f}{tail}（这是范围内单个像元的值，不是时间上的峰值）"
+
+
 def _statistics_reply(
     text: str,
     layers: list[dict[str, Any]],
@@ -1539,6 +1564,10 @@ def _statistics_reply(
     hint = _percent_hint(unit, mean, text)
     if hint:
         lines.insert(2, hint)
+    # 问「那最大值呢」时把值点出来，不用他从「范围」右端自己找
+    extreme = _extreme_hint(unit, res, text)
+    if extreme:
+        lines.insert(3, extreme)
     requested = str(res.get("requested_time") or "").strip()
     if requested and requested != str(res.get("actual_time") or ""):
         lines.append(

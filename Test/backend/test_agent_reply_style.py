@@ -593,6 +593,9 @@ class TestOutsideCoverageNote:
         note = _outside_coverage_note(self._KEYS, "20240101")
         assert note is not None
         assert "20250701" in note
+        # 2026-11-07 r42-h：模型看到「不是取数出错」后仍补了一句「按需补取也失败，
+        # 属于取数失败」，同一段话自相矛盾。文案里必须直接否掉「取数失败」这个词。
+        assert "不是取数失败" in note
 
     def test_inside_range_is_silent(self) -> None:
         from app.services.agent.server_tools_runtime import _outside_coverage_note
@@ -635,3 +638,80 @@ class TestPercentHint:
         from app.services.agent.mock_orchestrator import _percent_hint
 
         assert _percent_hint("m³/m³", None, "换算成百分比") is None
+
+
+class TestGivenValueConversion:
+    """「把 0.2025 换成每亩多少吨水」不是一次新取数。
+
+    2026-11-07 r42-i 实测：句中的「多少」命中 _STATISTICS_WORDS，规则引擎整段
+    换成整幅统计（0.1653 m³/m³ / 363201 个有效像元 / 5.8%），一个都没回答他问的
+    换算；正确做法是说明「换成水量需要容重和土层厚度，这一层没有」。
+    判据必须「有换算动词」且「消息里已经给了小数」——R 那种「把这个平均值换算成
+    百分比是多少」没给数值，仍要走统计取数，不能被误伤。
+    """
+
+    def test_given_value_conversion_is_not_statistics(self) -> None:
+        from app.services.agent.orchestrator import _wants_statistics
+
+        assert _wants_statistics("把 0.2025 换成每亩多少吨水，可以吗？") is False
+
+    def test_conversion_without_given_value_still_statistics(self) -> None:
+        from app.services.agent.orchestrator import _wants_statistics
+
+        assert _wants_statistics("把河南省这个平均值换算成百分比是多少？") is True
+
+    def test_plain_statistics_still_statistics(self) -> None:
+        from app.services.agent.orchestrator import _wants_statistics
+
+        assert _wants_statistics("河南省 2025-12-16 的土壤水分平均值是多少") is True
+        assert _wants_statistics("那最大值呢？") is True
+
+    def test_detector_requires_both_parts(self) -> None:
+        from app.services.agent.orchestrator import _is_given_value_conversion
+
+        assert _is_given_value_conversion("0.203 折合多少毫米") is True
+        assert _is_given_value_conversion("换算成百分比") is False
+        assert _is_given_value_conversion("0.203 这一天怎么样") is False
+
+
+class TestExtremeHint:
+    """问「那最大值呢」时把值点出来，别只给一个区间让用户自己找。
+
+    2026-11-07 r42-j 实测：规则引擎接管后只回「范围：0.0820 ~ 0.4564」，答案藏在
+    区间右端，前面还压着一条无关的均值。
+    """
+
+    _RES = {"min": 0.08204492181539536, "max": 0.45637741684913635}
+
+    def test_max_is_named(self) -> None:
+        from app.services.agent.mock_orchestrator import _extreme_hint
+
+        hint = _extreme_hint("m³/m³", self._RES, "那最大值呢？")
+        assert hint is not None
+        assert "0.4564" in hint
+        assert "m³/m³" in hint
+
+    def test_min_is_named(self) -> None:
+        from app.services.agent.mock_orchestrator import _extreme_hint
+
+        hint = _extreme_hint("m³/m³", self._RES, "这边最低多少")
+        assert hint is not None
+        assert "0.0820" in hint
+
+    def test_dimensionless_has_no_unit_suffix(self) -> None:
+        from app.services.agent.mock_orchestrator import _extreme_hint
+
+        hint = _extreme_hint("1", self._RES, "最大值是多少")
+        assert hint is not None
+        assert " m³/m³" not in hint
+        assert "1" not in hint.replace("0.4564", "")
+
+    def test_not_asked_is_silent(self) -> None:
+        from app.services.agent.mock_orchestrator import _extreme_hint
+
+        assert _extreme_hint("m³/m³", self._RES, "河南省的均值是多少") is None
+
+    def test_missing_value_is_silent(self) -> None:
+        from app.services.agent.mock_orchestrator import _extreme_hint
+
+        assert _extreme_hint("m³/m³", {"min": None, "max": None}, "最大值") is None

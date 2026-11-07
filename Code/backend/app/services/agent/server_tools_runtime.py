@@ -3044,7 +3044,10 @@ def _outside_coverage_note(keys: list[str], requested: str) -> str | None:
     first = min(s for s, _ in spans)
     last = max(e for _, e in spans)
     if digits < first:
-        return f"该图层最早只有 {first} 起的成果，{digits} 早于覆盖起点，不是取数出错"
+        return (
+            f"该图层最早只有 {first} 起的成果，{digits} 早于覆盖起点；"
+            "这不是取数失败，是那一天不在这一版产物的覆盖范围内"
+        )
     if digits > last:
         return (
             f"该图层最新只到 {last}，{digits} 晚于覆盖终点；"
@@ -3734,8 +3737,13 @@ def _get_layer_statistics(
                     f"已按需补取 {requested}，但取回后仍解析不出该层的时间片"
                 )
             elif outside:
-                # 超范围不是「服务出错」：说清边界，别让模型前后自相矛盾
+                # 超范围不是「服务出错」：说清边界，别让模型前后自相矛盾。
                 payload_miss["error"] = outside
+                # 补取明细在这里只有害处：模型会把它拼成「早于覆盖起点…但按需补取
+                # 也失败，属于取数失败」，同一段话前后打架（2026-11-07 r42-h 实测：
+                # 前半句已说对「早于覆盖起点所以没有数据」，后半句又自认取数失败）。
+                # 边界已经写在 error 里，够用了。
+                payload_miss.pop("ondemand_fetch", None)
             elif ondemand_fetch.get("reason") == "nas_missing":
                 payload_miss["error"] = (
                     f"该图层没有 {requested} 的栅格：已试过按需取这一天，"
