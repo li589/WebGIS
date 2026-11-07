@@ -1358,7 +1358,21 @@ def _state_patch_from_message(
     # 现在的规则：区域/日期/变量照记；页面上来的层**只在还没有基线时**记一次，
     # 已有基线就不覆盖（用户没点名换层，不该被页面悄悄改掉）。
     prev = dialogue_state.sanitize(topic_state or {})
-    is_page_layer = got.get("layer_from") == "page"
+    # ★ 2026-11-07 补：`layer_from == "variable"`（页面只有这一个同变量层 ⇒ 只能是它）
+    # 同样是**页面兜底**，不是用户点名的层。旧实现只认 "page"，于是第 2 句
+    # 「只改日期」被标成 layer_from="variable"，照样走覆盖分支——实测把 SMAP 基线
+    # 改成了页面上那层风云（`_state_patch_from_message` 单测复现：Q2/Q4 两处）。
+    # 基线被页面悄悄换掉之后，第 5 句再点名 SMAP 时「基线=风云 / 页面=风云」而
+    # 用户要 SMAP，兜底只会回一句「没取到数值」——用户看着就是「明明刚才还能查」。
+    is_page_layer = got.get("layer_from") in ("page", "variable")
+    if not is_page_layer and not mock_orchestrator._has_layer_hints(message):
+        # 这句话**没点来源/产品形态**（「只改日期，其余不变」「区域改为广州」），
+        # 解析却给出了一个层 —— 那只能是页面上挂着的那一层：``_resolve_layer``
+        # 对不含层名的句子会退到页面当前项，并且把它标成 layer_from="message"。
+        # 实测（2026-11-07 五句连问）：第 2 句就是这样把基线从 SMAP 改成页面风云，
+        # 之后第 5 句点名 SMAP 时基线与页面互相矛盾，兜底只能回「没取到数值」。
+        # 用户没点名换层，就不该被页面悄悄改掉基线。
+        is_page_layer = True
     patch: dict[str, str] = {}
     conflict = False
     layer = got.get("layer")

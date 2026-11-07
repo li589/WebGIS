@@ -54,11 +54,19 @@ VARIABLE_LABELS: dict[str, str] = {
 }
 
 
+#: 产品族名里的「散射」二字不是变量名：三套产品的全名都是「动态/平均散射约束产品」，
+#: 留着它会让「SMAP 动态散射约束产品的土壤水分」同时命中 sm 与 omega，按
+#: 「多命中即放弃」的规则直接返回 None —— 变量一致性防线（问土壤水分却拿 ω 算）
+#: 因此整句失效。先剥掉族名，再认变量。2026-11-07 五句连问实测到。
+_FAMILY_NOISE = re.compile(r"(?:(?:动态|平均)\s*)?散射约束(?:产品)?", re.I)
+
+
 def variable_from_text(text: str) -> str | None:
     """从用户这句话里认出变量口径；一句话点了多个变量时返回 ``None``（不猜）。"""
     if not text:
         return None
-    hits = {var for pattern, var in _VARIABLE_PATTERNS if pattern.search(text)}
+    cleaned = _FAMILY_NOISE.sub(" ", str(text))
+    hits = {var for pattern, var in _VARIABLE_PATTERNS if pattern.search(cleaned)}
     if len(hits) == 1:
         return next(iter(hits))
     return None

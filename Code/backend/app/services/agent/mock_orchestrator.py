@@ -653,6 +653,60 @@ def _contradicts_hints(text: str, layer: dict[str, Any]) -> bool:
     return False
 
 
+def _layer_from_state(
+    prior: dict[str, str],
+    client_context: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """把会话基线（上一轮真取过的那一层）还原成一个可统计的「层」。
+
+    2026-11-07 新增。背景：页面上只挂了 A 产品，用户这几轮一直在问 B 产品。
+    ``_resolve_layer`` 在不能从文本里认出层名时会退到「页面上唯一那一层」，
+    于是每轮都先选成 A，再被 ``_contradicts_hints`` 出口校验否掉——否掉之后
+    旧实现就彻底放弃了，兜底只能回一句「这次没能取到可用的数值」。
+    可会话基线里明明记着 B 的产物 id 和中文名，照它取数就能算出来。
+
+    ``overlay_layer_id`` 是 ``_get_layer_statistics`` 真正要吃的产物 id：
+    基线里若已是 ``imported-*`` 直接用；若是目录层 id（``method-*``，老会话
+    或模型回填所致），再按页面反查一次。
+    """
+    prior_id = str(prior.get("layer_id") or "").strip()
+    name = str(prior.get("layer_name") or "").strip()
+    if not prior_id or not name:
+        return None
+    bare = _bare_layer_id(prior_id)
+    overlay = bare if bare.startswith(("imported-", "wf-run-")) else ""
+    if not overlay:
+        try:
+            from app.services.agent.server_tools_runtime import (
+                _page_overlay_for_catalog,
+            )
+
+            overlay = _page_overlay_for_catalog(client_context, prior_id) or ""
+        except Exception:  # pragma: no cover - 反查失败不影响主流程
+            overlay = ""
+    # 只有产物目录真的在盘上才敢拿来取数：状态里的 id 可能早已被清理，
+    # 拿一个不存在的 id 去统计只会得到一句「不是本地运行时产物」，
+    # 反而不如老老实实反问（沿用 test_lost_layer_asks_instead_of_guessing 的契约）。
+    if overlay.startswith("imported-"):
+        try:
+            from app.data_io.services.paths import safe_import_child
+
+            if not safe_import_child(overlay).is_dir():
+                return None
+        except Exception:  # pragma: no cover - 判断不了就不冒险
+            return None
+    return {
+        "catalog_id": prior_id,
+        "overlay_layer_id": overlay,
+        "instance_id": "",
+        "name": name,
+        "visible": False,
+        "selected": False,
+        # 标记：这一层是从会话基线还原的，不是页面上的活动图层
+        "virtual": True,
+    }
+
+
 def _narrow_by_hints(
     text: str,
     candidates: list[dict[str, Any]],
@@ -783,6 +837,19 @@ def resolve_entities(
                 if variable is None or variable == prior_var:
                     target = candidate
                     layer_from = "state"
+            elif prior.get("layer_name"):
+                # 上一轮那一层已经不在页面上了：只要它不与本轮点名的来源/形态
+                # 矛盾，就照基线取数（详见 _layer_from_state 的注释）。
+                restored = _layer_from_state(prior, client_context)
+                if restored is not None:
+                    prior_var2 = prior.get(
+                        "variable"
+                    ) or dialogue_state.variable_from_name(restored["name"])
+                    if (
+                        variable is None or variable == prior_var2
+                    ) and not _contradicts_hints(text, restored):
+                        target = restored
+                        layer_from = "state"
     # 页面上只有这一层的同变量版本 ⇒ 只能是它
     if target is None:
         var_only = _var_layers()
@@ -828,6 +895,25 @@ def resolve_entities(
             "当前地图上没有与你点名的来源 / 产品形态一致的图层，"
             "我不拿页面上另一层顶上；请确认产品名称，或先把它加到地图上。"
         )
+
+    # 被出口校验否掉之后，再给会话基线一次机会：用户这几轮一直在问的层未必挂在
+    # 页面上（页面可能停着另一颗卫星），但基线里记着它真取过的产物 id。
+    # 2026-11-07 实测：第 5 句「明确用 SMAP 动态的土壤水分、广州 12-16」，
+    # `_resolve_layer` 把页面那层风云当成了「点名的层」→ 出口校验否掉 → 旧逻辑
+    # 直接放弃，模型这轮恰好没调工具 ⇒ 兜底答「这次没能取到可用的数值」，
+    # 而上一轮同一个区域同一天刚算过。回落基线后这条路径能真算出数。
+    if target is None and why and prior.get("layer_name"):
+        restored = _layer_from_state(prior, client_context)
+        if restored is not None:
+            prior_var3 = prior.get("variable") or dialogue_state.variable_from_name(
+                restored["name"]
+            )
+            if (variable is None or variable == prior_var3) and not _contradicts_hints(
+                text, restored
+            ):
+                target = restored
+                layer_from = "state"
+                why = None
 
     region = _parse_region_arg(text)
     region_from = "message" if region else ""
