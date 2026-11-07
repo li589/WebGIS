@@ -633,6 +633,26 @@ def _has_layer_hints(text: str) -> bool:
     )
 
 
+def _contradicts_hints(text: str, layer: dict[str, Any]) -> bool:
+    """消息点名的来源 / 产品形态，与这一层对不上 ⇒ 页面没有他要的那一层。
+
+    2026-11-07 实测（游客模式连续追问）：页面只挂「风云卫星 平均 · 土壤水分」，
+    用户明确说「查询 SMAP 动态散射约束产品的土壤水分」，解析器把**页面上那层
+    风云**当成「用户点名的层」（``layer_from="message"``）返回，接着写进会话
+    基线 —— 于是基线变成风云，下一句「只改日期」就粘在风云上，跨轮串产品。
+    候选集里只有页面层，用户要的那层压根不在，正确做法是不定层（让他去搜），
+    而不是拿最近的层顶上。
+    """
+    name = _display(layer)
+    for pattern, marker in _SOURCE_HINTS:
+        if pattern.search(text) and marker not in name.lower():
+            return True
+    for pattern, marker in _FORM_HINTS:
+        if pattern.search(text) and marker not in name:
+            return True
+    return False
+
+
 def _narrow_by_hints(
     text: str,
     candidates: list[dict[str, Any]],
@@ -652,14 +672,18 @@ def _narrow_by_hints(
     for pattern, marker in _SOURCE_HINTS:
         if pattern.search(text):
             narrowed = [la for la in pool if marker in _display(la).lower()]
-            if narrowed:
-                pool = narrowed
+            if not narrowed:
+                # 用户点名了来源，候选里一个都不是它 ⇒ 页面没有这层，别退回全集
+                return None
+            pool = narrowed
             break
     for pattern, marker in _FORM_HINTS:
         if pattern.search(text):
             narrowed = [la for la in pool if marker in _display(la)]
-            if narrowed:
-                pool = narrowed
+            if not narrowed:
+                # 同理：点名「动态版」而候选全是平均版时不猜
+                return None
+            pool = narrowed
             break
     if len(pool) > 1 and prefer_variable:
         # 「换成 SMAP 动态那套」没说变量：按上一轮那个变量收敛（同一变量换产品形态，
@@ -794,6 +818,16 @@ def resolve_entities(
                 f"你上一轮问的是「{prior['layer_name']}」，这一层现在不在页面上，"
                 "我不确定该统计哪一层。请先把它加回地图，或直接说要统计的图层名。"
             )
+
+    # 出口校验：消息点名了来源 / 产品形态，最终选中的层却不是那个 ⇒ 页面没有
+    # 他要的那一层，不能拿页面上那一层顶上去（详见 _contradicts_hints）。
+    if target is not None and _contradicts_hints(text, target):
+        target = None
+        layer_from = ""
+        why = (
+            "当前地图上没有与你点名的来源 / 产品形态一致的图层，"
+            "我不拿页面上另一层顶上；请确认产品名称，或先把它加到地图上。"
+        )
 
     region = _parse_region_arg(text)
     region_from = "message" if region else ""

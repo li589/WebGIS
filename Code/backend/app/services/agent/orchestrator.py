@@ -1360,17 +1360,30 @@ def _state_patch_from_message(
     prev = dialogue_state.sanitize(topic_state or {})
     is_page_layer = got.get("layer_from") == "page"
     patch: dict[str, str] = {}
+    conflict = False
     layer = got.get("layer")
     if isinstance(layer, dict) and layer.get("catalog_id"):
-        if not is_page_layer or not prev.get("layer_id"):
-            patch.update(
-                canonical_layer_state(
-                    str(layer["catalog_id"]),
-                    display=mock_orchestrator._display(layer),
-                    client_context=client_context,
-                )
-            )
-    if got.get("variable"):
+        cand = canonical_layer_state(
+            str(layer["catalog_id"]),
+            display=mock_orchestrator._display(layer),
+            client_context=client_context,
+        )
+        # 「层」和「变量」互相矛盾 ⇒ 这条线索不可信，层和变量都别写。
+        # 2026-11-07 实测：页面挂风云·土壤水分、上一轮是 SMAP 动态·土壤水分，
+        # 用户说「那如果把变量换成光学厚度 VOD 呢」，解析结果是「页面那一层 +
+        # 变量 vod」——层是土壤水分、变量却是 VOD，拼在一起就是
+        # layer_id=风云 / variable=vod 这种根本不存在的组合。写进基线之后，
+        # ① 跨来源守卫看到「基线=风云」，把用户明明要的 SMAP VOD 拦成「要确认」；
+        # ② 下一句「只改日期」会粘到风云上——比原来的串产品更糟。
+        # 变量冲突时层和变量都不写（保留上一轮那层当锚点），只更新区域/日期；
+        # 真正取到哪一层，由本轮工具返回的 resolved 结果回填。
+        want_var = str(got.get("variable") or "")
+        cand_var = str(cand.get("variable") or "")
+        if want_var and cand_var and want_var != cand_var:
+            conflict = True
+        elif not is_page_layer or not prev.get("layer_id"):
+            patch.update(cand)
+    if got.get("variable") and not conflict:
         patch["variable"] = str(got["variable"])
     if got.get("region"):
         patch["region"] = str(got["region"])
