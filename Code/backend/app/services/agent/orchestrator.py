@@ -1489,6 +1489,17 @@ def _state_patch_from_tool_results(
             continue
         local = str(res.get("resolved_layer_id") or "").strip()
         if not local:
+            # 2026-11-07 第五次外部复测（游客实测，广州串风云平均 0.3079/36）：
+            # 粘性一旦纠正了模型传错的目录 id，工具返回的 ``catalog_id`` 已经
+            # 被改写成**实际读的那份产物**（imported-*），于是
+            # ``resolved_layer_id = local_id if local_id != catalog_id else ""``
+            # 恒为空 —— 旧实现只认这个字段，等于这一跳什么都没记，基线留在
+            # 模型传错的那颗卫星上。下一句「区域改为广州市」就照着错基线取数。
+            # 工具返回的 catalog_id 本身就是既成事实，它像产物 id 就直接用。
+            cid = str(res.get("catalog_id") or "").strip()
+            if cid.startswith(("imported-", "wf-run-")):
+                local = cid
+        if not local:
             continue
         patch.update(
             canonical_layer_state(
@@ -1501,12 +1512,20 @@ def _state_patch_from_tool_results(
 def _state_patch_from_intents(
     intents: list[dict[str, Any]],
     client_context: dict[str, Any] | None,
+    *,
+    keep_layer: bool = False,
 ) -> dict[str, str]:
     """从界面意图里回填「这一轮讲的是哪一层 / 哪一天」。
 
     用户说「显示风云 VOD，算一下均值」时，模型下发的 set_layer_visibility 就是
     他对「这一轮的对象」最明确的表达；不记下来，下一轮追问又只能靠页面猜。
     隐藏某一层（visible=false）不算——那是在说「别看了」，不是「就它」。
+
+    ``keep_layer=True``：本轮工具已成功读过某一层，基线记的是**真读到的那份**。
+    此时意图里的 catalog_id 只是模型的**请求参数**，可能正是被粘性纠正掉的那个
+    错 id；再拿它覆盖就把正确基线冲了。2026-11-07 游客实测：模型传风云平均、
+    工具实际读 SMAP，意图回填又把基线写回风云 ⇒ 下一句「只改区域」串成
+    风云平均 0.3079 / 36 像元。这时只取日期，层一律不动。
     """
     patch: dict[str, str] = {}
     layers: list[dict[str, Any]] = []
@@ -1516,7 +1535,7 @@ def _state_patch_from_intents(
         layers = [x for x in client_context["active_layers"] if isinstance(x, dict)]
 
     def _remember(cid: str) -> None:
-        if not cid:
+        if not cid or keep_layer:
             return
         display = ""
         for la in layers:
@@ -2764,6 +2783,9 @@ def _run_chat_impl(
                 data.get("content")
             )
             confirmations: list[dict[str, Any]] = []
+            # 本轮「工具真正读到的那一层」：一旦有值，界面意图就不再改写基线
+            # （意图里的 catalog_id 是模型的请求参数，可能已被粘性纠正掉）。
+            tool_layer_state: dict[str, str] = {}
             max_hops = _max_tool_hops()
             for hop in range(1, max_hops + 1):
                 all_uses = _anthropic_tool_uses(data.get("content"))
@@ -2828,9 +2850,10 @@ def _run_chat_impl(
                     if conf:
                         confirmations.append(conf)
                     # 工具实际读的是哪份产物 ⇒ 立刻写进会话基线（见函数注释）
-                    topic_state = dialogue_state.merge(
-                        topic_state, **_state_patch_from_tool_results([tres])
-                    )
+                    tool_patch = _state_patch_from_tool_results([tres])
+                    if tool_patch:
+                        tool_layer_state = tool_patch
+                    topic_state = dialogue_state.merge(topic_state, **tool_patch)
                     tool_result_blocks.append(
                         {
                             "type": "tool_result",
@@ -2917,7 +2940,10 @@ def _run_chat_impl(
                 if fallback.get("ui_intents"):
                     intents = fallback.get("ui_intents") or []
             topic_state = dialogue_state.merge(
-                topic_state, **_state_patch_from_intents(intents, client_context)
+                topic_state,
+                **_state_patch_from_intents(
+                    intents, client_context, keep_layer=bool(tool_layer_state)
+                ),
             )
             usage = usage_from_anthropic(
                 data, prompt_fallback=system + message, completion_fallback=reply
@@ -2977,6 +3003,8 @@ def _run_chat_impl(
         server_calls = _server_calls(calls)
         reply = str(message_obj.get("content") or "").strip()
         confirmations: list[dict[str, Any]] = []
+        # 同 Anthropic 分支：工具真正读到的那一层，界面意图不许再改
+        tool_layer_state: dict[str, str] = {}
         max_hops = _max_tool_hops()
         oai_key = api_key or ("ollama" if provider_kind == "ollama" else None)
 
@@ -3044,9 +3072,10 @@ def _run_chat_impl(
                 if conf:
                     confirmations.append(conf)
                 # 同上：把「真正读的产物」记成基线，下一句「只改区域」才粘得住
-                topic_state = dialogue_state.merge(
-                    topic_state, **_state_patch_from_tool_results([tres])
-                )
+                tool_patch = _state_patch_from_tool_results([tres])
+                if tool_patch:
+                    tool_layer_state = tool_patch
+                topic_state = dialogue_state.merge(topic_state, **tool_patch)
                 messages_oai.append(
                     {
                         "role": "tool",
@@ -3147,7 +3176,10 @@ def _run_chat_impl(
             if heur:
                 intents = heur
         topic_state = dialogue_state.merge(
-            topic_state, **_state_patch_from_intents(intents, client_context)
+            topic_state,
+            **_state_patch_from_intents(
+                intents, client_context, keep_layer=bool(tool_layer_state)
+            ),
         )
         usage = usage_from_openai(
             data,
@@ -3189,6 +3221,164 @@ def _run_chat_impl(
     except Exception as exc:
         logger.exception("Agent LLM call failed profile=%s", profile_id)
         raise LlmClientError(f"模型调用失败：{exc}") from exc
+
+
+def _steps_layer_and_day(steps: list[dict[str, Any]]) -> tuple[str, str]:
+    """从本轮工具返回里读出「实际读了哪份产物」与「实际命中的单日」。
+
+    只认 ``period_start == period_end`` 的窄口径（单日 / 单日帧）：那是用户说
+    「按 X 日算」时工具真正落到的帧。月块 / 多年平均不参与，否则一句
+    「2025 年整年平均」会把时间轴莫名其妙切到某一天。
+    """
+    layer_id = ""
+    day = ""
+    for st in steps:
+        if not isinstance(st, dict) or st.get("type") != "tool_result":
+            continue
+        raw = st.get("detail")
+        if not isinstance(raw, str):
+            continue
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(data, dict) or not data.get("ok"):
+            continue
+        cid = str(data.get("resolved_layer_id") or data.get("catalog_id") or "").strip()
+        if cid.startswith(("imported-", "wf-run-")):
+            layer_id = cid
+        ps = str(data.get("period_start") or "").strip()
+        pe = str(data.get("period_end") or "").strip()
+        if len(ps) == 8 and ps == pe and ps.isdigit():
+            day = f"{ps[:4]}-{ps[4:6]}-{ps[6:]}"
+    return layer_id, day
+
+
+def _catalog_of_overlay(client_context: dict[str, Any] | None, overlay_id: str) -> str:
+    """产物 id → 页面上那一层的 catalog_id（前端按 catalog_id 认目标层）。"""
+    if not overlay_id or not isinstance(client_context, dict):
+        return ""
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list):
+        return ""
+    for item in layers:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("overlay_layer_id") or "").strip() == overlay_id:
+            return str(item.get("catalog_id") or "").strip()
+    return ""
+
+
+#: 会改变「当前在看哪一层」的意图，必须排在时间轴之前
+_LAYER_CHANGE_INTENTS = ("set_layer_visibility", "remove_layer", "reorder_layer")
+#: 时间轴意图：图层集合定下来之后再执行
+_DAY_INTENTS = ("set_timeline",)
+_PLAY_INTENTS = ("set_timeline_playing",)
+
+
+def _intent_rank(name: str) -> int:
+    if name in _LAYER_CHANGE_INTENTS:
+        return 0
+    if name in _DAY_INTENTS:
+        return 2
+    if name in _PLAY_INTENTS:
+        return 3
+    return 1
+
+
+def _order_ui_intents(
+    result: dict[str, Any], client_context: dict[str, Any] | None
+) -> dict[str, Any]:
+    """把这一批界面意图排成「先切层、再切日期」，并把日期对齐到实际取数那天。
+
+    2026-11-07 游客实测（组合指令）：「切到 SMAP 动态 SM、按 12-16 算均值」——
+    图层和数值都对，页面却停在 7 月 31 日。原因是三条意图按模型给的顺序下发：
+
+    1. ``set_layer_visibility`` 一执行，前端时间轴会**按图层记忆**跳到该层上次
+       停留的那一帧（那是既有设计，见 useTimelineSync）。谁排在它前面，谁被冲掉。
+    2. 兜底/模型有时干脆只下发切层、不下发 ``set_timeline``，页面自然停在记忆帧，
+       而正文说的却是 12-16 的统计值 —— 页面与数据对不上。
+
+    所以在出口统一做两件事：按依赖排序；本轮既切了层、又出了单日数值时，补一条
+    ``set_timeline`` 指向那天（已有则改正），让页面停的帧与回答里的日期一致。
+    只动意图，不碰任何统计口径。
+    """
+    try:
+        if not isinstance(result, dict):
+            return result
+        intents = result.get("ui_intents")
+        if not isinstance(intents, list) or not intents:
+            return result
+        items = [x for x in intents if isinstance(x, dict)]
+        if not items:
+            return result
+        # 稳定排序：同组内保持模型给的顺序
+        items = sorted(items, key=lambda it: _intent_rank(str(it.get("name") or "")))
+
+        shown: list[str] = []
+        for it in items:
+            if str(it.get("name") or "") != "set_layer_visibility":
+                continue
+            args = it.get("args") if isinstance(it.get("args"), dict) else {}
+            if args.get("visible") is False:
+                continue
+            cid = str(args.get("catalog_id") or "").strip()
+            if cid:
+                shown.append(cid)
+        # 切层之后要保持「看着的那一层」是最后显示的那层
+        target_catalog = shown[-1] if shown else ""
+
+        layer_id, day = _steps_layer_and_day(
+            [s for s in (result.get("steps") or []) if isinstance(s, dict)]
+        )
+        if layer_id:
+            actual = _catalog_of_overlay(client_context, layer_id)
+            if actual and (not target_catalog or actual == target_catalog):
+                target_catalog = actual
+            elif actual and target_catalog and actual != target_catalog:
+                # 切的是 A、算的是 B：不擅自把时间轴钉到 B 那天
+                target_catalog = ""
+
+        day_items = [i for i in items if str(i.get("name") or "") == "set_timeline"]
+        if shown and day:
+            if day_items:
+                keep = day_items[-1]
+                args = keep.get("args") if isinstance(keep.get("args"), dict) else {}
+                old = str(args.get("date") or "").strip()[:10]
+                if old != day:
+                    args = dict(args)
+                    args["date"] = day
+                    keep["args"] = args
+                    logger.info(
+                        "agent.intent.timeline_aligned from=%s to=%s layer=%s",
+                        old or "-",
+                        day,
+                        target_catalog or "-",
+                    )
+                if target_catalog and not str(args.get("catalog_id") or "").strip():
+                    args = dict(args)
+                    args["catalog_id"] = target_catalog
+                    keep["args"] = args
+                # 只留最后一条：多条 set_timeline 会互相覆盖，页面最终停在哪天不可控
+                for extra in day_items[:-1]:
+                    items.remove(extra)
+            else:
+                args = {"date": day}
+                if target_catalog:
+                    args["catalog_id"] = target_catalog
+                items.append({"name": "set_timeline", "args": args})
+                items = sorted(
+                    items, key=lambda it: _intent_rank(str(it.get("name") or ""))
+                )
+                logger.info(
+                    "agent.intent.timeline_added date=%s layer=%s",
+                    day,
+                    target_catalog or "-",
+                )
+        result["ui_intents"] = items
+    except Exception:  # pragma: no cover - 排序失败不该影响对话
+        logger.debug("order ui intents failed", exc_info=True)
+    return result
 
 
 def _attach_command_ids(result: dict[str, Any]) -> dict[str, Any]:
@@ -3243,13 +3433,16 @@ def run_chat(
         )
     try:
         return _attach_command_ids(
-            _run_chat_impl(
-                message,
-                session_id=session_id,
-                client_context=client_context,
-                user_id=user_id,
-                cred=cred,
-                on_event=on_event,
+            _order_ui_intents(
+                _run_chat_impl(
+                    message,
+                    session_id=session_id,
+                    client_context=client_context,
+                    user_id=user_id,
+                    cred=cred,
+                    on_event=on_event,
+                ),
+                client_context,
             )
         )
     except ValueError:

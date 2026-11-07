@@ -420,3 +420,189 @@ def test_sanitize_trusts_layer_name_over_variable():
         {"layer_id": "x", "layer_name": "等效散射 ω", "variable": "sm"}
     )
     assert got["variable"] == "omega"
+
+
+# --- 会话基线记「真读到的那份」而不是「模型传的那份」（2026-11-07 游客实测） ---
+# 现场：第 4 句「只改日期」模型传了风云平均的目录 id，工具粘性纠正成 SMAP 并算对；
+# 但会话基线被写成风云，第 5 句「只改区域」就按风云取数 ⇒ 广州市 0.3079 / 36 像元。
+
+
+def test_tool_result_records_product_when_resolved_is_empty():
+    """粘性纠正后工具返回的 catalog_id 已是产物 id，resolved_layer_id 恒为空。
+
+    旧实现只认 resolved_layer_id ⇒ 这一跳什么都不记，基线留在模型传错的那颗卫星。
+    """
+    from app.services.agent.orchestrator import _state_patch_from_tool_results
+
+    patch = _state_patch_from_tool_results(
+        [
+            {
+                "ok": True,
+                "catalog_id": "imported-a8940443fd6d",
+                "resolved_layer_id": "",
+                "display_name": "SMAP 动态散射约束产品 · 土壤水分",
+            }
+        ]
+    )
+    assert patch["layer_id"] == "imported-a8940443fd6d"
+    assert "SMAP" in patch["layer_name"]
+    # 失败返回不写（没读到就没对象）
+    assert (
+        _state_patch_from_tool_results(
+            [{"ok": False, "catalog_id": "imported-a8940443fd6d"}]
+        )
+        == {}
+    )
+
+
+def test_intents_do_not_override_the_layer_tool_actually_read():
+    """工具已读到某层时，意图里的 catalog_id 只是请求参数，不许覆盖基线。"""
+    ctx = {"active_layers": SM_LAYERS}
+    intents = [
+        {
+            "name": "set_layer_visibility",
+            "args": {"catalog_id": "sm-fy-avg", "visible": True},
+        },
+        {"name": "set_timeline", "args": {"date": "2025-12-16"}},
+    ]
+    kept = _state_patch_from_intents(intents, ctx, keep_layer=True)
+    assert "layer_id" not in kept  # 层由工具结果负责
+    assert kept["date"] == "2025-12-16"  # 日期照记
+    # 没有工具结果时照旧记层
+    assert "layer_id" in _state_patch_from_intents(intents, ctx)
+
+
+def test_intents_switch_layer_before_timeline_and_align_day():
+    """复合指令：切层必须在切日期之前，日期要落到实际取数那天。
+
+    切层会触发前端时间轴「按图层记忆」跳转（既有设计），排在它前面的
+    set_timeline 会被冲掉 —— 实测页面停在 7 月 31 日、正文却报 12-16 的值。
+    """
+    from app.services.agent.orchestrator import _order_ui_intents
+
+    page = {
+        "active_layers": [
+            {
+                "catalog_id": "method-smap-omega-doy-dynamic",
+                "overlay_layer_id": "imported-a8940443fd6d",
+                "name": "SMAP 动态散射约束产品 · 土壤水分",
+                "selected": True,
+            }
+        ],
+        "timeline": {"date": "2025-07-31"},
+    }
+    steps = [
+        {
+            "type": "tool_result",
+            "detail": json.dumps(
+                {
+                    "ok": True,
+                    "catalog_id": "imported-a8940443fd6d",
+                    "period_start": "20251216",
+                    "period_end": "20251216",
+                    "mean": 0.1664,
+                }
+            ),
+        }
+    ]
+    out = _order_ui_intents(
+        {
+            "ui_intents": [
+                {"name": "set_timeline", "args": {"date": "2025-07-31"}},
+                {
+                    "name": "set_layer_visibility",
+                    "args": {"catalog_id": "method-smap-omega-doy-dynamic"},
+                },
+            ],
+            "steps": steps,
+        },
+        page,
+    )
+    names = [i["name"] for i in out["ui_intents"]]
+    assert names == ["set_layer_visibility", "set_timeline"]
+    tl = out["ui_intents"][1]["args"]
+    assert tl["date"] == "2025-12-16"
+    assert tl["catalog_id"] == "method-smap-omega-doy-dynamic"
+
+
+def test_intents_add_timeline_when_missing():
+    """只下发切层、没下发日期时补一条，否则页面停在图层记忆帧、与正文日期不符。"""
+    from app.services.agent.orchestrator import _order_ui_intents
+
+    page = {
+        "active_layers": [
+            {
+                "catalog_id": "method-smap-omega-doy-dynamic",
+                "overlay_layer_id": "imported-a8940443fd6d",
+                "selected": True,
+            }
+        ]
+    }
+    steps = [
+        {
+            "type": "tool_result",
+            "detail": json.dumps(
+                {
+                    "ok": True,
+                    "catalog_id": "imported-a8940443fd6d",
+                    "period_start": "20251216",
+                    "period_end": "20251216",
+                }
+            ),
+        }
+    ]
+    out = _order_ui_intents(
+        {
+            "ui_intents": [
+                {
+                    "name": "set_layer_visibility",
+                    "args": {"catalog_id": "method-smap-omega-doy-dynamic"},
+                }
+            ],
+            "steps": steps,
+        },
+        page,
+    )
+    names = [i["name"] for i in out["ui_intents"]]
+    assert names == ["set_layer_visibility", "set_timeline"]
+    assert out["ui_intents"][1]["args"]["date"] == "2025-12-16"
+
+
+def test_intents_leave_timeline_alone_for_month_block():
+    """月块 / 多年平均不钉时间轴：一句「2025 年整年平均」不该把页面切到某一天。"""
+    from app.services.agent.orchestrator import _order_ui_intents
+
+    page = {
+        "active_layers": [
+            {
+                "catalog_id": "method-fy-omega-doy-avg",
+                "overlay_layer_id": "imported-55359b8ecd3d",
+            }
+        ]
+    }
+    steps = [
+        {
+            "type": "tool_result",
+            "detail": json.dumps(
+                {
+                    "ok": True,
+                    "catalog_id": "imported-55359b8ecd3d",
+                    "period_start": "20250701",
+                    "period_end": "20250731",
+                }
+            ),
+        }
+    ]
+    out = _order_ui_intents(
+        {
+            "ui_intents": [
+                {
+                    "name": "set_layer_visibility",
+                    "args": {"catalog_id": "method-fy-omega-doy-avg"},
+                }
+            ],
+            "steps": steps,
+        },
+        page,
+    )
+    assert [i["name"] for i in out["ui_intents"]] == ["set_layer_visibility"]
