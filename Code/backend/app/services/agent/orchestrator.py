@@ -1983,11 +1983,16 @@ def _round_facts(steps: list[dict[str, Any]]) -> dict[str, Any]:
 
     numbers: set[float] = set()
     stats: dict[str, Any] | None = None
+    # 一次问多个变量时会有多份统计（每份一个 variable）。只留最后一份会让
+    # 「分别是多少」的其余几项在重建时凭空消失（2026-11-07 实测：SM 与 VOD
+    # 都算出来了，重建后只剩 VOD，还带着「以这段为准」把前一项作废）。
+    stats_list: list[dict[str, Any]] = []
     sample: dict[str, Any] | None = None
     for data in payloads:
         numbers.update(_iter_numbers(data))
         if data.get("mean") is not None and data.get("valid_pixels") is not None:
             stats = data
+            stats_list.append(data)
         if isinstance(data.get("samples"), list):
             sample = data
     # 派生值：正文常写「有效率约 49.7%」「比上一轮低 0.09」，这些数白名单里没有，
@@ -2006,7 +2011,12 @@ def _round_facts(steps: list[dict[str, Any]]) -> dict[str, Any]:
     for i, left in enumerate(pool):
         for right in pool[i + 1 :]:
             derived.add(round(abs(left - right), 6))
-    return {"numbers": numbers | derived, "stats": stats, "sample": sample}
+    return {
+        "numbers": numbers | derived,
+        "stats": stats,
+        "stats_list": stats_list,
+        "sample": sample,
+    }
 
 
 def _number_matches(value: float, whitelist: set[float]) -> bool:
@@ -2145,8 +2155,14 @@ def _fact_conflict(text: str, facts: dict[str, Any]) -> str | None:
     return None
 
 
-def _rebuild_stats_reply(data: dict[str, Any] | None) -> str | None:
-    """按整层统计的工具返回，拼一段只有真事实的回答。"""
+def _stats_sentence(
+    data: dict[str, Any] | None, *, with_lead: bool = False
+) -> str | None:
+    """单份整层统计 → 一句话（含层名、范围、时间块、数值、像元数）。
+
+    单位取 ``unit_label``：``unit`` 是机器字段，无量纲写成「1」，直接贴进正文
+    就会出现「0.1507 1」这种读不通的写法（2026-11-07 实测）。
+    """
     if not isinstance(data, dict):
         return None
     try:
@@ -2155,7 +2171,9 @@ def _rebuild_stats_reply(data: dict[str, Any] | None) -> str | None:
     except (TypeError, ValueError):
         return None
     name = str(data.get("display_name") or "").strip() or "这一层"
-    unit = str(data.get("unit") or "").strip()
+    unit = str(data.get("unit_label") or data.get("unit") or "").strip()
+    if unit == "1":
+        unit = "无量纲"
     region = str(data.get("region") or "").strip()
     where = f"按「{region}」行政边界" if region else "按整幅栅格"
     actual = str(data.get("actual_time") or "").strip()
@@ -2168,11 +2186,35 @@ def _rebuild_stats_reply(data: dict[str, Any] | None) -> str | None:
             f"{actual[9:13]}-{actual[13:15]}-{actual[15:17]} 的合成块，"
         )
     value = f"{mean:.4g}" + (f" {unit}" if unit else "")
+    head = f"我按「{name}」取数：" if with_lead else f"「{name}」"
+    return f"{head}{where}，{when}平均值 {value}，有效像元 {pixels} 个。"
+
+
+def _rebuild_stats_reply(
+    data: dict[str, Any] | list[dict[str, Any]] | None,
+) -> str | None:
+    """按整层统计的工具返回，拼一段只有真事实的回答。
+
+    支持一次多份（用户一句问多个变量/多个区域）：**每一份都要写出来**，
+    不许只留最后一份——那等于把用户问的另一半静默丢掉。
+    """
+    if data is None:
+        return None
+    items = data if isinstance(data, list) else [data]
+    lines = [s for s in (_stats_sentence(d) for d in items) if s]
+    if not lines:
+        return None
+    if len(lines) == 1:
+        one = next(
+            (s for s in (_stats_sentence(d, with_lead=True) for d in items) if s),
+            lines[0],
+        )
+        return f"{one}\n\n这是按你最后一句说的图层、区域和日期算出来的。"
+    body = "\n".join(f"- {line}" for line in lines)
     return (
-        f"我按「{name}」取数：{where}，{when}"
-        f"平均值 **{value}**，有效像元 {pixels} 个。\n\n"
-        "这段是按你最后一句说的图层、区域和日期重新算出来的；"
-        "若与上一版数字不一致，以这段为准。"
+        f"这一问涉及 {len(lines)} 组数值，逐组列出（每组的图层、范围与时间块"
+        f"见各项说明）：\n{body}\n\n"
+        "以上都来自本轮取数，各组数值对应各自的图层与时间块，不是同一口径的拆分。"
     )
 
 
@@ -2250,9 +2292,10 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     conflict = _fact_conflict(text, facts)
     if numbers_ok and not conflict:
         return reply, False
-    rebuilt = _rebuild_stats_reply(facts["stats"]) or _rebuild_sample_reply(
-        facts["sample"]
-    )
+    # 多份统计全部带上：一次问多个变量时只重建最后一份，会把用户问的其余项吞掉
+    rebuilt = _rebuild_stats_reply(
+        facts.get("stats_list") or facts["stats"]
+    ) or _rebuild_sample_reply(facts["sample"])
     if not rebuilt:
         return reply, False
     logger.warning(
