@@ -1490,7 +1490,12 @@ def _baseline_layer_id(
         return ""
     if lid.startswith("imported-") or lid.startswith("wf-run-"):
         return lid
-    return _page_overlay_for_catalog(client_context, lid) or ""
+    mapped = _page_overlay_for_catalog(client_context, lid)
+    if mapped:
+        return mapped
+    # 页面已经换成别的层了：按目录 id + 变量反算产物目录（2026-11-07）。
+    # 不做这一步，「只改日期」这类追问会被跨来源守卫当成「拿页面另一层顶替」。
+    return _overlay_for_catalog_variable(lid, str(topic_state.get("variable") or ""))
 
 
 #: 用户点名变量的说法（只用于「他是不是真的要换变量」这类判定）。
@@ -2022,6 +2027,37 @@ def _page_overlay_for_catalog(
     pool = selected or [oid for _, oid in hits]
     uniq = list(dict.fromkeys(pool))
     return uniq[0] if len(uniq) == 1 else None
+
+
+def _overlay_for_catalog_variable(catalog_id: str, variable: str) -> str:
+    """目录 id + 变量 → 盘上**真存在**的产物 id（``imported-*``）；反算不出就空串。
+
+    ``_page_overlay_for_catalog`` 只在「那层还挂在页面上」时有效。用户把图层
+    换掉之后，会话基线里剩下的目录 id 就再也找不到产物，「只改日期」于是退化
+    成「取不到数」——可产物好端端躺在盘上。产物目录名是
+    ``imported-<sha1(catalogId|role|role)[:12]>``，用同一个函数反算，再验
+    ``meta.json`` 真在盘上（盘上没有就不给，绝不编一个 id 出来）。
+    """
+    cid = str(catalog_id or "").strip()
+    if not cid.startswith("method-"):
+        return ""
+    role = {
+        "sm": "SM",
+        "vod": "VOD",
+        "omega": "OMEGA",
+    }.get(str(variable or "").strip().lower())
+    if not role:
+        return ""
+    try:
+        from app.data_io.services.paths import safe_import_child
+        from app.data_io.services.raster_timeseries import stable_imported_layer_id
+
+        oid = stable_imported_layer_id(cid, role, role)
+        if (safe_import_child(oid) / "meta.json").is_file():
+            return oid
+    except Exception:  # pragma: no cover - 算不出来就当没有
+        return ""
+    return ""
 
 
 def canonical_layer_state(

@@ -684,10 +684,18 @@ def _layer_from_state(
     if not overlay:
         try:
             from app.services.agent.server_tools_runtime import (
+                _overlay_for_catalog_variable,
                 _page_overlay_for_catalog,
             )
 
             overlay = _page_overlay_for_catalog(client_context, prior_id) or ""
+            # 页面反查落空（用户已经把那层从页面撤掉、换成了别的产品）：用目录 id
+            # + 变量反算产物目录，并验 meta.json 真在盘上。2026-11-07：不这么做，
+            # 「只改日期」在页面换层之后就退化成「取不到数」，而产物就在盘上。
+            if not overlay:
+                overlay = _overlay_for_catalog_variable(
+                    prior_id, str(prior.get("variable") or "")
+                )
         except Exception:  # pragma: no cover - 反查失败不影响主流程
             overlay = ""
     # 只有产物目录真的在盘上才敢拿来取数：状态里的 id 可能早已被清理，
@@ -701,6 +709,14 @@ def _layer_from_state(
                 return None
         except Exception:  # pragma: no cover - 判断不了就不冒险
             return None
+        # 基线里的名字可能只是侧栏名（「土壤水分」），标题看不出是哪颗卫星。
+        # 产物 id 在手，顺手补全成「SMAP 动态散射约束产品 · 土壤水分」。
+        try:
+            from app.services.agent.server_tools_runtime import _qualified_layer_name
+
+            name = _qualified_layer_name(overlay, name) or name
+        except Exception:  # pragma: no cover - 补名失败不影响取数
+            pass
     return {
         "catalog_id": prior_id,
         "overlay_layer_id": overlay,
@@ -1148,17 +1164,6 @@ def resolve_entities(
         if len(var_only) == 1:
             target = var_only[0]
             layer_from = "variable"
-    # 目录产品族里已物化、但**没挂到页面上**的层：用户点名了来源/形态时，
-    # 这里也能选出唯一一层。2026-11-07「照候选清单说『用 SMAP 动态的』」
-    # 原先答不上来——候选只在 _statistics_reply 里列，解析阶段只认页面层，
-    # 于是页面挂风云 ω、盘上明明有 SMAP 动态土壤水分，却回「没有这一层」。
-    if target is None and variable and _has_layer_hints(text):
-        catalog_cands = _same_variable_candidates(variable, layers)
-        if catalog_cands:
-            picked_cat = _narrow_by_hints(text, catalog_cands, prefer_variable=variable)
-            if picked_cat is not None:
-                target = picked_cat
-                layer_from = "catalog"
     # 以上都不成立才看页面选中 / 唯一可见（保留旧行为，但降到最后）
     if target is None:
         # ★ 2026-11-06 修：用户已经点明变量时，兜底**只能在同变量的层里挑**。
@@ -1198,6 +1203,21 @@ def resolve_entities(
             "当前地图上没有与你点名的来源 / 产品形态一致的图层，"
             "我不拿页面上另一层顶上；请确认产品名称，或先把它加到地图上。"
         )
+
+    # 出口校验之后：用户点名了来源 / 产品形态，而页面没有这一层 ⇒ 去目录里
+    # **已物化**的同变量产物中认一次。
+    # 2026-11-07「照候选清单说『用 SMAP 动态的』」原先答不上来的根因就在这里：
+    # `_resolve_layer` 会误命中页面上那层（哪怕文本里没层名），随后被出口校验
+    # 否掉，旧逻辑到此为止 ⇒ 回「没有与你点名的来源一致的图层」。可盘上明明
+    # 有 SMAP 动态的土壤水分，能直接算。
+    if target is None and variable and _has_layer_hints(text):
+        catalog_cands = _same_variable_candidates(variable, layers)
+        if catalog_cands:
+            picked_cat = _narrow_by_hints(text, catalog_cands, prefer_variable=variable)
+            if picked_cat is not None and not _contradicts_hints(text, picked_cat):
+                target = picked_cat
+                layer_from = "catalog"
+                why = None
 
     # 被出口校验否掉之后，再给会话基线一次机会：用户这几轮一直在问的层未必挂在
     # 页面上（页面可能停着另一颗卫星），但基线里记着它真取过的产物 id。
