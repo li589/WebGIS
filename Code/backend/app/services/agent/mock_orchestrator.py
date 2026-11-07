@@ -112,6 +112,12 @@ def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, A
                 "instance_id": str(item.get("instance_id") or ""),
                 "name": name,
             }
+            # 产物目录 id 必须一起带上：会话状态里记的往往是 imported-*，
+            # 而 catalog_id 是目录编号 method-*，只比 catalog_id 永远对不上
+            # （2026-11-07「只改区域却换了产品」的根因之一）。
+            overlay_id = str(item.get("overlay_layer_id") or "").strip()
+            if overlay_id:
+                entry["overlay_layer_id"] = overlay_id
             # 与真模型路径保持一致：可见 / 选中状态（原生 bool）
             if item.get("visible") is not None:
                 entry["visible"] = bool(item.get("visible"))
@@ -136,6 +142,20 @@ def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, A
             )
         return out
     return []
+
+
+def _bare_layer_id(layer_id: str) -> str:
+    """剥掉 ``imports/`` 前缀的空壳 id，仅用于「是不是同一层」的比较。
+
+    前端传上来的 ``overlay_layer_id`` 有时带 ``imports/``，会话状态里存的是裸 id；
+    不归一化就永远判不出「这就是上一轮那一层」。
+    """
+    lid = str(layer_id or "").strip().lstrip("/")
+    if lid.startswith("imports/"):
+        rest = lid[len("imports/") :]
+        if rest.startswith(("imported-", "imports-")):
+            return rest
+    return lid
 
 
 def _display(layer: dict[str, Any]) -> str:
@@ -712,8 +732,25 @@ def resolve_entities(
     if target is None:
         prior_id = prior.get("layer_id") or ""
         if prior_id:
+            # 2026-11-07：原来只比 catalog_id，而状态里的 id 可能是产物目录
+            # （imported-*）、页面层的 catalog_id 却是目录编号（method-*），
+            # 两边永远对不上 ⇒ “沿用上一轮”这一步形同虚设，直接掉到页面选中层，
+            # 于是「只改区域」换成了另一颗卫星/另一个口径（外部复测第三组）。
+            # 三个身份字段都比一遍，并剥掉 imports/ 前缀。
+            want = _bare_layer_id(prior_id)
             candidate = next(
-                (la for la in layers if la.get("catalog_id") == prior_id), None
+                (
+                    la
+                    for la in layers
+                    if want
+                    and want
+                    in {
+                        _bare_layer_id(str(la.get("catalog_id") or "")),
+                        _bare_layer_id(str(la.get("overlay_layer_id") or "")),
+                        _bare_layer_id(str(la.get("instance_id") or "")),
+                    }
+                ),
+                None,
             )
             if candidate is not None:
                 prior_var = prior.get("variable") or dialogue_state.variable_from_name(
@@ -900,11 +937,25 @@ def _statistics_reply(
     }
     if region:
         stat_args["region"] = region
-    res = _get_layer_statistics(stat_args, cred=None, client_context=client_context)
+    res = _get_layer_statistics(
+        stat_args,
+        cred=None,
+        client_context=client_context,
+        user_message=text,
+        # 与模型路径同一条规矩：会话里记着的对象才是「上一轮那层」的事实源
+        topic_state=state,
+    )
     topic_state = _entities_state_patch(entities)
     carry_note = _carry_note(entities)
 
     name = _display(target)
+    # 工具侧判定「这一句没点名换产品」，把层改回了上一轮那层 ⇒ 标题必须跟着改，
+    # 否则会出现「数字是 SMAP 动态、标题写着风云平均」这种更隐蔽的错。
+    if res.get("product_pinned"):
+        pinned_name = str(res.get("display_name") or "").strip()
+        if pinned_name:
+            name = pinned_name
+        carry_note = "；".join(x for x in (carry_note, "产品沿用上一轮") if x)
     scope_prefix = f"按「{region}」行政边界" if region else "整层"
     if not res.get("ok"):
         reason = str(res.get("error") or "统计未成功")

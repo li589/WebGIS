@@ -36,12 +36,17 @@ def execute_server_tool(
     cred: Any = None,
     client_context: dict[str, Any] | None = None,
     user_message: str = "",
+    topic_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute an allowed server tool. Unknown tools return ok=False.
 
     ``user_message`` 是用户这一轮的原话，只给「跨来源取数守卫」用
     （见 ``_cross_source_guard``）：判断他有没有点名换一颗卫星。
-    不传也安全——守卫会直接放行，行为与改动前一致。
+
+    ``topic_state`` 是本会话「已确认的取数对象」（见 ``dialogue_state``），
+    给统计/点采样做两件事：① 没传 catalog_id 时先取它、再退页面选中层；
+    ② 模型传了别的层、但用户这一句没点名换产品时，改回它（产品粘性）。
+    两者都不传也安全，行为与改动前一致。
     """
     tool = (name or "").strip()
     if tool not in _ALLOWED_TOOLS:
@@ -58,7 +63,11 @@ def execute_server_tool(
         return _get_workflow_meta(args, cred=cred)
     if tool == "sample_layer_point":
         return _sample_layer_point(
-            args, cred=cred, client_context=client_context, user_message=user_message
+            args,
+            cred=cred,
+            client_context=client_context,
+            user_message=user_message,
+            topic_state=topic_state,
         )
     if tool == "web_search":
         return _web_search(args)
@@ -74,7 +83,11 @@ def execute_server_tool(
         # client_context 必传：统计要默认用「页面当前日期 + 页面选中图层」，
         # 否则会静默退回 meta.default_time（曾导致页面停在 12-15 却统计 01-25~02-01）。
         return _get_layer_statistics(
-            args, cred=cred, client_context=client_context, user_message=user_message
+            args,
+            cred=cred,
+            client_context=client_context,
+            user_message=user_message,
+            topic_state=topic_state,
         )
     if tool == "list_workflow_timers":
         return _list_workflow_timers(args, cred=cred)
@@ -1281,6 +1294,7 @@ def _sample_layer_point(
     cred: Any,
     client_context: dict[str, Any] | None = None,
     user_message: str = "",
+    topic_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Sample overlay/weather value(s) at a map point."""
     parsed = _parse_lng_lat(args, client_context)
@@ -1296,6 +1310,15 @@ def _sample_layer_point(
         time_key = _page_timeline_date(client_context)
 
     catalog_id = _normalize_layer_id(str(args.get("catalog_id") or ""))
+    # 与整层统计同一条规矩：点名了就认点名（但没点名换产品时改回上一轮那层）；
+    # 没点名且会话里记着对象时，先取它，别拿页面上碰过的那一层顶替。
+    pinned_note: str | None = None
+    if catalog_id:
+        catalog_id, pinned_note = _product_sticky_layer(
+            catalog_id, topic_state=topic_state, user_message=user_message
+        )
+    else:
+        catalog_id = _baseline_layer_id(topic_state)
     targets: list[str] = []
     if catalog_id:
         targets = [catalog_id]
@@ -1435,6 +1458,117 @@ def _mentions_source(message: str, source: str) -> bool:
     if not text:
         return False
     return any(alias in text for alias in _SOURCE_ALIASES.get(source, (source,)))
+
+
+def _baseline_layer_id(topic_state: dict[str, Any] | None) -> str:
+    """会话里记着的「上一轮取数用的那一层」，只认本地运行时产物。
+
+    2026-11-07：外部复测第三组「只改区域」串产品的根因就在这里——会话状态
+    明明记着上一轮是 SMAP 动态，但取数工具一个字都不读它，没收到 catalog_id
+    就退回**页面当前选中层**。用户在页面上碰过别的产品，这一句就必然落到那个
+    产品上，而且答得有模有样（真实数值 + 有效像元数），用户完全分辨不出来。
+
+    目录层 id（``method-*``）在盘上没有同名目录，拿它取数只会换来一句报错，
+    所以这里只放行 ``imported-*`` / ``wf-run-*``。
+    """
+    if not isinstance(topic_state, dict):
+        return ""
+    lid = _normalize_layer_id(str(topic_state.get("layer_id") or ""))
+    if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
+        return ""
+    return lid
+
+
+#: 用户点名变量的说法（只用于「他是不是真的要换变量」这类判定）。
+#: ``散射`` 要排除「散射约束产品」这个族名，否则任何一句提到产品全称的话
+#: 都会被判成「他要 ω」。
+_VARIABLE_MENTION_RE: dict[str, re.Pattern[str]] = {
+    "sm": re.compile(r"土壤水|土壤湿|含水量|墒情|(?<![a-z])sm(?![a-z])", re.I),
+    "vod": re.compile(r"vod|植被光学厚度|光学厚度", re.I),
+    "omega": re.compile(r"ω|omega|散射(?!约束)", re.I),
+}
+
+
+def _mentions_variable(message: str, variable: str) -> bool:
+    """用户原话里有没有点名这个变量（用于判定「他是不是真的要换变量」）。"""
+    pattern = _VARIABLE_MENTION_RE.get(variable)
+    if pattern is None or not message:
+        return False
+    return bool(pattern.search(message))
+
+
+#: 口径（产品版本）说法。**绝不能只写「平均」**：用户问「平均值是多少」时也带
+#: 这两个字，把它当成「换成平均版」会让正常统计请求被当成换产品（2026-11-06
+#: 同一类坑：把「平均散射约束产品」的族名当成统计请求）。
+_VERSION_MENTION_RE: dict[str, re.Pattern[str]] = {
+    "average": re.compile(
+        r"平均版|平均产品|平均口径|平均那套|平均那个|多年平均"
+        r"|(?:换成|换个|改用|切到|改成|改为|用)平均(?!值)",
+        re.I,
+    ),
+    "dynamic": re.compile(
+        r"动态版|动态产品|动态口径|动态那套|动态那个|逐日"
+        r"|(?:换成|换个|改用|切到|改成|改为|用)动态",
+        re.I,
+    ),
+}
+
+
+def _mentions_version(message: str, family: str) -> bool:
+    """用户原话里有没有点名这个口径（平均 / 动态）。"""
+    key = str(family or "").strip().lower()
+    pattern = _VERSION_MENTION_RE.get(key)
+    if pattern is None or not message:
+        return False
+    return bool(pattern.search(message))
+
+
+def _product_sticky_layer(
+    catalog_id: str,
+    *,
+    topic_state: dict[str, Any] | None,
+    user_message: str,
+) -> tuple[str, str | None]:
+    """产品粘性：模型传了别的层，但用户这一句没点名换 → 改回上一轮那层。
+
+    返回 ``(实际使用的层, 粘性说明或 None)``。
+
+    只在**四件事同时成立**时改回：上一轮确实记着一层、它和这次的层不是同一层、
+    两层的身份都能解析、用户原话里既没点名这次的来源/变量/口径。少一条都放行，
+    宁可漏改不可误改——「换成风云那套」「那 VOD 呢」「切到平均版」必须照常切换。
+    """
+    base = _baseline_layer_id(topic_state)
+    if not base or not catalog_id:
+        return catalog_id, None
+    if _normalize_layer_id(catalog_id) == base:
+        return catalog_id, None
+    base_fields = _layer_identity_fields(base)
+    req_fields = _layer_identity_fields(catalog_id)
+    base_source = str(base_fields.get("source") or "")
+    base_var = str(base_fields.get("variable") or "")
+    req_source = str(req_fields.get("source") or "")
+    req_var = str(req_fields.get("variable") or "")
+    if not base_source or not req_source or not base_var or not req_var:
+        return catalog_id, None
+    if req_var == "unknown" or base_var == "unknown":
+        return catalog_id, None
+    # ① 用户点名了这次这一层（新来源 / 新变量 / 新口径）⇒ 这是合法换产品
+    if req_source != base_source and _mentions_source(user_message, req_source):
+        return catalog_id, None
+    if req_var != base_var and _mentions_variable(user_message, req_var):
+        return catalog_id, None
+    base_family = str(base_fields.get("product_family") or "")
+    req_family = str(req_fields.get("product_family") or "")
+    if req_family != base_family and _mentions_version(user_message, req_family):
+        return catalog_id, None
+    # ② 同一层、只是两份副本（正规产物 / 旧副本）不该被改回
+    if req_source == base_source and req_var == base_var and req_family == base_family:
+        return catalog_id, None
+    note = (
+        f"这一句没有点名换产品或换变量，已按上一轮那层取数（{base}），"
+        "回答里写明「产品沿用上一轮」，不要改口成别的卫星/别的口径"
+    )
+    return base, note
 
 
 def _page_layer_pairs(client_context: dict[str, Any] | None) -> list[dict[str, str]]:
@@ -1861,6 +1995,9 @@ def _page_default_layer(client_context: dict[str, Any] | None) -> str | None:
                 break
         if not lid:
             continue
+        # 前端有时传 imports/imported-xxx，直接 startswith 判断会漏掉这一层，
+        # 于是「当前图层的平均值」被答成「页面上没有可统计的运行时图层」。
+        lid = _normalize_layer_id(lid)
         if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
             continue
         score = (3 if item.get("selected") else 0) + (2 if item.get("visible") else 0)
@@ -3043,6 +3180,7 @@ def _get_layer_statistics(
     cred: Any,
     client_context: dict[str, Any] | None = None,
     user_message: str = "",
+    topic_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """整层只读统计（mean/min/max/std/有效像元数）——不建图层、不跑工作流。
 
@@ -3058,13 +3196,30 @@ def _get_layer_statistics(
 
     并且**如实回报来源**（``time_source``），模型才不会把"图层默认块"当成"那天"。
     """
-    # ① 图层：不点名就用页面那一层（只认运行时产物，参考层没有本地栅格）
+    # ① 图层：点名就用点名；没点名先取「本会话已确认的取数对象」，最后才退页面
+    #
+    # 2026-11-07（外部复测第三组「只改区域却换了产品」）：
+    # 旧实现「不点名就用页面那一层」，但**页面当前选中层和用户正在问的对象
+    # 经常不是同一个**——他上一轮明确要的是 SMAP 动态，页面上却因为点过图层
+    # 停在了风云平均。于是「区域改为广州市，日期和产品保持不变」这一句必然
+    # 落到风云上，还带着真实数值和有效像元数，看着完全像答对了。
+    # 会话状态里记着那一层（见 dialogue_state），这里必须真的用它。
     catalog_id = _normalize_layer_id(
         str(args.get("catalog_id") or args.get("layer_id") or "")
     )
-    layer_source = "requested" if catalog_id else "page"
-    if not catalog_id:
-        catalog_id = _page_default_layer(client_context) or ""
+    layer_source = "requested" if catalog_id else "session"
+    pinned_note: str | None = None
+    baseline = _baseline_layer_id(topic_state)
+    if catalog_id:
+        catalog_id, pinned_note = _product_sticky_layer(
+            catalog_id, topic_state=topic_state, user_message=user_message
+        )
+        if pinned_note:
+            layer_source = "session"
+    else:
+        catalog_id = baseline or _page_default_layer(client_context) or ""
+        if not baseline:
+            layer_source = "page"
         if not catalog_id:
             return {
                 "ok": False,
@@ -3379,6 +3534,15 @@ def _get_layer_statistics(
                 "必须从 page_candidates 里挑 temporal_shape 匹配的那一层，"
                 "显式传 catalog_id 重新统计，不得直接拿这次结果回答。"
             )
+    # 产品粘性：模型传了别的层、被改回上一轮那层时，明确告诉模型「这一句没说换」，
+    # 免得它在正文里把产品名换成刚刚想挑的那一个（数字对了、名字错了同样误导）。
+    if pinned_note:
+        payload["product_pinned"] = pinned_note
+    elif layer_source == "session" and baseline:
+        payload["layer_source_note"] = (
+            "这一句没有点名图层，按本会话上一轮的取数对象统计（不是页面当前选中层）。"
+            "回答里要写出这一层的名字，让用户能核对。"
+        )
     if not stats.get("ok") and "error" not in stats:
         payload["error"] = "统计失败"
     return payload
