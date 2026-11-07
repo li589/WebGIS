@@ -3126,6 +3126,38 @@ def _window_extent_wgs84(ds: Any, window: Any = None) -> dict[str, float] | None
         return None
 
 
+def _pixel_size_label(ds: Any) -> str | None:
+    """像元大小的「人话」写法。
+
+    2026-11-07 复测：问「这层的分辨率是多少」时模型只能答「查不到」——统计返回里
+    有行列数和 CRS，唯独没有像元大小。这里补上，**只加字段，不动任何统计口径**。
+    等距投影（EPSG:6933 这类，单位米）报公里，经纬度投影报度。
+    """
+    try:
+        res = [abs(float(v)) for v in ds.res]
+    except Exception:
+        return None
+    if not res or not res[0]:
+        return None
+    try:
+        units = str(ds.crs.linear_units or "").lower() if ds.crs else ""
+    except Exception:
+        units = ""
+    # 方格网的 x/y 往往差在小数点后第 9 位（9008.0552126556 / 9008.0552093596），
+    # 用绝对差会被判成不等、写成「9.01 km × 9.01 km」。按相对容差认成同一尺寸。
+    same = abs(res[0] - res[1]) <= 1e-6 * max(res[0], res[1])
+    if units in {"metre", "meter", "metres", "meters", "m"}:
+        km = res[0] / 1000.0
+        if km >= 1:
+            head = f"{km:.3g} km"
+            tail = f"{res[1] / 1000.0:.3g} km"
+        else:
+            head = f"{res[0]:.4g} m"
+            tail = f"{res[1]:.4g} m"
+        return head if same else f"{head} × {tail}"
+    return f"{res[0]:.4g}°" if same else f"{res[0]:.4g}° × {res[1]:.4g}°"
+
+
 def _raster_full_stats(
     raster_path: Any,
     bbox: tuple[float, float, float, float] | None = None,
@@ -3202,6 +3234,12 @@ def _raster_full_stats(
                     "total_pixels": total,
                     "valid_ratio": round(count / total, 6) if total else None,
                     "crs": ds.crs.to_string() if ds.crs else None,
+                    # 像元大小：问「这层分辨率多少」时唯一的答案来源（2026-11-07 补）
+                    "res": [
+                        round(abs(float(ds.res[0])), 10),
+                        round(abs(float(ds.res[1])), 10),
+                    ],
+                    "pixel_size": _pixel_size_label(ds),
                     "width": int(ds.width),
                     "height": int(ds.height),
                     "analyzed_width": int(data.shape[1]),
@@ -3240,6 +3278,12 @@ def _raster_full_stats(
                 "total_pixels": total,
                 "valid_ratio": round(count / total, 6) if total else None,
                 "crs": ds.crs.to_string() if ds.crs else None,
+                # 像元大小：问「这层分辨率多少」时唯一的答案来源（2026-11-07 补）
+                "res": [
+                    round(abs(float(ds.res[0])), 10),
+                    round(abs(float(ds.res[1])), 10),
+                ],
+                "pixel_size": _pixel_size_label(ds),
                 "width": int(ds.width),
                 "height": int(ds.height),
                 "analyzed_width": int(data.shape[1]),

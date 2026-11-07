@@ -21,7 +21,11 @@ from app.services.agent.naming import (
     is_internal_id,
     join_layer_names,
 )
-from app.services.agent.orchestrator import _synthesize_reply_from_tool_steps
+from app.services.agent.orchestrator import (
+    _guard_reply_numbers,
+    _stat_values,
+    _synthesize_reply_from_tool_steps,
+)
 
 INSIDE_IDS = (
     "imported-38993117b963",
@@ -262,3 +266,105 @@ class TestToolSynthesis:
         steps = self._step({"ok": False, "error": "无权访问该图层"})
         text = _synthesize_reply_from_tool_steps(steps) or ""
         assert "权限" in text
+
+
+# --- 数值守卫（2026-11-07 第四次复测：一次问两个变量时一项错数被另一项掩护） ---
+
+_SM_1216 = {
+    "catalog_id": "method-smap-omega-doy-sm",
+    "mean": 0.2025324847763941,
+    "valid_pixels": 1995,
+    "region": "河南省",
+    "actual_time": "20251216",
+    "unit": "m³/m³",
+    "unit_label": "m³/m³",
+    "display_name": "SMAP 动态散射约束产品 · 土壤水分",
+}
+_VOD_BLOCK = {
+    "catalog_id": "imported-5427e1020d63",
+    "mean": 0.15066699127652752,
+    "valid_pixels": 1340,
+    "region": "河南省",
+    "actual_time": "20251211_20251218",
+    "unit": "1",
+    "unit_label": "无量纲",
+    "display_name": "SMAP 动态散射约束产品 · 植被光学厚度",
+}
+_GZ_1216 = {
+    "catalog_id": "method-smap-omega-doy-sm",
+    "mean": 0.1664,
+    "valid_pixels": 63,
+    "min": 0.102,
+    "max": 0.558,
+    "std": 0.066,
+    "region": "广州市",
+    "actual_time": "20251216",
+    "unit": "m³/m³",
+    "unit_label": "m³/m³",
+    "display_name": "SMAP 动态散射约束产品 · 土壤水分",
+}
+
+
+def _tool_steps(*rows: dict) -> list[dict]:
+    return [
+        {"type": "tool_result", "detail": json.dumps(r, ensure_ascii=False)}
+        for r in rows
+    ]
+
+
+class TestNumberGuard:
+    """正文里的统计值必须逐项与本轮取数对得上。
+
+    背景（2026-11-07 实测）：问「土壤水分和 VOD 分别是多少」，工具两次都返回
+    SM 0.2025/1995，模型却写「土壤水分 0.293/163」（那是 12-15 的值）。旧判据是
+    「正文里任意一个数对上白名单就放行」，VOD 的 0.1507/1340 一对上，整段连错值
+    一起流出去，用户拿到一半真一半假。
+    """
+
+    def test_one_wrong_among_right_is_rewritten(self) -> None:
+        reply = (
+            "- 「土壤水分」按「河南省」行政边界，2025-12-16 平均值 0.293 m³/m³，"
+            "有效像元 163 个。\n"
+            "- 「植被光学厚度」平均值 0.1507 无量纲，有效像元 1340 个。"
+        )
+        out, changed = _guard_reply_numbers(
+            reply, _tool_steps(_SM_1216, _VOD_BLOCK)
+        )
+        assert changed is True
+        assert "0.2025" in out and "1995" in out
+        assert "0.293" not in out and "163" not in out
+
+    def test_all_right_is_kept(self) -> None:
+        reply = (
+            "- 「土壤水分」按「河南省」行政边界，2025-12-16 平均值 0.2025 m³/m³，"
+            "有效像元 1995 个。\n"
+            "- 「植被光学厚度」平均值 0.1507 无量纲，有效像元 1340 个。"
+        )
+        out, changed = _guard_reply_numbers(
+            reply, _tool_steps(_SM_1216, _VOD_BLOCK)
+        )
+        assert changed is False
+        assert out == reply
+
+    def test_rounding_is_not_treated_as_fabrication(self) -> None:
+        """0.2025 写成 0.203、0.1507 写成 0.151 属于正常转写，不许重写。"""
+        reply = "河南省的平均值为 0.203 m³/m³，有效像元 1995 个。"
+        _, changed = _guard_reply_numbers(reply, _tool_steps(_SM_1216))
+        assert changed is False
+
+    def test_derived_numbers_do_not_trigger_rewrite(self) -> None:
+        """差值、百分比是模型自己算的，工具从没返回过，不能因此判成编造。"""
+        reply = (
+            "同一天（2025-12-16）广州市的平均值是 0.166 m³/m³，"
+            "河南省是 0.203 m³/m³，广州比河南低约 0.037 m³/m³（低约 18%）。\n"
+            "- 广州市：有效像元 63 个（占该市范围内总像元的约 26%），"
+            "最低 0.102、最高 0.558 m³/m³，标准差 0.066"
+        )
+        _, changed = _guard_reply_numbers(reply, _tool_steps(_GZ_1216, _SM_1216))
+        assert changed is False
+
+    def test_stat_values_skip_dates_and_ratios(self) -> None:
+        vals = _stat_values(
+            "2025-12-16 平均值 0.2025，占约 26%，低 0.037，有效像元 1995 个"
+        )
+        assert vals == {0.2025, 1995.0}

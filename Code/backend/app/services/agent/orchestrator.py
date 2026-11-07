@@ -2023,8 +2023,10 @@ def _number_matches(value: float, whitelist: set[float]) -> bool:
     """正文里的数与白名单里的数是不是同一个。
 
     整数按精确值比（1995 与 1996 是两天不同的覆盖，不能算同一个）；
-    小数按**3 位有效数字**比——这样「0.2929 写成 0.293」能过，
-    而「0.2025 写成 0.203」过不了（0.202 ≠ 0.203），抄上一轮那类正好卡住。
+    小数按**3 位有效数字**比——「0.2929 写成 0.293」「0.2025 写成 0.203」都能过
+    （2026-11-07 实测：``f"{0.2025324:.3g}"`` 就是 ``0.203``，四舍五入属正常转写，
+    原注释把它写成「过不了」是错的）。而「0.293 对 0.2025」这种换了整套数的
+    过不了——抄上一轮那类正好卡在这里。
     """
     for ref in whitelist:
         if value.is_integer() and ref.is_integer():
@@ -2055,6 +2057,42 @@ def _reply_numbers(text: str) -> set[float]:
         except ValueError:
             continue
     for groups in _PIXEL_MENTION_RE.findall(raw):
+        token = (
+            groups if isinstance(groups, str) else next((g for g in groups if g), "")
+        )
+        if not token:
+            continue
+        try:
+            out.add(float(token.replace(",", "")))
+        except ValueError:
+            continue
+    return out
+
+
+#: 正文里**挂着统计量名**的数值：``平均值 0.203``、``有效像元 1995``。
+#: 2026-11-07 第四次复测：只校验这一类。差值与百分比（``比河南低约 0.037``、
+#: ``占该市范围约 26%``）是模型自己算的派生数，工具从未返回过，一并强校验会把
+#: 正确的对比回答判成编造、整段替换成一句干巴巴的话。
+_STAT_VALUE_RE = re.compile(
+    # 「平均值 0.203」「平均值是 0.203」「平均值约 **0.203**」
+    r"(?:平均值|均值|平均|最大值|最小值|最高值|最低值|最高|最低|标准差|中位数)"
+    r"\s*(?:是|为|约|大约|在|[:：])?\s*[*_`]*\s*(\d+(?:\.\d+)?)"
+    # 「有效像元 1995」「有效像元：1995」
+    r"|(?:有效像元|有效栅格|像元数|栅格数)\s*(?:数)?\s*[:：为是]?\s*(\d[\d,]*)"
+    # 「1995 个有效像元」
+    r"|(\d[\d,]*)\s*个\s*(?:有效)?(?:像元|栅格)"
+)
+
+
+def _stat_values(text: str) -> set[float]:
+    """正文里「必须与本轮取数对上」的那些数。
+
+    只认紧跟在统计量名后面的数，以及贴着「个有效像元/栅格」的整数。日期先剥掉，
+    免得 ``平均值 2025-12-16`` 里的年份被当成统计值。
+    """
+    raw = _DATE_LIKE_RE.sub(" ", text or "")
+    out: set[float] = set()
+    for groups in _STAT_VALUE_RE.findall(raw):
         token = (
             groups if isinstance(groups, str) else next((g for g in groups if g), "")
         )
@@ -2271,10 +2309,19 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     （``_statistics_fallback_reply``）只问「本轮有没有调过统计工具」，调过就
     放行模型原文，于是抄来的数原样流到用户眼前。
 
-    判据：正文里出现的像元数、小数，只要**有一个**能对上本轮工具返回过的数，
-    就认为这段是本轮写的（两轮对比时会同时出现两组数，那种不拦）；一个都对不上
-    ⇒ 正文与本次取数无关，按工具返回重写。点的值、覆盖日期也一并纳入白名单，
-    所以点采样和覆盖查询不再有"随便写数"的空档。
+    判据分两层：
+
+    1. 正文里**挂着统计量名**的数（平均值/均值/最大/最小/标准差/有效像元）——
+       **每一个**都必须能对上本轮工具返回过的数，有一个对不上就整段重写。
+       只要求「任意一个对上就放行」曾被一次问两个变量骗过：土壤水分写错
+       （0.293/163，其实是 12-15 的值）、VOD 写对，整段被 VOD 掩护着流出去，
+       用户拿到一半真一半假（2026-11-07 第四次复测实测）。
+    2. 正文里没有统计量名时（身份问答、只讲范围）退回旧判据：只要有一个数
+       对上就算本轮写的（两轮对比会同时出现两组数，那种不拦）。一个都对不上
+       ⇒ 正文与本次取数无关，按工具返回重写。
+
+    差值与百分比不参与第 1 层校验——``比河南低约 0.037``、``占约 26%`` 是模型
+    自己算的派生数，工具从没返回过，一刀切会把正确的对比回答判成编造。
     """
     text = reply or ""
     if not text:
@@ -2286,7 +2333,16 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     mentioned = _reply_numbers(text)
     if not mentioned:
         return reply, False
-    numbers_ok = any(_number_matches(value, whitelist) for value in mentioned)
+    # 2026-11-07 第四次复测：原来只要求「任意一个数对上就整段放行」，于是
+    # 「土壤水分 0.293/163（错，0.293/163 其实是 12-15 的值）+ VOD 0.151/1340（对）」
+    # 被 VOD 那两个正确数掩护过关，用户拿到一半真一半假——问「分别是多少」时
+    # 最容易被骗过。改成：**每个挂着统计量名的数都必须对得上**。
+    # 正文里没有统计量名（身份问答、只讲范围）时退回旧判据，不扩大误伤面。
+    stat_values = _stat_values(text)
+    if stat_values:
+        numbers_ok = all(_number_matches(value, whitelist) for value in stat_values)
+    else:
+        numbers_ok = any(_number_matches(value, whitelist) for value in mentioned)
     # 数值对得上还不够：正文可能把这一层说成另一颗卫星/另一个区域/另一天。
     # 只在报了数值时查（身份类问答会被误伤），带「上一轮/相比」的整句豁免。
     conflict = _fact_conflict(text, facts)
