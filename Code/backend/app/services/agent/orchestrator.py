@@ -24,6 +24,7 @@ from app.services.agent.mock_orchestrator import mock_chat
 from app.services.agent.naming import fmt_value, human_layer_name
 from app.services.agent.server_tools_runtime import (
     ALLOWED_SERVER_TOOLS,
+    canonical_layer_state,
     catalog_summary,
     execute_server_tool,
     load_server_tools_anthropic,
@@ -1362,10 +1363,13 @@ def _state_patch_from_message(
     layer = got.get("layer")
     if isinstance(layer, dict) and layer.get("catalog_id"):
         if not is_page_layer or not prev.get("layer_id"):
-            patch["layer_id"] = str(layer["catalog_id"])
-            name = mock_orchestrator._display(layer)
-            if name:
-                patch["layer_name"] = name
+            patch.update(
+                canonical_layer_state(
+                    str(layer["catalog_id"]),
+                    display=mock_orchestrator._display(layer),
+                    client_context=client_context,
+                )
+            )
     if got.get("variable"):
         patch["variable"] = str(got["variable"])
     if got.get("region"):
@@ -1412,17 +1416,18 @@ def _state_patch_from_tool_calls(
         cid = str(args.get("catalog_id") or "").strip()
         if not cid:
             continue
-        patch["layer_id"] = cid
+        # 2026-11-07：原来这里直接记模型传的目录层 id，再配页面上的层名，
+        # 于是「id=SMAP 动态、名字=风云卫星平均」这种自相矛盾的组合被写进会话，
+        # 下一轮模型照名字选层就直接串产品。现在 id/名字/变量统一由
+        # canonical_layer_state 从 id 反查，任一处更新都不会只剩下半套。
+        display = ""
         for la in layers:
-            if str(la.get("catalog_id") or "") != cid:
-                continue
-            name = str(la.get("name") or "").strip()
-            if name:
-                patch["layer_name"] = name
-                var = dialogue_state.variable_from_name(name)
-                if var:
-                    patch["variable"] = var
-            break
+            if str(la.get("catalog_id") or "") == cid:
+                display = str(la.get("name") or "").strip()
+                break
+        patch.update(
+            canonical_layer_state(cid, display=display, client_context=client_context)
+        )
         region = str(args.get("region") or args.get("boundary") or "").strip()
         if region:
             patch["region"] = region
@@ -1453,13 +1458,11 @@ def _state_patch_from_tool_results(
         local = str(res.get("resolved_layer_id") or "").strip()
         if not local:
             continue
-        patch["layer_id"] = local
-        name = str(res.get("display_name") or "").strip()
-        if name:
-            patch["layer_name"] = name
-            var = dialogue_state.variable_from_name(name)
-            if var:
-                patch["variable"] = var
+        patch.update(
+            canonical_layer_state(
+                local, display=str(res.get("display_name") or "").strip()
+            )
+        )
     return patch
 
 
@@ -1483,17 +1486,14 @@ def _state_patch_from_intents(
     def _remember(cid: str) -> None:
         if not cid:
             return
-        patch["layer_id"] = cid
+        display = ""
         for la in layers:
-            if str(la.get("catalog_id") or "") != cid:
-                continue
-            layer_name = str(la.get("name") or "").strip()
-            if layer_name:
-                patch["layer_name"] = layer_name
-                var = dialogue_state.variable_from_name(layer_name)
-                if var:
-                    patch["variable"] = var
-            break
+            if str(la.get("catalog_id") or "") == cid:
+                display = str(la.get("name") or "").strip()
+                break
+        patch.update(
+            canonical_layer_state(cid, display=display, client_context=client_context)
+        )
 
     for item in intents:
         if not isinstance(item, dict):
@@ -1842,13 +1842,59 @@ _PIXEL_MENTION_RE = re.compile(
 )
 
 
-def _last_stats_payload(steps: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """本轮最后一次「真算出了整层统计」的工具返回。
+#: 这些键下的数字是「元数据计数」而不是取到的值（``limit=20``、``count=3``、
+#: 图片宽高…）。收进白名单等于给正文开一张空白许可证——随便写个数就"匹配上"。
+_NUMBER_KEY_SKIP = frozenset(
+    {
+        "limit",
+        "count",
+        "offset",
+        "page",
+        "page_size",
+        "max_hops",
+        "hop",
+        "total_count",
+        "n",
+        "index",
+        "code",
+        "status",
+        "size",
+        "width",
+        "height",
+        "bytes",
+        "elapsed_ms",
+        "duration_ms",
+    }
+)
 
-    只认同时带 ``mean`` 与 ``valid_pixels`` 的返回（统计/覆盖工具的特征），
-    且跳过被截断的摘要对象——那种拿不到可信数值。
+
+def _iter_numbers(obj: Any, key: str = ""):
+    """递归取出对象里的数值（跳过布尔与元数据计数键）。"""
+    if isinstance(obj, bool):
+        return
+    if isinstance(obj, (int, float)):
+        if str(key).lower() not in _NUMBER_KEY_SKIP:
+            yield float(obj)
+        return
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _iter_numbers(v, str(k))
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _iter_numbers(v, key)
+
+
+def _round_facts(steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """本轮工具返回里的**全部**可信数值 + 最后一份统计/点采样事实。
+
+    2026-11-07 第三次复测：原来只认 ``mean`` + ``valid_pixels``，于是
+    ``sample_layer_point``（返回 ``samples[].value``，没有像元数）和覆盖查询
+    （返回日期清单，没有均值）**完全不在校验范围内**——模型点了位却报个别的
+    数、或者查覆盖却编个均值，都拦不住。白名单改成"本轮返回过什么数"，
+    校验才谈得上覆盖全部取数工具。
     """
-    for step in reversed(list(steps)):
+    payloads: list[dict[str, Any]] = []
+    for step in steps:
         if not isinstance(step, dict) or step.get("type") != "tool_result":
             continue
         detail = step.get("detail")
@@ -1860,54 +1906,183 @@ def _last_stats_payload(steps: list[dict[str, Any]]) -> dict[str, Any] | None:
                 continue
         if not isinstance(data, dict) or data.get("truncated"):
             continue
-        if data.get("mean") is None or data.get("valid_pixels") is None:
+        payloads.append(data)
+
+    numbers: set[float] = set()
+    stats: dict[str, Any] | None = None
+    sample: dict[str, Any] | None = None
+    for data in payloads:
+        numbers.update(_iter_numbers(data))
+        if data.get("mean") is not None and data.get("valid_pixels") is not None:
+            stats = data
+        if isinstance(data.get("samples"), list):
+            sample = data
+    # 派生值：正文常写「有效率约 49.7%」「比上一轮低 0.09」，这些数白名单里没有，
+    # 不放行就会把正确答案当成编造。只补两类最常见的派生（占比、两数之差），
+    # 别的派生一律按未匹配处理——宁可重写得朴素一点，也不放宽到形同虚设。
+    derived: set[float] = set()
+    if stats:
+        try:
+            valid = float(stats.get("valid_pixels"))
+            total = float(stats.get("total_pixels"))
+            if total:
+                derived.add(round(valid / total * 100.0, 4))
+        except (TypeError, ValueError):
+            pass
+    pool = list(numbers)[:40]
+    for i, left in enumerate(pool):
+        for right in pool[i + 1 :]:
+            derived.add(round(abs(left - right), 6))
+    return {"numbers": numbers | derived, "stats": stats, "sample": sample}
+
+
+def _number_matches(value: float, whitelist: set[float]) -> bool:
+    """正文里的数与白名单里的数是不是同一个。
+
+    整数按精确值比（1995 与 1996 是两天不同的覆盖，不能算同一个）；
+    小数按**3 位有效数字**比——这样「0.2929 写成 0.293」能过，
+    而「0.2025 写成 0.203」过不了（0.202 ≠ 0.203），抄上一轮那类正好卡住。
+    """
+    for ref in whitelist:
+        if value.is_integer() and ref.is_integer():
+            if value == ref:
+                return True
             continue
-        return data
+        if f"{value:.3g}" == f"{ref:.3g}":
+            return True
+    return False
+
+
+#: 正文里的小数 + 贴着「像元/栅格」的整数。日期先剥掉，免得 2025-12-16 被当数值。
+_DATE_LIKE_RE = re.compile(r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?|\d{8}(?:_\d{8})?")
+_DECIMAL_RE = re.compile(r"\d+\.\d+")
+
+
+def _reply_numbers(text: str) -> set[float]:
+    """正文里「像统计结果」的数字。
+
+    只认小数与有效像元/栅格数：``3 层``、``31 天``、``共 13 片`` 这类正常计数
+    不参与校验，否则每句话都会被判成"数字对不上"。
+    """
+    raw = _DATE_LIKE_RE.sub(" ", text or "")
+    out: set[float] = set()
+    for token in _DECIMAL_RE.findall(raw):
+        try:
+            out.add(float(token))
+        except ValueError:
+            continue
+    for groups in _PIXEL_MENTION_RE.findall(raw):
+        token = (
+            groups if isinstance(groups, str) else next((g for g in groups if g), "")
+        )
+        if not token:
+            continue
+        try:
+            out.add(float(token.replace(",", "")))
+        except ValueError:
+            continue
+    return out
+
+
+#: 「这不是本轮、是在跟上一轮对比」的说法。带这些词的句子允许出现别的区域/
+#: 日期/产品名——用户要的正是两轮对照，不能因为提了别的区域就整段重写。
+_COMPARE_HINT_RE = re.compile(r"上一轮|上轮|此前|之前|相比|比上一|往期|前一轮|上一次")
+_REGION_MENTION_RE = re.compile(
+    r"[\u4e00-\u9fa5]{2,6}(?:省|市|自治区|特别行政区|自治州)"
+)
+_FULL_DATE_RE = re.compile(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?")
+_SHORT_DATE_RE = re.compile(r"(?<!\d)(\d{1,2})月(\d{1,2})日")
+_VARIABLE_WORDS: dict[str, tuple[str, ...]] = {
+    "sm": ("土壤水分", "土壤湿度", "含水量", "墒情"),
+    "vod": ("vod", "植被光学厚度", "光学厚度"),
+    "omega": ("ω", "omega", "等效散射"),
+}
+
+
+def _fact_names(facts: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    stats = facts.get("stats")
+    if isinstance(stats, dict) and stats.get("display_name"):
+        names.append(str(stats["display_name"]))
+    sample = facts.get("sample")
+    if isinstance(sample, dict):
+        for item in sample.get("samples") or []:
+            if isinstance(item, dict) and item.get("display_name"):
+                names.append(str(item["display_name"]))
+    return names
+
+
+def _fact_conflict(text: str, facts: dict[str, Any]) -> str | None:
+    """正文说的产品/区域/日期，与本轮工具返回的是不是同一回事。
+
+    这道校验防的是「数值碰巧对、说法却错」：2026-11-07 外部报告里那两条，
+    工具查的是河南，正文却写「区域改为广州市」；以及 14:18 那版工具查风云、
+    正文写成「广州 SMAP 土壤水分」。数字匹配只看数，抓不到这种张冠李戴。
+
+    只在正文确实报了数值时调用（身份类问答不受影响）；句子里带「上一轮/相比」
+    这类对比说法时整体豁免，避免把正常的跨轮对照当成错误。
+    """
+    if not text or _COMPARE_HINT_RE.search(text):
+        return None
+    names = _fact_names(facts)
+    if not names:
+        return None
+    low = text.casefold()
+    joined = " ".join(names)
+    joined_low = joined.casefold()
+
+    fact_sources = {
+        s
+        for s, words in (("smap", ("smap",)), ("fy", ("风云",)))
+        if any(w in joined_low for w in words)
+    }
+    text_sources = {
+        s
+        for s, words in (("smap", ("smap",)), ("fy", ("风云",)))
+        if any(w in low for w in words)
+    }
+    if fact_sources and text_sources and not (text_sources & fact_sources):
+        return "来源"
+
+    fact_vars = {
+        v for v, words in _VARIABLE_WORDS.items() if any(w in joined_low for w in words)
+    }
+    text_vars = {
+        v for v, words in _VARIABLE_WORDS.items() if any(w in low for w in words)
+    }
+    if fact_vars and text_vars and not (text_vars & fact_vars):
+        return "变量"
+
+    stats = facts.get("stats") if isinstance(facts.get("stats"), dict) else {}
+    region = str(stats.get("region") or "").strip()
+    if region:
+        seen = {m.group(0) for m in _REGION_MENTION_RE.finditer(text)}
+        if seen and region not in seen:
+            return "区域"
+
+    actual = str(stats.get("actual_time") or "").strip()
+    if re.fullmatch(r"\d{8}", actual):
+        dates = set()
+        for y, m, d in _FULL_DATE_RE.findall(text):
+            dates.add(f"{int(y):04d}{int(m):02d}{int(d):02d}")
+        for m, d in _SHORT_DATE_RE.findall(text):
+            dates.add(f"{actual[:4]}{int(m):02d}{int(d):02d}")
+        if dates and actual not in dates:
+            return "日期"
     return None
 
 
-def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, bool]:
-    """正文里的有效像元数必须是**本轮**工具返回的那个数，对不上就整段换掉。
-
-    2026-11-07 游客模式复测（第三组「只改区域」）：工具这次查的是广州市，
-    正文却写「0.203 / 1995 个，该区域共 4012 个像元」——1995 与 4012 全是
-    上一轮**河南**的数字，整段是从历史里抄来的。当时那道闸门
-    （``_statistics_fallback_reply``）只问「本轮有没有调过统计工具」，调过就
-    放行模型原文，于是抄来的数原样流到用户眼前。
-
-    判据只用**有效像元数**：它是整数、贴近用户问题、模型几乎不会同轮写好几组
-    不同来源的像元数。正文里出现的像元数里只要有一个等于本轮的值就放行
-    （对比两轮回答时会出现两组数，那种情况不拦）；一个都不等于 ⇒ 正文与本次
-    取数无关，用工具返回重写。
-    """
-    data = _last_stats_payload(steps)
-    text = reply or ""
-    if not data or not text:
-        return reply, False
-    try:
-        pixels = int(float(data.get("valid_pixels") or 0))
-    except (TypeError, ValueError):
-        return reply, False
-    if pixels <= 0:
-        return reply, False
-    mentioned: set[int] = set()
-    for groups in _PIXEL_MENTION_RE.findall(text):
-        raw = groups if isinstance(groups, str) else next((g for g in groups if g), "")
-        if not raw:
-            continue
-        try:
-            mentioned.add(int(raw.replace(",", "")))
-        except ValueError:
-            continue
-    if not mentioned or pixels in mentioned:
-        return reply, False
-
-    name = str(data.get("display_name") or "").strip() or "这一层"
-    unit = str(data.get("unit") or "").strip()
+def _rebuild_stats_reply(data: dict[str, Any] | None) -> str | None:
+    """按整层统计的工具返回，拼一段只有真事实的回答。"""
+    if not isinstance(data, dict):
+        return None
     try:
         mean = float(data.get("mean"))
+        pixels = int(float(data.get("valid_pixels") or 0))
     except (TypeError, ValueError):
-        return reply, False
+        return None
+    name = str(data.get("display_name") or "").strip() or "这一层"
+    unit = str(data.get("unit") or "").strip()
     region = str(data.get("region") or "").strip()
     where = f"按「{region}」行政边界" if region else "按整幅栅格"
     actual = str(data.get("actual_time") or "").strip()
@@ -1920,16 +2095,98 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
             f"{actual[9:13]}-{actual[13:15]}-{actual[15:17]} 的合成块，"
         )
     value = f"{mean:.4g}" + (f" {unit}" if unit else "")
-    rebuilt = (
+    return (
         f"我按「{name}」取数：{where}，{when}"
         f"平均值 **{value}**，有效像元 {pixels} 个。\n\n"
         "这段是按你最后一句说的图层、区域和日期重新算出来的；"
         "若与上一版数字不一致，以这段为准。"
     )
+
+
+def _rebuild_sample_reply(data: dict[str, Any] | None) -> str | None:
+    """按点采样的工具返回，拼一段只有真事实的回答。"""
+    if not isinstance(data, dict):
+        return None
+    samples = data.get("samples")
+    if not isinstance(samples, list):
+        return None
+    spot = ""
+    try:
+        spot = f"{float(data['lng']):.4g}°E、{float(data['lat']):.4g}°N "
+    except (KeyError, TypeError, ValueError):
+        spot = ""
+    for item in samples:
+        if not isinstance(item, dict) or item.get("value") is None:
+            continue
+        try:
+            value = float(item["value"])
+        except (TypeError, ValueError):
+            continue
+        name = str(item.get("display_name") or "").strip() or "这一层"
+        unit = str(item.get("unit") or "").strip()
+        actual = str(item.get("actual_time") or item.get("time") or "").strip()
+        when = ""
+        if re.fullmatch(r"\d{8}", actual):
+            when = f"{actual[:4]}-{actual[4:6]}-{actual[6:]}，"
+        shown = f"{value:.4g}" + (f" {unit}" if unit else "")
+        return (
+            f"我按「{name}」重新取了{spot}这个位置：{when}"
+            f"该点数值 **{shown}**。\n\n"
+            "这一段是按本轮工具返回写的；若与上一版不一致，以这段为准。"
+        )
+    # 样本全都没值（缺测 / 落在无数据区）：这时正文里的任何数值都没有出处。
+    # 与其放它过去，不如照实说没有数——用户要的是能用的数，不是看着像数的数。
+    if samples:
+        when = str(data.get("time") or "").strip()
+        when = f"{when} " if when else ""
+        return (
+            f"我在{spot}这个位置没有取到有效值：{when}该像元缺测，"
+            "或者不落在这一层的有效范围内，所以这里不给数值。\n\n"
+            "换一天或换个位置我可以重新取。"
+        )
+    return None
+
+
+def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, bool]:
+    """正文里的数值必须是**本轮**工具返回过的那组，对不上就整段换掉。
+
+    2026-11-07 游客模式复测（第三组「只改区域」）：工具这次查的是广州市，
+    正文却写「0.203 / 1995 个，该区域共 4012 个像元」——1995 与 4012 全是
+    上一轮**河南**的数字，整段是从历史里抄来的。当时那道闸门
+    （``_statistics_fallback_reply``）只问「本轮有没有调过统计工具」，调过就
+    放行模型原文，于是抄来的数原样流到用户眼前。
+
+    判据：正文里出现的像元数、小数，只要**有一个**能对上本轮工具返回过的数，
+    就认为这段是本轮写的（两轮对比时会同时出现两组数，那种不拦）；一个都对不上
+    ⇒ 正文与本次取数无关，按工具返回重写。点的值、覆盖日期也一并纳入白名单，
+    所以点采样和覆盖查询不再有"随便写数"的空档。
+    """
+    text = reply or ""
+    if not text:
+        return reply, False
+    facts = _round_facts(steps)
+    whitelist: set[float] = facts["numbers"]
+    if not whitelist:
+        return reply, False
+    mentioned = _reply_numbers(text)
+    if not mentioned:
+        return reply, False
+    numbers_ok = any(_number_matches(value, whitelist) for value in mentioned)
+    # 数值对得上还不够：正文可能把这一层说成另一颗卫星/另一个区域/另一天。
+    # 只在报了数值时查（身份类问答会被误伤），带「上一轮/相比」的整句豁免。
+    conflict = _fact_conflict(text, facts)
+    if numbers_ok and not conflict:
+        return reply, False
+    rebuilt = _rebuild_stats_reply(facts["stats"]) or _rebuild_sample_reply(
+        facts["sample"]
+    )
+    if not rebuilt:
+        return reply, False
     logger.warning(
-        "reply numbers not from this round: mentioned=%s actual_pixels=%s",
-        mentioned,
-        pixels,
+        "reply not grounded in this round: numbers_ok=%s conflict=%s mentioned=%s",
+        numbers_ok,
+        conflict,
+        sorted(mentioned)[:6],
     )
     return rebuilt, True
 

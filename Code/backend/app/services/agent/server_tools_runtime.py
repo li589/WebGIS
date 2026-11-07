@@ -1534,6 +1534,30 @@ def _mentions_version(message: str, family: str) -> bool:
     return bool(pattern.search(message))
 
 
+def _identity_of(
+    layer_id: str, client_context: dict[str, Any] | None
+) -> tuple[str, dict[str, Any]]:
+    """把 id 解析成「能定身份的那一份」：目录层 id 先按页面挂载映射成真产物。
+
+    2026-11-07 第三次复测（充值后真跑五句）：「只改日期」串成风云平均
+    0.2413/1282。直接原因是模型传了页面 ``active_catalog_ids`` 里的
+    ``method-fy-omega-doy-avg``，而目录层 id 的 ``variable`` 一律是
+    ``unknown``，下面一看到 unknown 就放弃改回 ⇒ **模型最自然的传法恰好是
+    粘性唯一失效的那种**，修复等于没装。这里先映射成页面上真正挂着的那份产物
+    （``imported-*``），身份就出得来。
+    """
+    lid = _normalize_layer_id(layer_id)
+    fields = _layer_identity_fields(lid)
+    if str(fields.get("variable") or "") not in ("", "unknown"):
+        return lid, fields
+    mapped = _page_overlay_for_catalog(client_context, lid)
+    if mapped:
+        mapped_fields = _layer_identity_fields(mapped)
+        if str(mapped_fields.get("variable") or "") not in ("", "unknown"):
+            return mapped, mapped_fields
+    return lid, fields
+
+
 def _product_sticky_layer(
     catalog_id: str,
     *,
@@ -1552,23 +1576,40 @@ def _product_sticky_layer(
     base = _baseline_layer_id(topic_state, client_context)
     if not base or not catalog_id:
         return catalog_id, None
-    if _normalize_layer_id(catalog_id) == base:
+    base_id, base_fields = _identity_of(base, client_context)
+    req_id, req_fields = _identity_of(catalog_id, client_context)
+    if _normalize_layer_id(req_id) == _normalize_layer_id(base_id):
         return catalog_id, None
-    base_fields = _layer_identity_fields(base)
-    req_fields = _layer_identity_fields(catalog_id)
     base_source = str(base_fields.get("source") or "")
     base_var = str(base_fields.get("variable") or "")
     req_source = str(req_fields.get("source") or "")
     req_var = str(req_fields.get("variable") or "")
-    if not base_source or not req_source or not base_var or not req_var:
-        return catalog_id, None
-    if req_var == "unknown" or base_var == "unknown":
+    # 变量解析不出（目录层 id 且页面没映射上）不再当成「无法判断就放行」——
+    # 那正好把模型最常用的传法放行了。改成把变量当空值：只比来源与口径，
+    # 定不出来源才真放行。
+    if base_var == "unknown":
+        base_var = ""
+    if req_var == "unknown":
+        req_var = ""
+    if not base_source or not req_source:
         return catalog_id, None
     # ① 用户点名了这次这一层（新来源 / 新变量 / 新口径）⇒ 这是合法换产品
     if req_source != base_source and _mentions_source(user_message, req_source):
         return catalog_id, None
-    if req_var != base_var and _mentions_variable(user_message, req_var):
+    if (
+        req_var
+        and base_var
+        and req_var != base_var
+        and _mentions_variable(user_message, req_var)
+    ):
         return catalog_id, None
+    # 模型传的那一层身份解析不出变量（旧副本、目录没登记）时，只要用户原话
+    # 点名的变量不是上一轮那个，就该放行——他那句「换成 VOD」是明确指令，
+    # 不能因为下游认不出这层而拿上一轮的 SM 数糊过去。
+    if not req_var:
+        for candidate in ("sm", "vod", "omega"):
+            if candidate != base_var and _mentions_variable(user_message, candidate):
+                return catalog_id, None
     base_family = str(base_fields.get("product_family") or "")
     req_family = str(req_fields.get("product_family") or "")
     if req_family != base_family and _mentions_version(user_message, req_family):
@@ -1967,6 +2008,47 @@ def _page_overlay_for_catalog(
     pool = selected or [oid for _, oid in hits]
     uniq = list(dict.fromkeys(pool))
     return uniq[0] if len(uniq) == 1 else None
+
+
+def canonical_layer_state(
+    layer_id: str,
+    *,
+    display: str = "",
+    client_context: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """把「这一轮讲的是哪一层」归一成一组**互不矛盾**的会话状态字段。
+
+    2026-11-07 第三次复测：会话文件里出现
+    ``layer_id=imported-a8940443fd6d``（SMAP 动态）配着
+    ``layer_name=风云卫星 平均散射约束产品 · 土壤水分``——id 由工具结果写、
+    名字由页面层写，各写一半。而下一轮模型读的是**名字**，于是照着错名字选了
+    另一颗卫星（「区域改为广州市，产品保持不变」串成风云 0.3079/36 的根因）。
+
+    现在 id / name / variable 一律从 id 反查、一个入口写：名字解析不出来才退回
+    调用方给的 display，变量同理。这样任何一处更新都不会再留下「id 是 A、
+    名字是 B」的组合。
+    """
+    lid = _normalize_layer_id(layer_id)
+    if not lid:
+        return {}
+    canonical = lid
+    if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
+        canonical = _page_overlay_for_catalog(client_context, lid) or lid
+    fields = _layer_identity_fields(canonical, display=display or None)
+    patch: dict[str, str] = {"layer_id": canonical}
+    name = _qualified_layer_name(canonical, display or None)
+    if name and name != canonical:
+        patch["layer_name"] = name
+    var = str(fields.get("variable") or "")
+    if var and var != "unknown":
+        patch["variable"] = var
+    elif name:
+        # 身份表没给变量标签时，从名字里认（「· 土壤水分」「· VOD」）。
+        for candidate in ("sm", "vod", "omega"):
+            if _mentions_variable(name, candidate):
+                patch["variable"] = candidate
+                break
+    return patch
 
 
 def _page_timeline_date(client_context: dict[str, Any] | None) -> str | None:
