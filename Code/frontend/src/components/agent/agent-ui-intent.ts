@@ -813,6 +813,20 @@ async function executeAgentUiIntentCore(
     const commit = (): void => {
       if (hasDate) ui.applyDateHour(targetDate, hour)
       else ui.setHour(hour)
+      /**
+       * ★ 2026-11-07：落「时刻钉子」。切层常常是**新加图层**，它的 timeList 要等
+       * overlay meta 回来才补到；那一刻 useTimelineSync 会按「新加图层 → 跳最新帧」
+       * 把时间轴拽回该层默认帧（SMAP 动态层是 20250701_20250731，界面显示 7 月 31 日），
+       * 这里刚设好的日期就被顶掉了。组合指令「切层 + 切日期 + 统计」正是这么失败的：
+       * 图层与统计都对，页面却停在 7-31。
+       *
+       * 钉子只在保护窗内有效（见 stores/ui.ts TimelinePin），过期自动失效，
+       * 不写 localStorage，不影响用户随后手动拖时间轴。
+       */
+      if (hasDate) {
+        const pinId = String(args.catalog_id ?? args.layer_id ?? '').trim()
+        if (pinId) ui.pinTimelineAt(pinId, targetDate, hour)
+      }
     }
 
     // 时间轴只负责「选中某个时刻」，真正的帧是渲染层按切片挑的。

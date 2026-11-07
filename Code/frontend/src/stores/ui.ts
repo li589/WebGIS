@@ -43,6 +43,29 @@ export type LayerTimeMemory = {
   hour: number
 }
 
+/**
+ * 「时刻钉子」：一次程序化 / 助手显式指定的时刻，在短窗口内**优先于**
+ * `meta.default_time`、图层记忆和「新加图层跳最新帧」三套自动落点机制。
+ *
+ * 2026-11-07：组合指令「切到 SMAP 动态 + 切到 12-16 + 统计」里，切层是新增图层，
+ * 它的 timeList 要等 overlay meta 回来才补到；`set_layer_visibility` 只等时间轴稳定
+ * 约 120ms 就返回，于是 `set_timeline(12-16)` 先落下，随后 timeList 到位触发
+ * 「新加图层 → 跳最新帧」，把 12-16 覆盖成该层默认帧（20250701_20250731，界面显示
+ * 7 月 31 日）。后端只能保证意图顺序与日期正确，挡不住这次晚到的自动跳帧。
+ *
+ * 钉子不落 localStorage：它是「这一次操作」的保护窗，刷新后不该继续生效。
+ */
+export type TimelinePin = {
+  catalogId: string
+  dateKey: string
+  hour: number
+  /** Date.now()，用于判断是否还在保护窗内 */
+  at: number
+}
+
+/** 保护窗：覆盖 timeList 晚到的常见延迟（overlay meta 通常在 1s 内回来） */
+const TIMELINE_PIN_TTL_MS = 20_000
+
 const TIME_MODE_STORAGE_KEY = 'cgda.timeline.unified'
 const LAYER_TIME_STORAGE_KEY = 'cgda.timeline.layer-memory'
 const UNIFIED_TIME_STORAGE_KEY = 'cgda.timeline.unified-time'
@@ -155,6 +178,8 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
   const layerTimeMemory = ref<Record<string, LayerTimeMemory>>(loadLayerMemory())
+  /** 显式指定的时刻（见 TimelinePin 注释）；不持久化 */
+  const timelinePin = ref<TimelinePin | null>(null)
   const lockedLayerIds = ref<Record<string, boolean>>({})
   const activeTimeGranularity = ref<'hour' | 'day' | 'month' | 'year' | 'static'>('hour')
 
@@ -317,10 +342,58 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
-  /** 恢复某图层记忆；无记忆则返回 false */
+  /**
+   * 钉住某图层这一刻：保护窗内 `snapTimelineToLayerLatest` / `restoreLayerTime`
+   * 都不会把它顶掉（见 TimelinePin 注释）。调用方应当是「刚刚显式指定了日期」的
+   * 地方（助手 set_timeline 落点之后），不要用在自动落点里。
+   */
+  function pinTimelineAt(catalogId: string | null | undefined, date: Date, hour = 0): void {
+    if (!catalogId) return
+    if (Number.isNaN(date.getTime())) return
+    timelinePin.value = {
+      catalogId,
+      dateKey: toDateKey(date),
+      hour: quantizeClockHour(hour),
+      at: Date.now(),
+    }
+  }
+
+  function clearTimelinePin(): void {
+    timelinePin.value = null
+  }
+
+  /** 取某图层在保护窗内的钉子；过期或不同层返回 null（顺带清掉过期值） */
+  function pinnedTimeFor(catalogId: string | null | undefined): LayerTimeMemory | null {
+    const pin = timelinePin.value
+    if (!pin) return null
+    if (Date.now() - pin.at > TIMELINE_PIN_TTL_MS) {
+      timelinePin.value = null
+      return null
+    }
+    if (!catalogId || pin.catalogId !== catalogId) return null
+    return { dateKey: pin.dateKey, hour: pin.hour }
+  }
+
+  /**
+   * 该层此刻是否被钉住（含不区分图层的宽松判断）。
+   *
+   * 不传 catalogId 用于「这次自动落点该不该跳过」的粗判；传了就精确到层。
+   */
+  function isTimelinePinned(catalogId?: string | null): boolean {
+    if (catalogId) return pinnedTimeFor(catalogId) !== null
+    const pin = timelinePin.value
+    if (!pin) return false
+    if (Date.now() - pin.at > TIMELINE_PIN_TTL_MS) {
+      timelinePin.value = null
+      return false
+    }
+    return true
+  }
+
+  /** 恢复某图层记忆；钉子优先于记忆。无记忆则返回 false */
   function restoreLayerTime(catalogId: string | null | undefined): boolean {
     if (!catalogId || unifiedTimeLock.value) return false
-    const mem = layerTimeMemory.value[catalogId]
+    const mem = pinnedTimeFor(catalogId) ?? layerTimeMemory.value[catalogId]
     if (!mem) return false
     const date = fromDateKey(mem.dateKey)
     if (!date) return false
@@ -417,6 +490,10 @@ export const useUiStore = defineStore('ui', () => {
     currentDate,
     unifiedTimeLock,
     layerTimeMemory,
+    timelinePin,
+    pinTimelineAt,
+    clearTimelinePin,
+    isTimelinePinned,
     interactionMode,
     viewMode,
     measureState,

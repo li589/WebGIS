@@ -199,6 +199,15 @@ export function useTimelineSync(
   function snapTimelineToLayerLatest(layerCatalogId: string, reason: string) {
     if (unifiedTimeLock.value) return
     if (uiStore.isLayerTimeLocked(layerCatalogId)) return
+    /**
+     * ★ 2026-11-07：这一层刚被**显式指定**过时刻（助手 set_timeline / 用户刚设的日子），
+     * 保护窗内不许自动跳最新帧。组合指令「切层 + 切日期 + 统计」以前就是这样出错的：
+     * 切层时 timeList 还没回来，`snapTargetFromLayer` 拿不到落点于是这一步空转；
+     * 等 timeList 晚到，下面 scienceTimeListSignature 里的 pending 分支再 snap 一次，
+     * 把刚设好的 12-16 顶成该层默认帧（20250701_20250731 → 界面显示 7 月 31 日）。
+     * 钉子见 stores/ui.ts 的 TimelinePin。
+     */
+    if (uiStore.isTimelinePinned(layerCatalogId)) return
     const layer = workspace.activeLayers.value.find((l) => l.catalogId === layerCatalogId)
     const scienceSnap = snapTargetFromLayer(layer)
     if (!scienceSnap) return
@@ -360,6 +369,12 @@ export function useTimelineSync(
       )
       if (pending) {
         pendingSnapCatalogIds.delete(pending.catalogId)
+        // ★ 2026-11-07：显式指定过时刻的层，晚到的 timeList 只补时间标签，不倒拨时间轴。
+        // 时间轴此刻已经停在指定那天（set_timeline 先落过点），这里再 snap 就是覆盖它。
+        if (uiStore.isTimelinePinned(pending.catalogId)) {
+          refreshImportedRasterEffectiveTimes()
+          return
+        }
         snapTimelineToLayerLatest(
           pending.catalogId,
           `新加科学图层 ${pending.catalogId} → 最新整月（时间列表到位）`,

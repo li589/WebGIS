@@ -62,6 +62,8 @@ interface SyncHarness {
     rememberLayerTime: ReturnType<typeof vi.fn>
     restoreLayerTime: ReturnType<typeof vi.fn>
     isLayerTimeLocked: ReturnType<typeof vi.fn>
+    /** 2026-11-07：显式指定时刻的「钉子」，保护窗内禁止自动跳帧（默认无钉子） */
+    isTimelinePinned: ReturnType<typeof vi.fn>
     analysisFocusRequest: { kind: string } | null
   }
   logOperation: ReturnType<typeof vi.fn>
@@ -116,6 +118,7 @@ function setupSync(initial: { layers?: ActiveLayer[]; selectedCatalogId?: string
     rememberLayerTime: vi.fn(),
     restoreLayerTime: vi.fn((): { date: Date; hour: number } | null => null),
     isLayerTimeLocked: vi.fn(() => false),
+    isTimelinePinned: vi.fn(() => false),
     analysisFocusRequest: ref<{ kind: string } | null>(null),
   })
   const logOperation = vi.fn()
@@ -505,6 +508,35 @@ describe('运行启动与切层记忆', () => {
     h.selectedLayerDisplay.value = { catalogId: 'cat-plain' }
     await nextTick()
     expect(h.uiStore.applyTimelineFromLayerGranularity).toHaveBeenCalledWith('hour')
+  })
+
+  /**
+   * 2026-11-07 组合指令：切层 + 切日期 + 统计。
+   * 新加图层的 timeList 晚到会触发「跳最新帧」，把助手刚设的 12-16 顶成该层默认帧
+   * （20250701_20250731 → 界面显示 7 月 31 日）。钉子有效期内必须不 snap。
+   */
+  it('该层被显式指定过时刻（钉子有效）：切层不跳最新帧', async () => {
+    const science = makeLayer({
+      catalogId: 'cat-science',
+      dataState: 'imported',
+      importedRaster: {
+        overlayLayerId: 'ov-1',
+        nativeStep: '8d',
+        timeList: ['20250701_20250731', '20251211_20251218'],
+      },
+    })
+    const h = setupSync({ layers: [science] })
+    h.uiStore.isTimelinePinned.mockReturnValue(true)
+    h.uiStore.restoreLayerTime.mockReturnValue(null)
+    h.selectedLayerDisplay.value = { catalogId: 'cat-science' }
+    await nextTick()
+    // 仍然切粒度，但不许把时间轴拽到该层最新/默认帧
+    expect(h.uiStore.applyTimelineFromLayerGranularity).toHaveBeenCalledWith('day')
+    expect(h.uiStore.applyDateHour).not.toHaveBeenCalled()
+    expect(h.logOperation).not.toHaveBeenCalledWith(
+      'timeline-snap-latest',
+      expect.anything(),
+    )
   })
 })
 
