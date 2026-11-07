@@ -1349,7 +1349,10 @@ def _sample_layer_point(
     # 跨来源守卫：点了别的卫星的同族产品（页面上没有该变量）就不取数
     if catalog_id:
         blocked = _cross_source_guard(
-            catalog_id, client_context=client_context, user_message=user_message
+            catalog_id,
+            client_context=client_context,
+            user_message=user_message,
+            topic_state=topic_state,
         )
         if blocked:
             return {**blocked, "lng": lng, "lat": lat}
@@ -1659,6 +1662,7 @@ def _cross_source_guard(
     *,
     client_context: dict[str, Any] | None,
     user_message: str,
+    topic_state: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """跨卫星同族产品顶替的硬拦（返回非 None 表示拦截）。
 
@@ -1692,6 +1696,16 @@ def _cross_source_guard(
         return None
     if _mentions_source(user_message, req_source):
         return None
+    # 会话基线同来源 ⇒ 这一句是「同族里换变量」，不是跨卫星顶替。
+    # 2026-11-07 实测误伤：页面挂风云平均·土壤水分，上一轮取的是 SMAP 动态·土壤水分，
+    # 用户说「那如果把变量换成光学厚度 VOD 呢」，工具去查 SMAP 的 VOD（同来源、同族，
+    # 正是他要的），却因为页面既无同变量层也无同来源层被拦成「要确认」。
+    # 基线同来源时不存在「拿另一颗卫星顶替」的风险，直接放行。
+    base = _baseline_layer_id(topic_state, client_context)
+    if base:
+        _, base_fields = _identity_of(base, client_context)
+        if str(base_fields.get("source") or "") == req_source:
+            return None
     page_desc = "、".join(
         dict.fromkeys(
             f"{item['source_label']}·{item['variable_label']}" for item in page_pairs
@@ -3416,7 +3430,10 @@ def _get_layer_statistics(
     # 跨来源守卫：拿另一颗卫星的同族产品顶替页面上的变量时，直接不给数
     # （2026-11-06 实测：页面只有 SMAP·ω，问土壤水分拿到风云的 0.219/13 像元）
     _blocked = _cross_source_guard(
-        local_id, client_context=client_context, user_message=user_message
+        local_id,
+        client_context=client_context,
+        user_message=user_message,
+        topic_state=topic_state,
     )
     if _blocked:
         return _blocked
