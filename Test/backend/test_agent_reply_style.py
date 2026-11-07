@@ -747,3 +747,49 @@ class TestExtremeHint:
         from app.services.agent.mock_orchestrator import _extreme_hint
 
         assert _extreme_hint("m³/m³", {"min": None, "max": None}, "最大值") is None
+
+
+class TestGuardUnclaimedViewIntent:
+    """写视图请求若一条意图都没下发，正文不许写成「已下发/已移除」完成态。
+
+    2026-11-07 实测 r56/r58/r59：问「把这个图层删掉」，4 次里 2 次模型不调任何
+    工具、不下发 remove_layer，却回「已下发移除…请求」——前端拿不到指令，画面
+    纹丝不动，用户以为删成功了。判据三重同时成立才纠正：①消息含写视图动词
+    ②本轮 ui_intents 为空 ③正文写完成态。三者缺一不动。
+    """
+
+    def test_unclaimed_view_write_is_corrected(self) -> None:
+        from app.services.agent.orchestrator import _guard_unclaimed_view_intent
+
+        out = _guard_unclaimed_view_intent(
+            "把这个图层删掉。",
+            {"reply": "已下发移除「SMAP 土壤水分」，它已从面板摘掉。", "ui_intents": []},
+        )
+        assert "没能把操作下发" in out["reply"]
+        assert "已移除" not in out["reply"]
+
+    def test_intent_present_is_untouched(self) -> None:
+        from app.services.agent.orchestrator import _guard_unclaimed_view_intent
+
+        reply = "已下发移除「SMAP 土壤水分」，执行结果以页面提示为准。"
+        out = _guard_unclaimed_view_intent(
+            "把这个图层删掉。",
+            {"reply": reply, "ui_intents": [{"name": "remove_layer", "args": {}}]},
+        )
+        assert out["reply"] == reply
+
+    def test_read_only_question_is_untouched(self) -> None:
+        from app.services.agent.orchestrator import _guard_unclaimed_view_intent
+
+        reply = "河南省 2025-12-16 均值 0.203 m³/m³。"
+        out = _guard_unclaimed_view_intent("河南的均值是多少", {"reply": reply, "ui_intents": []})
+        assert out["reply"] == reply
+
+    def test_no_done_word_is_untouched(self) -> None:
+        from app.services.agent.orchestrator import _guard_unclaimed_view_intent
+
+        reply = "这一层正在计算中，暂时移除不了。"
+        out = _guard_unclaimed_view_intent(
+            "把这个图层删掉。", {"reply": reply, "ui_intents": []}
+        )
+        assert out["reply"] == reply

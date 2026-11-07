@@ -3658,6 +3658,60 @@ def _order_ui_intents(
     return result
 
 
+#: 用户**明确要求改画面**的动词。命中这些词 + 本轮零意图下发 + 正文却写完成态，
+#: 就是「空口承诺」——模型嘴上说「已下发/已移除」，其实一条意图都没下发。
+#: 2026-11-07 实测 r56/r58/r59：问「把这个图层删掉」，4 次里 2 次模型不调任何
+#: 工具、不下发 remove_layer，却回「已下发移除…请求」。
+_VIEW_WRITE_VERBS = re.compile(
+    r"删|移除|删除|隐藏|显示|透明|定位|缩放|换底图|切(?:换)?底图|播放|暂停|配色|着色|"
+    r"换个色|渐变色|符号化"
+)
+#: 正文里的「完成态」措辞——只有真正下发过意图才许出现。
+_VIEW_DONE_WORDS = re.compile(
+    r"已下发|已移除|已删除|已切换|已隐藏|已显示|已完成|已设置|已定位|已缩放|已暂停|已播放"
+)
+
+
+def _guard_unclaimed_view_intent(
+    message: str, result: dict[str, Any]
+) -> dict[str, Any]:
+    """写视图请求若一条意图都没下发，正文不许写成「已下发/已移除」这种完成态。
+
+    模型偶发地「口头承诺」：用户要删图层/调透明/换底图，它既不调工具、也不在
+    ui_intents 里下发意图，直接回一句「已下发移除…」。前端拿不到任何意图，
+    画面纹丝不动，用户却以为操作成功了。这道闸门只在「用户明确要求改画面 +
+    本轮零意图 + 正文写了完成态」三者同时成立时，把正文纠正成如实说明。
+
+    不替它补发意图——补发需要准确参数（删哪个 catalog_id、透明到多少），模型
+    这一轮既然没给，说明它没把握；强行造参数比让用户重说一遍更危险。
+    """
+    try:
+        text = message or ""
+        if not _VIEW_WRITE_VERBS.search(text):
+            return result
+        intents = result.get("ui_intents")
+        if isinstance(intents, list) and intents:
+            return result
+        reply = result.get("reply")
+        if not isinstance(reply, str) or not _VIEW_DONE_WORDS.search(reply):
+            return result
+        fixed = (
+            "我这次没能把操作下发到界面上（没有生成对应的界面指令）。"
+            "麻烦你再说一遍要做什么，我重新下发；如果连续两次都没生效，"
+            "可能是这一层正在计算中被拒绝，届时以界面提示为准。"
+        )
+        result = dict(result)
+        result["reply"] = fixed
+        logger.warning(
+            "agent.intent.unclaimed: view-write requested but zero intents; "
+            "rewrote reply (was %d chars)",
+            len(reply),
+        )
+    except Exception:  # pragma: no cover - 兜底，纠正失败不该影响对话
+        logger.debug("guard unclaimed view intent failed", exc_info=True)
+    return result
+
+
 def _attach_command_ids(result: dict[str, Any]) -> dict[str, Any]:
     """给每条 UI 指令补一个可追溯的 ``command_id``（R02）。
 
@@ -3710,16 +3764,19 @@ def run_chat(
         )
     try:
         return _attach_command_ids(
-            _order_ui_intents(
-                _run_chat_impl(
-                    message,
-                    session_id=session_id,
-                    client_context=client_context,
-                    user_id=user_id,
-                    cred=cred,
-                    on_event=on_event,
+            _guard_unclaimed_view_intent(
+                message,
+                _order_ui_intents(
+                    _run_chat_impl(
+                        message,
+                        session_id=session_id,
+                        client_context=client_context,
+                        user_id=user_id,
+                        cred=cred,
+                        on_event=on_event,
+                    ),
+                    client_context,
                 ),
-                client_context,
             )
         )
     except ValueError:
