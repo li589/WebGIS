@@ -555,12 +555,26 @@ class TestRoundingTolerance:
         assert _number_matches(0.03, {0.0295}) is True
         assert _number_matches(0.021, {0.0208}) is True
 
-    def test_absolute_tolerance_does_not_loosen_big_values(self) -> None:
-        """绝对误差兜底只对「两边都足够小」（<0.1）生效，大数不放松。"""
+    def test_mid_value_two_decimal_rounding(self) -> None:
+        """0.165→0.17、0.808→0.81 是「保留 2 位小数」的正常转写，不该判编造。
+
+        2026-11-07 实测 c（问「有没有 0 或负值」）：模型把整幅均值 0.165 写成
+        0.17、最大值 0.808 写成 0.81。0.165 恰好 >0.1，吃不到原来「|ref|<0.1」
+        的绝对误差兜底，相对误差 3% 又超 0.6%，整段被换成模板句。舍入误差是绝对
+        的（round(x,2) 误差 ≤0.005），与数值大小无关，故取消 <0.1 门槛。
+        """
+        from app.services.agent.orchestrator import _number_matches
+
+        assert _number_matches(0.17, {0.165}) is True
+        assert _number_matches(0.81, {0.808}) is True
+
+    def test_absolute_tolerance_does_not_loosen_real_errors(self) -> None:
+        """绝对误差兜底只容「保留 2 位小数」的舍入（≤0.006），换整套数仍拦。"""
         from app.services.agent.orchestrator import _number_matches
 
         assert _number_matches(0.293, {0.2025}) is False
         assert _number_matches(0.1507, {0.2025}) is False
+        assert _number_matches(0.30, {0.2025}) is False
 
     def test_reply_with_rounded_stats_is_kept(self) -> None:
         stats = {
