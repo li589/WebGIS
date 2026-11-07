@@ -705,8 +705,8 @@ def _ensure_ondemand_frame(catalog_id: Any, date8: Any) -> dict[str, Any]:
             "ok": False,
             "reason": "not_registered",
             "hint": (
-                "该图层没有登记 NAS 逐日数据源，只能取时间清单里已有的时间片；"
-                "不要暗示「可以从 NAS 取」，也不要自己编日期。"
+                "该图层没有登记逐日数据源，只能取时间清单里已有的时间片；"
+                "不要暗示「可以从远端补取」，也不要自己编日期。"
             ),
         }
     if not _nas_reachable():
@@ -716,9 +716,10 @@ def _ensure_ondemand_frame(catalog_id: Any, date8: Any) -> dict[str, Any]:
             "reason": "nas_unreachable",
             "date": tag,
             "hint": (
-                "NAS 取数服务当前连不上，无法按需补取这一天。必须说成"
+                "取数服务当前连不上，无法按需补取这一天。必须说成"
                 "「取数服务暂时不可用」，**不能说成「该日没有数据」**，"
-                "也不要建议用户换个区域再试（换区域同样取不到）。"
+                "也不要建议用户换个区域再试（换区域同样取不到）；"
+                "正文不许出现服务名、接口名或 HTTP 状态码。"
             ),
         }
     try:
@@ -732,19 +733,33 @@ def _ensure_ondemand_frame(catalog_id: Any, date8: Any) -> dict[str, Any]:
         )
     except Exception as exc:
         missing = type(exc).__name__ == "NasFileMissing"
+        # 2026-11-07：底层异常文本（HTTP 530 / 登录接口 / 存储服务名）原来直接进
+        # ``detail`` 交给模型，模型会原样抄进正文——用户读到「存储端登录接口返回
+        # HTTP 530」这种纯内部黑话。原文只留日志，payload 给中性说法。
+        logger.warning(
+            "ondemand fetch failed for %s %s: %s: %s",
+            lid,
+            tag,
+            type(exc).__name__,
+            str(exc)[:300],
+        )
         return {
             "attempted": True,
             "ok": False,
             "reason": "nas_missing" if missing else "fetch_failed",
             "date": tag,
-            "detail": str(exc)[:220],
+            "detail": (
+                "取数服务回传该日无可用成果"
+                if missing
+                else "取数服务返回错误（具体原因只记在服务端日志）"
+            ),
             "hint": (
-                f"已尝试从 NAS 取 {tag} 的原始成果，但该日 NAS 上确实没有可用文件"
+                f"已尝试按需取 {tag} 的原始成果，但该日确实没有可用文件"
                 "——这属于上游这一天没有成果，与所选区域无关。"
                 if missing
-                else f"已尝试从 NAS 取 {tag}，但取数过程出错"
-                f"（{type(exc).__name__}）。必须说成「取数失败」，"
-                "不能谎称「该日没有数据」。"
+                else f"已尝试按需取 {tag}，但取数过程出错。必须说成「取数失败」，"
+                "不能谎称「该日没有数据」；正文不许出现服务名、接口名或 HTTP 状态码，"
+                "也不许编造尝试次数。"
             ),
         }
     # 补帧刚写入新文件：立刻丢掉该层的单日帧缓存，否则 _value_basis 可能
@@ -3543,15 +3558,22 @@ def _get_layer_statistics(
         }
         if ondemand_fetch is not None:
             payload_miss["ondemand_fetch"] = ondemand_fetch
-            # 措辞必须区分「NAS 上没有」和「取数失败」，否则又是把两件事混成一件事
+            # 措辞必须区分「远端确实没有这一天」和「取数失败」，否则又是把两件事混成一件事。
+            # 2026-11-07：这三句会原样进模型正文，所以不许出现服务名/接口名/状态码。
             if ondemand_fetch.get("ok"):
                 payload_miss["error"] = (
-                    f"已从 NAS 补取 {requested}，但取回后仍解析不出该层的时间片"
+                    f"已按需补取 {requested}，但取回后仍解析不出该层的时间片"
                 )
             elif ondemand_fetch.get("reason") == "nas_missing":
                 payload_miss["error"] = (
-                    f"该图层没有 {requested} 的栅格：已试过从 NAS 按需取这一天，"
-                    "但 NAS 上该日同样没有可用成果"
+                    f"该图层没有 {requested} 的栅格：已试过按需取这一天，"
+                    "但上游该日同样没有可用成果"
+                )
+            else:
+                payload_miss["error"] = (
+                    f"该图层没有 {requested} 的栅格：已试过按需取这一天，"
+                    "但取数服务返回错误，这次没取到——这是取数失败，"
+                    "不等于该日没有数据"
                 )
         return payload_miss
 
