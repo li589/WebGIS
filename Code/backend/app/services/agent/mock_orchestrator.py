@@ -605,6 +605,12 @@ _FOLLOWUP_RE = re.compile(
 #: 「那 12 月 16 日呢？」这类以「呢」收尾的追问，等于「沿用上一轮，只换这一项」
 _TAIL_NE_RE = re.compile(r"呢[？?]?\s*$")
 
+#: 用户明确说要整幅 / 全国口径：这时不能再沿用上一轮的行政区，否则会算成
+#: 「河南省」却告诉用户是全国值（2026-11-07 补区域沿用时加的排除项）。
+_NO_REGION_RE = re.compile(
+    r"整幅|整层|整个|全国|全图|全球|全部区域|不分区域|不限区域|矩形框"
+)
+
 #: 明确要求「沿用上一轮那个日期」（用户没重新给日期）
 _DATE_CARRY_RE = re.compile(
     r"原来的日期|原日期|原来那天|同一个日期|同一个日子|那天|那一天"
@@ -918,6 +924,19 @@ def resolve_entities(
     region = _parse_region_arg(text)
     region_from = "message" if region else ""
     if not region and follow_up and prior.get("region"):
+        region = prior["region"]
+        region_from = "state"
+    # ★ 2026-11-07 补：层是按会话基线定下来的时候（layer_from == "state"），区域也该
+    # 一起沿用。原来只认 _FOLLOWUP_RE（「其余不变」「只改」…），于是「平均值是多少」
+    # 这种「问的还是刚才那个对象」被漏掉：层选对了 SMAP，区域却丢了 ⇒ 算成整幅
+    # 0.1625 / 314109 像元，用户会当成河南的值（本地推演 F 场景复现）。
+    # 用户明确要整幅 / 全国口径时不沿用，交给工具按整层算。
+    elif (
+        not region
+        and prior.get("region")
+        and layer_from == "state"
+        and not _NO_REGION_RE.search(text)
+    ):
         region = prior["region"]
         region_from = "state"
 
