@@ -22,6 +22,7 @@ from app.services.agent.naming import (
     join_layer_names,
 )
 from app.services.agent.orchestrator import (
+    _build_system,
     _guard_reply_numbers,
     _stat_values,
     _synthesize_reply_from_tool_steps,
@@ -384,6 +385,52 @@ class TestNumberGuard:
             "2025-12-16 平均值 0.2025，占约 26%，低 0.037，有效像元 1995 个"
         )
         assert vals == {0.2025, 1995.0}
+
+    def test_region_regex_prefix_does_not_fake_conflict(self) -> None:
+        """区域正则左侧贪心，会抽出「按河南省」，不能因此判成张冠李戴。
+
+        2026-11-07 实测 R：正文本来已经把 0.2025 换算成 20.25%，只因为写的
+        「按河南省行政边界」被抽成「按河南省」、与工具返回的「河南省」对不上，
+        整段被换成模板句，用户拿回的还是原值——换算白做。
+        """
+        reply = (
+            "按河南省行政边界，2025-12-16 的平均值 0.2025 m³/m³，"
+            "换算成百分比是 20.25%（体积含水量）。"
+        )
+        out, changed = _guard_reply_numbers(reply, _tool_steps(_SM_1216))
+        assert changed is False
+        assert out == reply
+        assert "20.25" in out
+
+    def test_wrong_region_is_still_rewritten(self) -> None:
+        """真张冠李戴照样要拦：工具查的是河南省，正文写广州市。"""
+        reply = "按广州市行政边界，2025-12-16 的平均值 0.203 m³/m³，有效像元 1995 个。"
+        out, changed = _guard_reply_numbers(reply, _tool_steps(_SM_1216))
+        assert changed is True
+        assert "河南省" in out
+
+
+class TestRealDateIsInjected:
+    """「今天几号」不能拿时间轴日期冒充。
+
+    2026-11-07 实测 N：页面时间轴停在 2025-12-16，问「今天几号」，答「今天是
+    2025-12-16」——把用户正在看的那一帧说成了真实日期。服务端把真实日期写进
+    系统词，并要求区分二者。
+    """
+
+    def test_today_is_not_timeline_date(self) -> None:
+        from datetime import datetime
+
+        ctx = {
+            "active_catalog_ids": ["method-smap-omega-doy-dynamic"],
+            "active_layers": [],
+            "timeline": {"hour": 0, "date": "2025-12-16", "playing": False},
+        }
+        text = _build_system(ctx, cred=None)
+        today = datetime.now().astimezone().strftime("%Y-%m-%d")
+        assert "## 真实日期" in text
+        assert today in text
+        assert "不是今天" in text
 
 
 class TestQualityQuestionIsNotStatistics:

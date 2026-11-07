@@ -9,6 +9,7 @@ import re
 import threading
 import uuid
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -885,6 +886,21 @@ def _build_system(
             parts.append(f"## Current client_context\n```json\n{blob}\n```")
         except (TypeError, ValueError):
             pass
+    # 时间轴日期 ≠ 今天。模型会把 client_context.timeline.date 当成「今天」报出去
+    # （2026-11-07 实测 N：问「今天几号」，答「今天是 2025-12-16」——那只是用户
+    # 正在看的那一帧）。真实日期由服务端给，别让它自己猜。
+    try:
+        today = datetime.now().astimezone().strftime("%Y-%m-%d")
+    except Exception:  # noqa: BLE001 - 取不到就不写，不因一句时间让整轮挂掉
+        today = ""
+    if today:
+        parts.append(
+            "## 真实日期\n"
+            f"- 今天是 **{today}**（服务器本地时间）。\n"
+            "- `client_context.timeline.date` 是用户**正在看的这一帧**，不是今天。"
+            "被问「今天 / 现在 / 几号」时用上面这个真实日期，并把时间轴停在哪天单独说清，"
+            "不许把时间轴日期说成今天。"
+        )
     if safe_ctx and isinstance(safe_ctx.get("intent_results"), list):
         # 单独列出来，避免被上面 4000 字符的 blob 截掉——这条决定模型敢不敢说「已完成」
         rows: list[str] = []
@@ -2194,8 +2210,11 @@ def _fact_conflict(text: str, facts: dict[str, Any]) -> str | None:
     stats = facts.get("stats") if isinstance(facts.get("stats"), dict) else {}
     region = str(stats.get("region") or "").strip()
     if region:
-        seen = {m.group(0) for m in _REGION_MENTION_RE.finditer(text)}
-        if seen and region not in seen:
+        # 判据是「本轮那个区域名有没有出现在正文里」，不是拿正则抽出的片段去比。
+        # 那个正则左侧贪心：「按河南省行政边界」会抽成「按河南省」，于是正文明明
+        # 写的就是河南，也被判成张冠李戴、整段换成模板句（2026-11-07 实测 R：
+        # 原文本已把 0.2025 换算成 20.25%，被这条误报打掉）。
+        if _REGION_MENTION_RE.search(text) and region not in text:
             return "区域"
 
     actual = str(stats.get("actual_time") or "").strip()
@@ -2328,7 +2347,7 @@ def _has_cross_round_region(text: str, facts: dict[str, Any]) -> bool:
     只认「正文提到 2 个以上区域、且其中有本轮没统计的」——一次问两个变量
     （同一个区域）不受影响，那条路径仍然逐个校验。
     """
-    mentioned = set(_REGION_MENTION_RE.findall(text or ""))
+    mentioned = {m.group(0) for m in _REGION_MENTION_RE.finditer(text or "")}
     if len(mentioned) < 2:
         return False
     known: set[str] = set()
@@ -2338,7 +2357,11 @@ def _has_cross_round_region(text: str, facts: dict[str, Any]) -> bool:
     single = facts.get("stats")
     if isinstance(single, dict) and single.get("region"):
         known.add(str(single["region"]))
-    return bool(mentioned - known)
+    # 用**包含**比，不能用集合相减：``_REGION_MENTION_RE`` 左侧是贪心的，
+    # 「按河南省行政边界」抽出来的是「按河南省」，跟工具返回的「河南省」相减
+    # 永远非空 ⇒ 同一句话被当成在跨轮对比别处（2026-11-07 实测 R 就栽在这条上，
+    # 换算成百分比的正确答案被整段重写）。
+    return not all(any(k in m for k in known) for m in mentioned)
 
 
 def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, bool]:
