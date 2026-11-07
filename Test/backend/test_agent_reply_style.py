@@ -25,6 +25,7 @@ from app.services.agent.orchestrator import (
     _guard_reply_numbers,
     _stat_values,
     _synthesize_reply_from_tool_steps,
+    _wants_statistics,
 )
 
 INSIDE_IDS = (
@@ -383,3 +384,76 @@ class TestNumberGuard:
             "2025-12-16 平均值 0.2025，占约 26%，低 0.037，有效像元 1995 个"
         )
         assert vals == {0.2025, 1995.0}
+
+
+class TestQualityQuestionIsNotStatistics:
+    """问「精度 / 误差 / 不确定度」不是要均值，不许被规则引擎换成整幅均值。
+
+    2026-11-07 r25 实测（3/3 稳定复现）：「取到的这个像元值精度是多少？」
+    因为 `_STATISTICS_WORDS` 里有「像元」「多少」被判成统计请求，整段被换成
+    **整幅全球**的 0.1653 / 363201 个有效像元（5.8%）——用户问的是刚算出来的
+    河南值准不准，拿到的却是一个口径完全不同、看着却像答案的数字。
+    """
+
+    def test_precision_question_is_not_statistics(self) -> None:
+        for msg in (
+            "取到的这个像元值精度是多少？误差多大？",
+            "这个数据的误差有多大",
+            "不确定度是多少",
+            "置信度多少",
+            "这一层的分辨率是多少",
+        ):
+            assert _wants_statistics(msg) is False, msg
+
+    def test_real_statistics_still_triggered(self) -> None:
+        for msg in (
+            "河南省的平均值是多少",
+            "广州市的土壤水分是多少",
+            "统计一下山东省的均值",
+        ):
+            assert _wants_statistics(msg) is True, msg
+
+
+class TestPageSelectionEmptySignal:
+    """页面没有选中图层时，「这层」没有指代对象，必须把这一事实交给模型。
+
+    2026-11-07 r25 实测（3/3）：`active_layers=[]` 时问「这层土壤水分」，
+    模型 search_layers 拿到候选后自己挑一层就算（2 次挑平均族 0.191、
+    1 次挑动态族 0.203），正文一个字不提页面是空的。
+    """
+
+    _CTX_EMPTY = {"active_catalog_ids": [], "active_layers": []}
+    _CTX_FULL = {
+        "active_catalog_ids": ["method-smap-omega-doy-dynamic"],
+        "active_layers": [
+            {
+                "catalog_id": "method-smap-omega-doy-dynamic",
+                "overlay_layer_id": "imported-a8940443fd6d",
+                "selected": True,
+                "visible": True,
+            }
+        ],
+    }
+
+    def test_empty_page_is_flagged(self) -> None:
+        from app.services.agent.server_tools_runtime import _search_layers
+
+        out = _search_layers({"query": "土壤水分"}, cred=None, client_context=self._CTX_EMPTY)
+        assert out.get("page_selection_empty") is True
+        assert "没有选中" in str(out.get("page_selection_note") or "")
+
+    def test_page_with_layer_is_not_flagged(self) -> None:
+        from app.services.agent.server_tools_runtime import _search_layers
+
+        out = _search_layers({"query": "土壤水分"}, cred=None, client_context=self._CTX_FULL)
+        assert "page_selection_empty" not in out
+
+
+class TestCatalogRasterHeader:
+    """产品族条目要能答出像元大小；盘上没有产物时绝不许编一个出来。"""
+
+    def test_missing_products_return_empty(self, monkeypatch) -> None:
+        import app.services.agent.server_tools_runtime as runtime
+
+        monkeypatch.setattr(runtime, "_overlay_for_catalog_variable", lambda *a, **k: "")
+        assert runtime._catalog_raster_header("method-smap-omega-doy-dynamic") == {}

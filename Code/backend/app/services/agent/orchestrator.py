@@ -1846,6 +1846,19 @@ _DIFF_QUESTION_RE = re.compile(
 )
 
 
+#: 「这个值准不准 / 精度多少 / 误差多大」——问的是**数据质量**，不是要一个均值。
+#: 2026-11-07 r25 实测：`_STATISTICS_WORDS` 里有「像元」和「多少」，于是
+#: 「取到的这个像元值精度是多少？误差多大」命中统计闸门，整段被换成
+#: **整幅全球**的均值 0.1653 / 363201 个有效像元（占 5.8%）——用户问的是刚
+#: 算出来的河南值准不准，拿到的却是一个口径完全不同、却看着像答案的数字。
+#: 「不确定度多大」「置信度多少」同样中招。这类问题系统里没有精度字段，
+#: 正确答案是「没有登记精度指标」，只能交给模型说边界，不能由规则引擎代答。
+_QUALITY_QUESTION_RE = re.compile(
+    r"精度|误差|不确定度|置信|可信度|准不准|准吗|靠谱|可靠性|校验|验证|分辨率|像元大小",
+    re.I,
+)
+
+
 def _is_threshold_write(text: str) -> bool:
     """这句话是不是在改色标阈值（而不是要统计结果）。"""
     if not text:
@@ -1870,6 +1883,10 @@ def _wants_statistics(message: str) -> bool:
     # 它上下文里本来就有上两轮的数值；真要重新取数时它会自己调工具，
     # 那时 _statistics_tool_called 会放行原文，不受这条影响。
     if _DIFF_QUESTION_RE.search(text):
+        return False
+    # 排除「数据质量」类提问：问的是准不准/精度/误差，答案不在这层数据里。
+    # 放行的话会被规则引擎换成整幅均值（r25 实测 3/3），口径完全不对。
+    if _QUALITY_QUESTION_RE.search(text):
         return False
     return bool(_STATISTICS_WORDS.search(text))
 

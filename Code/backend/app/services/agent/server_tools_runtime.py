@@ -1187,7 +1187,65 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
             if _members
             else "本条产品族在本机还没有任何产物，需要先跑工作流。"
         )
+    # 产品族条目自己没有栅格，但同族的变量产物已经在盘上，像元大小是同一套网格：
+    # 顺手带上，别让「这层分辨率多少」只能答「元数据里没有登记」
+    # （2026-11-07 r25 实测：模型 4 次里 1 次只查了产品族就收工，答不出）。
+    if layer.get("pixel_size") is None:
+        _header = _catalog_raster_header(catalog_id, str(layer.get("variable") or ""))
+        if _header:
+            layer["pixel_size"] = _header.get("pixel_size")
+            if _header.get("res"):
+                layer["res"] = _header.get("res")
+            if _header.get("width"):
+                layer["width"] = _header.get("width")
+                layer["height"] = _header.get("height")
+            if _header.get("crs"):
+                layer["crs"] = _header.get("crs")
+                layer["epsg"] = _header.get("epsg")
+            layer["pixel_size_from"] = (
+                f"取自同族「{_header.get('from_variable') or '变量'}」产物的栅格网格；"
+                "产品族本身不是栅格层"
+            )
     return {"ok": True, "layer": layer}
+
+
+def _catalog_raster_header(catalog_id: str, variable: str = "") -> dict[str, Any]:
+    """目录层（``method-*``）→ 同族某个变量产物的栅格头；取不到返回空 dict。
+
+    只在盘上真有产物时才给结果（``_overlay_for_catalog_variable`` 会验 meta.json），
+    **绝不按常量编一个像元大小出来**。产品族三个变量共用同一套 9 km 网格，
+    所以按 sm → vod → omega 的顺序找到第一个存在的即可。
+    """
+    order: list[str] = []
+    wanted = str(variable or "").strip().lower()
+    if wanted in {"sm", "vod", "omega"}:
+        order.append(wanted)
+    order += [v for v in ("sm", "vod", "omega") if v not in order]
+    for var in order:
+        overlay_id = _overlay_for_catalog_variable(catalog_id, var)
+        if not overlay_id:
+            continue
+        meta: dict[str, Any] = {}
+        try:
+            import json as _json
+
+            from app.data_io.services.paths import safe_import_child
+
+            meta_path = safe_import_child(overlay_id) / "meta.json"
+            if meta_path.is_file():
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:  # pragma: no cover - 读不到 meta 就当没有
+            meta = {}
+        header = _imported_raster_header(overlay_id, meta)
+        if header.get("pixel_size"):
+            header = dict(header)
+            header["from_variable"] = {
+                "sm": "土壤水分",
+                "vod": "植被光学厚度",
+                "omega": "等效散射 ω",
+            }.get(var, var)
+            return header
+    return {}
 
 
 def _get_workflow_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
@@ -2496,7 +2554,32 @@ def _search_layers(
             "用户说的卫星名（SMAP/风云）只是来源，不等于目录里的参考图层。"
             "页面上的运行产物（layer_kind=runtime_product）优先于 catalog_reference。"
         )
+    # 2026-11-07 r25 实测：页面 active_layers 为空时，用户说「这层土壤水分」，
+    # 模型 search_layers 拿到候选后**自己挑了一层**（3 次里 2 次平均族、1 次动态族）
+    # 直接算，正文一个字都没提页面是空的 ⇒ 同一句话两次答出 0.191 和 0.203，
+    # 用户以为是自己那层。这里把「页面没有选中层」作为事实交给模型。
+    if not _page_has_selection(client_context):
+        payload["page_selection_empty"] = True
+        payload["page_selection_note"] = (
+            "页面当前没有选中任何图层，用户说的「这层 / 当前图层」没有指代对象。"
+            "正文必须先用一句话说明这一点，再说你按哪一层取数，"
+            "不能暗示这是用户选中的层，也不能只报层名就当作已经对上他的意思。"
+        )
     return payload
+
+
+def _page_has_selection(client_context: dict[str, Any] | None) -> bool:
+    """页面上现在有没有「选中/可见」的图层。False ⇒ 「这层」没有指代对象。"""
+    if not isinstance(client_context, dict):
+        return False
+    layers = client_context.get("active_layers")
+    if not isinstance(layers, list) or not layers:
+        return False
+    for item in layers:
+        if isinstance(item, dict) and (item.get("selected") or item.get("visible")):
+            return True
+    # 有图层但没打标记：按「有层」处理，避免误报空页面
+    return True
 
 
 def _filter_ids(layer_ids: list[str], cred: Any) -> list[str]:
@@ -3720,6 +3803,15 @@ def _get_layer_statistics(
         **_layer_identity_fields(local_id, display=_layer_display_name(catalog_id)),
         **stats,
     }
+    if not _page_has_selection(client_context):
+        # 页面没有选中层却被算出数来：这个数只可能来自「用户点名」或「上轮基线」，
+        # 绝不是「当前图层」。不声明的话，用户会把它当成自己那层的值。
+        payload["page_selection_empty"] = True
+        payload["page_selection_note"] = (
+            "页面当前没有选中任何图层，本次取数用的是你点名（或上一轮沿用）的那一层。"
+            "正文必须先用一句话说明「当前页面没有选中图层」，再报数值，"
+            "不能把这一层说成「当前图层 / 你选中的图层」。"
+        )
     if ondemand_fetch is not None:
         # 走到这里说明「清单里没有这一天、刚从 NAS 补取成功」：
         # 模型必须说清「已按需补取」，不能讲得好像它本来就在清单里。
