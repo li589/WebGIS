@@ -350,6 +350,83 @@ def _tool_detail(payload: Any) -> str:
     )
 
 
+#: 跳到上限时正文短于这个长度，就认定「没给出实质回答」，强制收尾再答一次。
+#: 实测残留：27 字「我按「X」取数。」（开场白后没了）、66 字搜索结果列表。
+_HOP_FINALIZE_MAX_CHARS = 150
+
+
+def _oai_complete_no_tools(
+    *,
+    base_url: str,
+    api_key: str | None,
+    model: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+) -> str:
+    """工具跳用尽后的收尾补答：不带工具再问一次，逼模型用已有结果作答。
+
+    为什么需要：``max_hops`` 用尽时模型刚发起的工具调用不会被执行，``reply``
+    往往只剩工具调用前的那句开场白。用户看到「我按「X」取数。」就没了，没法
+    判断是坏了还是在处理。这里把已有工具结果交给模型，要求它直接回答。
+    失败一律返回空串，由调用方走确定性兜底，绝不让整轮对话挂掉。
+    """
+    msgs = list(messages)
+    msgs.append(
+        {
+            "role": "user",
+            "content": (
+                "工具调用次数已用尽。请直接用上面工具已经返回的结果回答我，"
+                "不要再调用工具。若结果不足以给出数值，就说明缺什么、"
+                "我下一步该怎么做。不要编造任何上面没出现过的数字。"
+            ),
+        }
+    )
+    data = openai_compat.chat_completions(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        messages=msgs,
+        tools=None,
+        max_tokens=max_tokens,
+    )
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message") or {}
+        return str(msg.get("content") or "").strip()
+    return ""
+
+
+def _finalize_after_hop_limit(
+    reply: str,
+    steps: list[dict[str, Any]],
+    *,
+    complete: Any = None,
+) -> str:
+    """跳到上限且正文过短时补一次收尾；拿不到就用工具结果合成，仍不行保留原样。"""
+    text = (reply or "").strip()
+    if len(text) >= _HOP_FINALIZE_MAX_CHARS:
+        return reply
+    if complete is not None:
+        try:
+            extra = (complete() or "").strip()
+        except Exception:
+            logger.debug("hop-limit finalize failed", exc_info=True)
+            extra = ""
+        if len(extra) >= 20:
+            return extra
+    synth = _synthesize_reply_from_tool_steps(steps)
+    if synth and len(synth.strip()) > len(text):
+        synth = synth.strip()
+        # 兜底如果只是「图层库里相关有 N 个」的清单，跟用户自己看到的搜索框没区别，
+        # 补一句追问才算把话说完。
+        if synth.startswith(("图层库里", "未在图层库")):
+            synth += (
+                "\n\n还没确定用哪一层来统计——你告诉我用哪一个，我按你的区域和日期出数。"
+            )
+        return synth
+    return reply
+
+
 def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None:
     """Turn the latest useful tool_result into user-visible Chinese text.
 
@@ -2365,6 +2442,18 @@ def _run_chat_impl(
                         "summary": f"已达工具跳上限 {max_hops}，停止继续调用工具",
                     }
                 )
+                # 同一处收尾也接上（本机跑 DeepSeek 不走这条，但两条分支行为不能
+                # 再分叉——2026-11-07 就因为只改一路，守卫整轮没生效）。这里不额外
+                # 发模型请求，直接用确定性合成兜底。
+                _final = _finalize_after_hop_limit(reply, list(steps))
+                if _final != reply:
+                    reply = _final
+                    steps.append(
+                        {
+                            "type": "thought",
+                            "summary": "跳数用尽，已按已有工具结果补答",
+                        }
+                    )
 
             if not reply and not intents:
                 reply = "（模型未返回文本）"
@@ -2554,6 +2643,27 @@ def _run_chat_impl(
                     "summary": f"已达工具跳上限 {max_hops}，停止继续调用工具",
                 }
             )
+            # 跳到上限时模型只留下开场白（实测 27 字）或搜索结果列表（66 字），
+            # 这里补一次不带工具的收尾，逼它用已经拿到的结果作答。
+            _final = _finalize_after_hop_limit(
+                reply,
+                list(steps),
+                complete=lambda: _oai_complete_no_tools(
+                    base_url=base_url,
+                    api_key=oai_key,
+                    model=model,
+                    messages=messages_oai,
+                    max_tokens=max_out,
+                ),
+            )
+            if _final != reply:
+                reply = _final
+                steps.append(
+                    {
+                        "type": "thought",
+                        "summary": "跳数用尽，已按已有工具结果补答",
+                    }
+                )
 
         if not reply and not intents:
             reply = "（模型未返回文本）"

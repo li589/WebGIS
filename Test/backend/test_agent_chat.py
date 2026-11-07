@@ -713,15 +713,32 @@ def test_agent_openai_multihop_cap(agent_client: TestClient, monkeypatch):
         "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
     }
 
+    # 第 3 次是「跳到上限后的收尾补答」：不带工具再问一次，逼模型用已有结果作答
+    final_answer = {
+        "choices": [
+            {
+                "message": {
+                    "content": "工具调用次数用尽了，我先按已经查到的结果回答：目前没有任何工作流在运行。"
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
     with patch(
         "app.services.agent.clients.openai_compat.chat_completions",
-        side_effect=[always_tool, always_tool, always_tool],
+        side_effect=[always_tool, always_tool, final_answer],
     ) as mock_llm:
         res = agent_client.post("/agent/chat", json={"message": "无限工具"})
     assert res.status_code == 200
     body = res.json()
-    # initial + 1 follow-up after hop 1; no further hops
-    assert mock_llm.call_count == 2
+    # initial + 1 follow-up after hop 1 + 1 收尾补答
+    assert mock_llm.call_count == 3
+    # 收尾那次必须关掉工具，否则模型只会继续要工具
+    assert mock_llm.call_args_list[-1].kwargs.get("tools") is None
+    # 收尾要真的替换掉半句话（原先是「继续」，等于没回答）
+    assert body["reply"].strip() != "继续"
+    assert "工作流" in body["reply"]
     assert any(
         "上限" in str(s.get("summary") or "")
         for s in body["steps"]
