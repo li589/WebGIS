@@ -1326,6 +1326,25 @@ def _carry_note(entities: dict[str, Any]) -> str:
     return f"- 本轮没有重新指定的部分沿用上一轮：{'、'.join(carried)}\n"
 
 
+def _percent_hint(unit: str | None, mean: Any, text: str) -> str | None:
+    """用户问「换算成百分比」时，补一句确定性换算。
+
+    2026-11-07 实测 r33：模型这一轮没调任何取数工具，按设计由规则引擎接管，
+    答复里只有「均值：0.2025」，用户问的「百分比是多少」等于没答。只对体积含水量
+    （m³/m³）成立——VOD 那种无量纲值乘 100 没有意义。
+    """
+    try:
+        value = float(mean)
+    except (TypeError, ValueError):
+        return None
+    unit_text = str(unit or "")
+    if "m³/m³" not in unit_text and "m3/m3" not in unit_text.lower():
+        return None
+    if not re.search(r"百分|换算", str(text or "")):
+        return None
+    return f"- 换算成体积百分比：{value * 100:.2f}%（m³/m³ × 100，仅换单位不换口径）"
+
+
 def _statistics_reply(
     text: str,
     layers: list[dict[str, Any]],
@@ -1515,6 +1534,11 @@ def _statistics_reply(
         + (f"（占 {float(pct) * 100:.1f}%）" if pct is not None else ""),
         f"- 实际数据时间块：{block}",
     ]
+    # 问「换算成百分比」时补一句确定性换算（模型这一轮没调工具、由规则引擎接管
+    # 的情况下，否则用户只拿到 0.2025，问的换算没答）
+    hint = _percent_hint(unit, mean, text)
+    if hint:
+        lines.insert(2, hint)
     requested = str(res.get("requested_time") or "").strip()
     if requested and requested != str(res.get("actual_time") or ""):
         lines.append(

@@ -523,9 +523,45 @@ class TestPageSelectionEmptySignal:
         assert "page_selection_empty" not in out
 
 
+class TestRoundingTolerance:
+    """模型把参考值四舍五入（0.0593→0.059）不是编造。
+
+    2026-11-07 实测 R（重启后第三次复验）：正文写「标准差 0.059、最小 0.082」，
+    工具返回 0.0593 / 0.0820，3 位有效数字比较因两边位数不同全对不上，整段被
+    重写成模板句——用户问的百分比换算随之丢失。
+    """
+
+    def test_short_rounding_matches(self) -> None:
+        from app.services.agent.orchestrator import _number_matches
+
+        assert _number_matches(0.059, {0.0593}) is True
+        assert _number_matches(0.082, {0.08204}) is True
+        assert _number_matches(0.456, {0.45638}) is True
+
+    def test_wrong_number_still_rejected(self) -> None:
+        from app.services.agent.orchestrator import _number_matches
+
+        assert _number_matches(0.293, {0.2025}) is False
+        assert _number_matches(163.0, {1995.0}) is False
+
+    def test_reply_with_rounded_stats_is_kept(self) -> None:
+        stats = {
+            **_SM_1216,
+            "min": 0.08204492181539536,
+            "max": 0.45637741684913635,
+            "std": 0.0593,
+        }
+        reply = (
+            "按河南省行政边界，2025-12-16 平均值 0.2025 m³/m³，"
+            "最小 0.082、最大 0.456，标准差 0.059，有效像元 1995 个。"
+        )
+        out, changed = _guard_reply_numbers(reply, _tool_steps(stats))
+        assert changed is False
+        assert out == reply
+
+
 class TestCatalogRasterHeader:
     """产品族条目要能答出像元大小；盘上没有产物时绝不许编一个出来。"""
-
     def test_missing_products_return_empty(self, monkeypatch) -> None:
         import app.services.agent.server_tools_runtime as runtime
 
@@ -568,3 +604,34 @@ class TestOutsideCoverageNote:
 
         assert _outside_coverage_note(self._KEYS, None) is None
         assert _outside_coverage_note([], "20261107") is None
+
+
+class TestPercentHint:
+    """规则引擎接管时，「换算成百分比」也要答到点上。
+
+    2026-11-07 实测 r33：模型这一轮没调任何取数工具，按设计由规则引擎出数，
+    答复里只有「均值：0.2025」，用户问的百分比没答。只对体积含水量成立。
+    """
+
+    def test_volume_water_content_is_converted(self) -> None:
+        from app.services.agent.mock_orchestrator import _percent_hint
+
+        hint = _percent_hint("m³/m³", 0.2025, "把河南省这个平均值换算成百分比是多少？")
+        assert hint is not None
+        assert "20.25%" in hint
+
+    def test_dimensionless_is_not_converted(self) -> None:
+        from app.services.agent.mock_orchestrator import _percent_hint
+
+        assert _percent_hint("1", 0.1507, "换算成百分比") is None
+        assert _percent_hint("无量纲", 0.1507, "换算成百分比") is None
+
+    def test_not_asked_is_silent(self) -> None:
+        from app.services.agent.mock_orchestrator import _percent_hint
+
+        assert _percent_hint("m³/m³", 0.2025, "这天的平均值是多少") is None
+
+    def test_missing_mean_is_silent(self) -> None:
+        from app.services.agent.mock_orchestrator import _percent_hint
+
+        assert _percent_hint("m³/m³", None, "换算成百分比") is None
