@@ -2737,6 +2737,12 @@ def _run_chat_impl(
                 all_uses = _anthropic_tool_uses(data.get("content"))
                 if not all_uses:
                     break
+                # 产品粘性的判定基准必须是**这一跳之前**的会话基线。
+                # 2026-11-07 实测：下面那句 merge 会把模型这一跳选的 catalog_id
+                # 写进 topic_state，随后 execute_server_tool 拿到的「上一轮是谁」
+                # 已经被本次选择覆盖 ⇒ 粘性看到 base == req，直接放行，「只改日期」
+                # 照样落到页面选中层。所以先快照，再 merge。
+                pre_call_state = topic_state
                 # 模型查过哪一层 = 这一轮的对象，记进会话状态（否则下一句追问只能靠页面猜）
                 topic_state = dialogue_state.merge(
                     topic_state,
@@ -2773,8 +2779,9 @@ def _run_chat_impl(
                         client_context=client_context,
                         # 用户原话交给工具侧的跨来源守卫：判断他有没有点名换卫星
                         user_message=message,
-                        # 会话里记着的取数对象：没点名时优先用它，别拿页面选中层顶替
-                        topic_state=topic_state,
+                        # 会话里记着的取数对象：没点名时优先用它，别拿页面选中层顶替。
+                        # 传快照而不是 topic_state —— 后者已被本次模型选择覆盖。
+                        topic_state=pre_call_state,
                     )
                     steps.append(
                         {
@@ -2945,6 +2952,9 @@ def _run_chat_impl(
             if not calls:
                 break
             hops_used = hop
+            # 同 Anthropic 分支：先快照这一跳之前的基线，再做 merge。
+            # 否则粘性拿到的是「本次模型自己选的层」，判定必然放行。
+            pre_call_state = topic_state
             # 同 Anthropic 分支：模型查过的层要记进会话状态
             topic_state = dialogue_state.merge(
                 topic_state, **_state_patch_from_tool_calls(calls, client_context)
@@ -2985,8 +2995,9 @@ def _run_chat_impl(
                     # 2026-11-07 实测补上：上一版只在 Anthropic 那一路传了，DeepSeek
                     # （OpenAI 兼容路径）漏传 ⇒ 守卫拿到空原话直接放行，等于没装。
                     user_message=message,
-                    # 会话里记着的取数对象：没点名时优先用它（页面选中层只作兜底）
-                    topic_state=topic_state,
+                    # 会话里记着的取数对象：没点名时优先用它（页面选中层只作兜底）。
+                    # 传快照，不能用已被本次选择覆盖的 topic_state。
+                    topic_state=pre_call_state,
                 )
                 steps.append(
                     {
