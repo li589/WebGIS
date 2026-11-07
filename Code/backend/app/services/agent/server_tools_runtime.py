@@ -3023,6 +3023,36 @@ def _get_layer_coverage(
     }
 
 
+def _outside_coverage_note(keys: list[str], requested: str) -> str | None:
+    """请求日期落在该层已有时间片之外时，一句话说清是「超范围」不是「取数出错」。
+
+    2026-11-07 实测：页面时间轴停在 2025-12-16，用户问「河南今天墒情怎么样」，
+    模型算出「今天」是 2026-11-07，于是拿到一句「取数服务返回错误…这是取数失败，
+    不等于该日没有数据」，紧接着又自己补「这一层最新只到 2026-02 所以那天本来
+    就没有」——前后自相矛盾。真实原因很简单：那一天晚于覆盖终点，还没生成。
+    """
+    digits = re.sub(r"\D", "", str(requested or ""))
+    if not re.fullmatch(r"\d{8}", digits):
+        return None
+    spans: list[tuple[str, str]] = []
+    for key in keys or []:
+        nums = re.sub(r"\D", "", str(key))
+        if len(nums) >= 8:
+            spans.append((nums[:8], nums[-8:]))
+    if not spans:
+        return None
+    first = min(s for s, _ in spans)
+    last = max(e for _, e in spans)
+    if digits < first:
+        return f"该图层最早只有 {first} 起的成果，{digits} 早于覆盖起点，不是取数出错"
+    if digits > last:
+        return (
+            f"该图层最新只到 {last}，{digits} 晚于覆盖终点；"
+            "这不是取数失败，而是这一版产物还没生成到那一天"
+        )
+    return None
+
+
 def _nearby_dates(keys: list[str], requested: str | None) -> dict[str, Any]:
     """该图层真实可用的相邻日期（前 3 / 后 3），供「没有这一天」时如实引用。"""
     ordered = [str(k) for k in (keys or []) if k]
@@ -3698,10 +3728,14 @@ def _get_layer_statistics(
             payload_miss["ondemand_fetch"] = ondemand_fetch
             # 措辞必须区分「远端确实没有这一天」和「取数失败」，否则又是把两件事混成一件事。
             # 2026-11-07：这三句会原样进模型正文，所以不许出现服务名/接口名/状态码。
+            outside = _outside_coverage_note(real_keys, requested)
             if ondemand_fetch.get("ok"):
                 payload_miss["error"] = (
                     f"已按需补取 {requested}，但取回后仍解析不出该层的时间片"
                 )
+            elif outside:
+                # 超范围不是「服务出错」：说清边界，别让模型前后自相矛盾
+                payload_miss["error"] = outside
             elif ondemand_fetch.get("reason") == "nas_missing":
                 payload_miss["error"] = (
                     f"该图层没有 {requested} 的栅格：已试过按需取这一天，"

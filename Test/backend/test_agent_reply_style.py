@@ -531,3 +531,40 @@ class TestCatalogRasterHeader:
 
         monkeypatch.setattr(runtime, "_overlay_for_catalog_variable", lambda *a, **k: "")
         assert runtime._catalog_raster_header("method-smap-omega-doy-dynamic") == {}
+
+
+class TestOutsideCoverageNote:
+    """超范围不是「取数出错」。
+
+    2026-11-07 实测：时间轴停在 2025-12-16，用户问「河南今天墒情怎么样」，模型按
+    真实日期 2026-11-07 去取，拿到「取数服务返回错误…取数失败，不等于该日没有
+    数据」，紧接着又自己补「最新只到 2026-02，那天本来就没有」——前后矛盾。
+    """
+
+    _KEYS = ["20250701_20250731", "20251219_20251226", "20260202_20260208"]
+
+    def test_later_than_last_is_coverage_not_failure(self) -> None:
+        from app.services.agent.server_tools_runtime import _outside_coverage_note
+
+        note = _outside_coverage_note(self._KEYS, "20261107")
+        assert note is not None
+        assert "20260208" in note
+        assert "不是取数失败" in note
+
+    def test_earlier_than_first_is_coverage(self) -> None:
+        from app.services.agent.server_tools_runtime import _outside_coverage_note
+
+        note = _outside_coverage_note(self._KEYS, "20240101")
+        assert note is not None
+        assert "20250701" in note
+
+    def test_inside_range_is_silent(self) -> None:
+        from app.services.agent.server_tools_runtime import _outside_coverage_note
+
+        assert _outside_coverage_note(self._KEYS, "20251220") is None
+
+    def test_unknown_request_is_silent(self) -> None:
+        from app.services.agent.server_tools_runtime import _outside_coverage_note
+
+        assert _outside_coverage_note(self._KEYS, None) is None
+        assert _outside_coverage_note([], "20261107") is None
