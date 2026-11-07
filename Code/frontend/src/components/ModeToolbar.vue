@@ -70,6 +70,8 @@ const mergedWorkflowSummary = computed(() => {
 
 const props = defineProps<{
   tileSourceId: TileSourceId
+  /** 「海陆底图（无国界）」叠加层是否勾选 */
+  landSeaBasemap?: boolean
   /** 地图是否可用（透传 MapCanvas 真源；undefined = 未知，不拦用户） */
   getMapReady?: () => boolean | undefined
   /** 地图初始化失败原因（中文），用于工具置灰时的说明 */
@@ -78,6 +80,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   changeTileSource: [sourceId: TileSourceId]
+  toggleLandSea: []
   openScreenshot: []
   openWorkflowStatus: []
   openLog: []
@@ -152,7 +155,9 @@ function handleWorkflowEditor() {
         <!-- 底图：来源 + 风格 收敛成一个下拉 -->
         <BasemapMenu
           :tile-source-id="tileSourceId"
+          :land-sea-basemap="landSeaBasemap"
           @change-tile-source="emit('changeTileSource', $event)"
+          @toggle-land-sea="emit('toggleLandSea')"
           @open-settings="emit('openSettings')"
         />
 

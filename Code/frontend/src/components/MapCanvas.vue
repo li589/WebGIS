@@ -30,6 +30,7 @@ import { createMapStagePresentationModule } from './map/map-stage-presentation-m
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
 import { ensureWorldLandBase, setWorldLandBaseVisible } from './map/land-base-module'
+import { ensureLandSeaBase, setLandSeaBaseVisible } from './map/land-sea-module'
 import { installSafeMapStyleAccess, isMapStyleAlive } from './map/map-style-guards'
 import type { OverlayTimeState } from './map/overlay-image-module'
 import { validateOverlayBounds } from './map/overlay-image-module'
@@ -105,6 +106,8 @@ const props = defineProps<{
   inspectPoint?: { lng: number; lat: number } | null
   /** 实验性 3D：true 时地图切 globe 投影（外观设置勾选「启用3D视图」后生效） */
   globeProjection?: boolean
+  /** 「海陆底图（无国界）」叠加层：勾上就把底下的地名与国界整片盖掉 */
+  landSeaBasemap?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -499,6 +502,21 @@ const shouldShowWorldLandBaseNow = computed(() => {
 watch(shouldShowWorldLandBaseNow, (show) => {
   setWorldLandBaseVisible(state.resources.map, show)
 })
+
+/**
+ * 海陆底图叠加（顶栏「底图 → 底图叠加」里的勾选项）。
+ * 勾上就建层并显示（ensureLandSeaBase 幂等），取消只隐藏、不销毁——
+ * 反复勾选不该反复下图片。它与「底图选哪家」无关，切换来源不必处理。
+ */
+watch(
+  () => props.landSeaBasemap,
+  (on) => {
+    const map = state.resources.map
+    if (!map || !isMapStyleAlive(map)) return
+    if (on) void ensureLandSeaBase(map, true)
+    else setLandSeaBaseVisible(map, false)
+  },
+)
 
 // ─── 实验性 3D：globe 投影切换 ──────────────────────────────────────────────
 // 外观设置勾选「启用3D视图（实验测试）」且顶栏处于 3D 模式时切 globe；
@@ -1026,6 +1044,10 @@ onMounted(async () => {
           if (_isUnmounted || !isMapStyleAlive(mapInstance)) return
           void ensureWorldLandBase(mapInstance, shouldShowWorldLandBaseNow.value)
         }, 600)
+        // 海陆底图叠加（默认关）：只在用户勾选时建/显，不勾就什么都不做
+        if (props.landSeaBasemap) {
+          await ensureLandSeaBase(mapInstance, true)
+        }
         // 就绪即撤销初始化超时兜底（避免地图已好还被判超时）
         clearMapInitTimer()
         mapInitError.value = null

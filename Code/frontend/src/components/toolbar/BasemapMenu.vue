@@ -27,10 +27,12 @@ import { basemapProviderShort, basemapStyleLabel, BASEMAP_COPY } from '../../ui-
 import { useSettingsStore } from '../../stores/settings'
 import { useLogStore } from '../../stores/log'
 
-const props = defineProps<{ tileSourceId: TileSourceId }>()
+const props = defineProps<{ tileSourceId: TileSourceId; landSeaBasemap?: boolean }>()
 const emit = defineEmits<{
   changeTileSource: [sourceId: TileSourceId]
   openSettings: []
+  /** 勾选/取消「海陆底图（无国界）」叠加层 */
+  toggleLandSea: []
 }>()
 
 const settingsStore = useSettingsStore()
@@ -232,6 +234,24 @@ watch(
           class="tm-item-check"
           aria-hidden="true"
         />
+      </button>
+
+      <div class="tm-sep" role="separator" />
+
+      <p class="tm-group-label">底图叠加</p>
+      <button
+        class="tm-item"
+        :class="{ 'is-current': landSeaBasemap }"
+        type="button"
+        :aria-pressed="landSeaBasemap ? 'true' : 'false'"
+        @click="emit('toggleLandSea')"
+      >
+        <Globe :size="14" class="tm-item-icon" aria-hidden="true" />
+        <span class="tm-item-body">
+          <span class="tm-item-title">海陆底图（无国界）</span>
+          <span class="tm-item-desc">陆地/海洋双色，盖住地名与国界</span>
+        </span>
+        <Check v-if="landSeaBasemap" :size="14" class="tm-item-check" aria-hidden="true" />
       </button>
 
       <p class="tm-hint">提示：切换来源会尽量保留当前风格；没配 Key 的来源会跳到设置页</p>

@@ -125,6 +125,12 @@ onBeforeUnmount(() => {
 })
 
 const tileSourceId = toRef(uiStore, 'tileSourceId')
+/**
+ * 「海陆底图（无国界）」叠加层开关（顶栏 底图 → 底图叠加 里勾选）。
+ * 只影响显示：在底图之上盖一张海陆双色图，挡住地名与国界；默认关。
+ * 放在视图层而不是 store，避免动到持久化/快照那套（改了要升 schema）。
+ */
+const landSeaBasemap = ref(false)
 const currentHour = toRef(uiStore, 'currentHour')
 const currentDate = toRef(uiStore, 'currentDate')
 const hourLabel = toRef(uiStore, 'hourLabel')
@@ -731,6 +737,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         v-if="showMapLibreCanvas"
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
+        :land-sea-basemap="landSeaBasemap"
         :current-hour="currentHour"
         :current-date="currentDate"
         :inspect-point="selectedMapPoint"
@@ -787,9 +794,11 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       <div class="overlay overlay-top cgda-boot-reveal cgda-boot-reveal--1">
         <ModeToolbar
           :tile-source-id="tileSourceId"
+          :land-sea-basemap="landSeaBasemap"
           :get-map-ready="handleIsMapReady"
           :get-map-error="handleGetMapError"
           @change-tile-source="handleTileSourceChange"
+          @toggle-land-sea="landSeaBasemap = !landSeaBasemap"
           @open-screenshot="handleOpenScreenshot"
           @open-settings="handleOpenSettings"
           @open-workflow-status="handleOpenWorkflowStatus"
