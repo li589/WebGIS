@@ -363,6 +363,21 @@ class TestNumberGuard:
         _, changed = _guard_reply_numbers(reply, _tool_steps(_GZ_1216, _SM_1216))
         assert changed is False
 
+    def test_cross_round_comparison_is_kept(self) -> None:
+        """「那跟广州市比差多少」：本轮只统计了广州，正文把上一轮的河南一起比。
+
+        数值全真，只是河南那组不在本轮白名单里。逐个强校验会把这段正确的对比
+        整段换成单边一句话，用户问的「差多少」反而没答（2026-11-07 实测）。
+        """
+        reply = (
+            "同一天（2025-12-16）广州市的平均值是 0.166 m³/m³，"
+            "河南省是 0.203 m³/m³，广州比河南低约 0.037 m³/m³（低约 18%）。\n"
+            "- 广州市：有效像元 63 个（占该市范围内总像元的约 26%），"
+            "最低 0.102、最高 0.558 m³/m³，标准差 0.066"
+        )
+        _, changed = _guard_reply_numbers(reply, _tool_steps(_GZ_1216))
+        assert changed is False
+
     def test_stat_values_skip_dates_and_ratios(self) -> None:
         vals = _stat_values(
             "2025-12-16 平均值 0.2025，占约 26%，低 0.037，有效像元 1995 个"

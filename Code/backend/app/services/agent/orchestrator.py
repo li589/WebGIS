@@ -2300,6 +2300,30 @@ def _rebuild_sample_reply(data: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _has_cross_round_region(text: str, facts: dict[str, Any]) -> bool:
+    """正文是不是在拿「本轮没统计的区域」做对比。
+
+    2026-11-07 实测：用户问「那跟广州市比差多少」，本轮只统计了广州，正文却把
+    上一轮的河南一起写出来（0.166 对 0.203，差 0.037）——数值全真，只是河南那组
+    不在本轮白名单里。逐个强校验会把这段正确的对比整段换成单边一句话，用户问的
+    「差多少」反而没答。命中这里时退回「有一个对上就放行」的旧判据。
+
+    只认「正文提到 2 个以上区域、且其中有本轮没统计的」——一次问两个变量
+    （同一个区域）不受影响，那条路径仍然逐个校验。
+    """
+    mentioned = set(_REGION_MENTION_RE.findall(text or ""))
+    if len(mentioned) < 2:
+        return False
+    known: set[str] = set()
+    for row in facts.get("stats_list") or []:
+        if isinstance(row, dict) and row.get("region"):
+            known.add(str(row["region"]))
+    single = facts.get("stats")
+    if isinstance(single, dict) and single.get("region"):
+        known.add(str(single["region"]))
+    return bool(mentioned - known)
+
+
 def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, bool]:
     """正文里的数值必须是**本轮**工具返回过的那组，对不上就整段换掉。
 
@@ -2338,8 +2362,13 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     # 被 VOD 那两个正确数掩护过关，用户拿到一半真一半假——问「分别是多少」时
     # 最容易被骗过。改成：**每个挂着统计量名的数都必须对得上**。
     # 正文里没有统计量名（身份问答、只讲范围）时退回旧判据，不扩大误伤面。
+    #
+    # 跨轮对比是例外：用户问「那跟广州市比差多少」时，本轮只统计了广州，
+    # 正文会把上一轮的河南一起写出来比（0.166 对 0.203，差 0.037）——数值全真，
+    # 只是河南不在本轮白名单里。逐个强校验会把这段正确的对比整段打掉，
+    # 换成一句只有广州的话，用户问的「差多少」反而没答。
     stat_values = _stat_values(text)
-    if stat_values:
+    if stat_values and not _has_cross_round_region(text, facts):
         numbers_ok = all(_number_matches(value, whitelist) for value in stat_values)
     else:
         numbers_ok = any(_number_matches(value, whitelist) for value in mentioned)

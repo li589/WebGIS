@@ -382,6 +382,14 @@ def _imported_raster_header(catalog_id: str, meta: dict[str, Any]) -> dict[str, 
                 "epsg": crs.to_epsg() if crs else None,
                 "width": int(ds.width),
                 "height": int(ds.height),
+                # 像元大小：问「分辨率多少」时走的就是这条元信息路径，
+                # 只给行列数模型只能自己拿全球周长去除，反而答成「元数据里没有」
+                # （2026-11-07 实测）。
+                "res": [
+                    round(abs(float(ds.res[0])), 10),
+                    round(abs(float(ds.res[1])), 10),
+                ],
+                "pixel_size": _pixel_size_label(ds),
             }
     except Exception:
         logger.debug("raster header unavailable for %s", catalog_id, exc_info=True)
@@ -509,6 +517,9 @@ def _imported_overlay_meta(catalog_id: str) -> dict[str, Any] | None:
             "epsg": header.get("epsg"),
             "width": header.get("width"),
             "height": header.get("height"),
+            # 像元大小（2026-11-07 补）：这一个字段决定模型答不答得出「分辨率多少」
+            "res": header.get("res"),
+            "pixel_size": header.get("pixel_size"),
             "extent": extent_out,
             "tags": ["imported", "local"],
             # 与覆盖/取值两处对齐的来源与变量信息
