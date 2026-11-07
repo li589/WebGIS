@@ -1432,6 +1432,37 @@ def _state_patch_from_tool_calls(
     return patch
 
 
+def _state_patch_from_tool_results(
+    results: list[dict[str, Any]],
+) -> dict[str, str]:
+    """把「工具真正取到的那份产物」记进会话状态。
+
+    2026-11-07 第二次外部复测：``_state_patch_from_tool_calls`` 记的是**模型传的
+    catalog_id**，而模型习惯传目录层 id（``method-*``），那类 id 在盘上没有同名
+    产物目录，``_baseline_layer_id`` 出于「拿它取数必然报错」的理由直接拒收。
+    结果就是基线等于白记：下一句「区域改为广州市，日期和产品保持不变」照样退到
+    页面选中层，又串成另一颗卫星（实测 SMAP 动态 → 风云动态 0.2032/66 像元）。
+
+    工具自己知道映射后的产物 id（``resolved_layer_id``），照它记才准：
+    基线变成``imported-*``，产品粘性才有东西可粘。
+    """
+    patch: dict[str, str] = {}
+    for res in results:
+        if not isinstance(res, dict) or not res.get("ok"):
+            continue
+        local = str(res.get("resolved_layer_id") or "").strip()
+        if not local:
+            continue
+        patch["layer_id"] = local
+        name = str(res.get("display_name") or "").strip()
+        if name:
+            patch["layer_name"] = name
+            var = dialogue_state.variable_from_name(name)
+            if var:
+                patch["variable"] = var
+    return patch
+
+
 def _state_patch_from_intents(
     intents: list[dict[str, Any]],
     client_context: dict[str, Any] | None,
@@ -2401,6 +2432,10 @@ def _run_chat_impl(
                     conf = _confirmation_from_tool_result(tres)
                     if conf:
                         confirmations.append(conf)
+                    # 工具实际读的是哪份产物 ⇒ 立刻写进会话基线（见函数注释）
+                    topic_state = dialogue_state.merge(
+                        topic_state, **_state_patch_from_tool_results([tres])
+                    )
                     tool_result_blocks.append(
                         {
                             "type": "tool_result",
@@ -2600,6 +2635,10 @@ def _run_chat_impl(
                 conf = _confirmation_from_tool_result(tres)
                 if conf:
                     confirmations.append(conf)
+                # 同上：把「真正读的产物」记成基线，下一句「只改区域」才粘得住
+                topic_state = dialogue_state.merge(
+                    topic_state, **_state_patch_from_tool_results([tres])
+                )
                 messages_oai.append(
                     {
                         "role": "tool",

@@ -2712,6 +2712,8 @@ def _get_layer_coverage(
     return {
         "ok": True,
         "catalog_id": catalog_id,
+        # 同 get_layer_statistics：把「真正读的那份产物」交给会话基线
+        "resolved_layer_id": local_id if local_id != catalog_id else "",
         "display_name": _cov_display,
         # 与统计同款固定句式：回答第一句原样照抄，必须带 catalog_id
         "answer_lead": f"我按「{_cov_display}」取数",
@@ -3440,6 +3442,11 @@ def _get_layer_statistics(
     payload: dict[str, Any] = {
         "ok": bool(stats.get("ok")),
         "catalog_id": catalog_id,
+        # 内部记账用：本次**真正读的那份产物目录**（模型常传目录层 method-*，
+        # 实际读的是页面上挂着的 imported-*）。orchestrator 拿它写会话基线，
+        # 下一句「只改区域」才粘得住同一个产品（2026-11-07 第二次外部复测）。
+        # 与 catalog_id 相同时留空 ⇒ 状态合并时跳过，不覆盖原 id。
+        "resolved_layer_id": local_id if local_id != catalog_id else "",
         "display_name": _stats_display,
         # 回答第一句的**固定句式**：强制造句带 catalog_id，用户才能当场核对
         # 「这个数到底取自哪一层」。2026-10-29 实测：只写层名不写 id 时，
