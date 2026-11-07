@@ -1315,10 +1315,13 @@ def _sample_layer_point(
     pinned_note: str | None = None
     if catalog_id:
         catalog_id, pinned_note = _product_sticky_layer(
-            catalog_id, topic_state=topic_state, user_message=user_message
+            catalog_id,
+            topic_state=topic_state,
+            user_message=user_message,
+            client_context=client_context,
         )
     else:
-        catalog_id = _baseline_layer_id(topic_state)
+        catalog_id = _baseline_layer_id(topic_state, client_context)
     targets: list[str] = []
     if catalog_id:
         targets = [catalog_id]
@@ -1460,8 +1463,11 @@ def _mentions_source(message: str, source: str) -> bool:
     return any(alias in text for alias in _SOURCE_ALIASES.get(source, (source,)))
 
 
-def _baseline_layer_id(topic_state: dict[str, Any] | None) -> str:
-    """会话里记着的「上一轮取数用的那一层」，只认本地运行时产物。
+def _baseline_layer_id(
+    topic_state: dict[str, Any] | None,
+    client_context: dict[str, Any] | None = None,
+) -> str:
+    """会话里记着的「上一轮取数用的那一层」，只认可取数的产物 id。
 
     2026-11-07：外部复测第三组「只改区域」串产品的根因就在这里——会话状态
     明明记着上一轮是 SMAP 动态，但取数工具一个字都不读它，没收到 catalog_id
@@ -1469,14 +1475,19 @@ def _baseline_layer_id(topic_state: dict[str, Any] | None) -> str:
     产品上，而且答得有模有样（真实数值 + 有效像元数），用户完全分辨不出来。
 
     目录层 id（``method-*``）在盘上没有同名目录，拿它取数只会换来一句报错，
-    所以这里只放行 ``imported-*`` / ``wf-run-*``。
+    所以只放行 ``imported-*`` / ``wf-run-*``。**但旧会话里存的就是 ``method-*``**
+    （工具报 resolved 之前写下的），恢复历史后一句「只改日期」照样会失效。
+    这类基线先用页面映射还原成真产物：只有唯一候选才用，多个变量挂在一起时
+    宁可放弃（挑错变量比查不到更容易让人拿错数下判断）。
     """
     if not isinstance(topic_state, dict):
         return ""
     lid = _normalize_layer_id(str(topic_state.get("layer_id") or ""))
-    if not (lid.startswith("imported-") or lid.startswith("wf-run-")):
+    if not lid:
         return ""
-    return lid
+    if lid.startswith("imported-") or lid.startswith("wf-run-"):
+        return lid
+    return _page_overlay_for_catalog(client_context, lid) or ""
 
 
 #: 用户点名变量的说法（只用于「他是不是真的要换变量」这类判定）。
@@ -1528,6 +1539,7 @@ def _product_sticky_layer(
     *,
     topic_state: dict[str, Any] | None,
     user_message: str,
+    client_context: dict[str, Any] | None = None,
 ) -> tuple[str, str | None]:
     """产品粘性：模型传了别的层，但用户这一句没点名换 → 改回上一轮那层。
 
@@ -1537,7 +1549,7 @@ def _product_sticky_layer(
     两层的身份都能解析、用户原话里既没点名这次的来源/变量/口径。少一条都放行，
     宁可漏改不可误改——「换成风云那套」「那 VOD 呢」「切到平均版」必须照常切换。
     """
-    base = _baseline_layer_id(topic_state)
+    base = _baseline_layer_id(topic_state, client_context)
     if not base or not catalog_id:
         return catalog_id, None
     if _normalize_layer_id(catalog_id) == base:
@@ -3211,10 +3223,13 @@ def _get_layer_statistics(
     )
     layer_source = "requested" if catalog_id else "session"
     pinned_note: str | None = None
-    baseline = _baseline_layer_id(topic_state)
+    baseline = _baseline_layer_id(topic_state, client_context)
     if catalog_id:
         catalog_id, pinned_note = _product_sticky_layer(
-            catalog_id, topic_state=topic_state, user_message=user_message
+            catalog_id,
+            topic_state=topic_state,
+            user_message=user_message,
+            client_context=client_context,
         )
         if pinned_note:
             layer_source = "session"
