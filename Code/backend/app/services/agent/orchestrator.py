@@ -1834,6 +1834,105 @@ _UNGROUNDED_REPLY = (
     "如果那天落在这个图层没有数据的时间段里，我会直接告诉你是哪几天。"
 )
 
+#: 正文里「N 个有效像元」与「有效像元：N 个」两种语序都要认——中文答案里
+#: 后者更常见（「- 有效像元：1995 个」），只按前一种写会漏掉关键词后面的数字。
+_PIXEL_MENTION_RE = re.compile(
+    r"(\d[\d,]*)\s*个\s*(?:有效)?(?:像元|栅格)"
+    r"|(?:有效像元|有效栅格|像元数|栅格数)\s*[:：]?\s*(\d[\d,]*)"
+)
+
+
+def _last_stats_payload(steps: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """本轮最后一次「真算出了整层统计」的工具返回。
+
+    只认同时带 ``mean`` 与 ``valid_pixels`` 的返回（统计/覆盖工具的特征），
+    且跳过被截断的摘要对象——那种拿不到可信数值。
+    """
+    for step in reversed(list(steps)):
+        if not isinstance(step, dict) or step.get("type") != "tool_result":
+            continue
+        detail = step.get("detail")
+        data: Any = detail if isinstance(detail, dict) else None
+        if data is None and isinstance(detail, str) and detail.strip().startswith("{"):
+            try:
+                data = json.loads(detail)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(data, dict) or data.get("truncated"):
+            continue
+        if data.get("mean") is None or data.get("valid_pixels") is None:
+            continue
+        return data
+    return None
+
+
+def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, bool]:
+    """正文里的有效像元数必须是**本轮**工具返回的那个数，对不上就整段换掉。
+
+    2026-11-07 游客模式复测（第三组「只改区域」）：工具这次查的是广州市，
+    正文却写「0.203 / 1995 个，该区域共 4012 个像元」——1995 与 4012 全是
+    上一轮**河南**的数字，整段是从历史里抄来的。当时那道闸门
+    （``_statistics_fallback_reply``）只问「本轮有没有调过统计工具」，调过就
+    放行模型原文，于是抄来的数原样流到用户眼前。
+
+    判据只用**有效像元数**：它是整数、贴近用户问题、模型几乎不会同轮写好几组
+    不同来源的像元数。正文里出现的像元数里只要有一个等于本轮的值就放行
+    （对比两轮回答时会出现两组数，那种情况不拦）；一个都不等于 ⇒ 正文与本次
+    取数无关，用工具返回重写。
+    """
+    data = _last_stats_payload(steps)
+    text = reply or ""
+    if not data or not text:
+        return reply, False
+    try:
+        pixels = int(float(data.get("valid_pixels") or 0))
+    except (TypeError, ValueError):
+        return reply, False
+    if pixels <= 0:
+        return reply, False
+    mentioned: set[int] = set()
+    for groups in _PIXEL_MENTION_RE.findall(text):
+        raw = groups if isinstance(groups, str) else next((g for g in groups if g), "")
+        if not raw:
+            continue
+        try:
+            mentioned.add(int(raw.replace(",", "")))
+        except ValueError:
+            continue
+    if not mentioned or pixels in mentioned:
+        return reply, False
+
+    name = str(data.get("display_name") or "").strip() or "这一层"
+    unit = str(data.get("unit") or "").strip()
+    try:
+        mean = float(data.get("mean"))
+    except (TypeError, ValueError):
+        return reply, False
+    region = str(data.get("region") or "").strip()
+    where = f"按「{region}」行政边界" if region else "按整幅栅格"
+    actual = str(data.get("actual_time") or "").strip()
+    when = ""
+    if re.fullmatch(r"\d{8}", actual):
+        when = f"{actual[:4]}-{actual[4:6]}-{actual[6:]} "
+    elif re.fullmatch(r"\d{8}_\d{8}", actual):
+        when = (
+            f"{actual[:4]}-{actual[4:6]}-{actual[6:8]} 至 "
+            f"{actual[9:13]}-{actual[13:15]}-{actual[15:17]} 的合成块，"
+        )
+    value = f"{mean:.4g}" + (f" {unit}" if unit else "")
+    rebuilt = (
+        f"我按「{name}」取数：{where}，{when}"
+        f"平均值 **{value}**，有效像元 {pixels} 个。\n\n"
+        "这段是按你最后一句说的图层、区域和日期重新算出来的；"
+        "若与上一版数字不一致，以这段为准。"
+    )
+    logger.warning(
+        "reply numbers not from this round: mentioned=%s actual_pixels=%s",
+        mentioned,
+        pixels,
+    )
+    return rebuilt, True
+
 
 def _looks_numeric(text: str) -> bool:
     """正文里是否出现了「像统计结果」的数字。
@@ -2503,6 +2602,15 @@ def _run_chat_impl(
             )
             if state_patch:
                 topic_state = dialogue_state.merge(topic_state, **state_patch)
+            # 正文数值必须来自本轮工具返回（模型会把上一轮的数字整段抄下来）
+            reply, _numbers_rebuilt = _guard_reply_numbers(reply, list(steps))
+            if _numbers_rebuilt:
+                steps.append(
+                    {
+                        "type": "thought",
+                        "summary": "正文数值与本轮取数对不上，已按工具返回重写",
+                    }
+                )
             if not intents:
                 fallback = mock_chat(
                     message,
@@ -2719,6 +2827,15 @@ def _run_chat_impl(
         )
         if state_patch:
             topic_state = dialogue_state.merge(topic_state, **state_patch)
+        # 同 Anthropic 分支：正文里的数必须是这一轮取到的那组
+        reply, _numbers_rebuilt = _guard_reply_numbers(reply, list(steps))
+        if _numbers_rebuilt:
+            steps.append(
+                {
+                    "type": "thought",
+                    "summary": "正文数值与本轮取数对不上，已按工具返回重写",
+                }
+            )
         if not intents:
             fallback = mock_chat(
                 message,
