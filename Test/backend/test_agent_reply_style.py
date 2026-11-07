@@ -544,6 +544,24 @@ class TestRoundingTolerance:
         assert _number_matches(0.293, {0.2025}) is False
         assert _number_matches(163.0, {1995.0}) is False
 
+    def test_small_value_two_decimal_rounding(self) -> None:
+        """0.0295 写成 0.03 是「保留 2 位小数」的正常转写，不该判成编造。
+
+        2026-11-07 实测新疆：模型把标准差 0.0295 写成 0.03，绝对差 0.0005、
+        肉眼完全一样，但相对差 1.7% 超过 0.6% 阈值 ⇒ 整段被重写成模板句。
+        """
+        from app.services.agent.orchestrator import _number_matches
+
+        assert _number_matches(0.03, {0.0295}) is True
+        assert _number_matches(0.021, {0.0208}) is True
+
+    def test_absolute_tolerance_does_not_loosen_big_values(self) -> None:
+        """绝对误差兜底只对「两边都足够小」（<0.1）生效，大数不放松。"""
+        from app.services.agent.orchestrator import _number_matches
+
+        assert _number_matches(0.293, {0.2025}) is False
+        assert _number_matches(0.1507, {0.2025}) is False
+
     def test_reply_with_rounded_stats_is_kept(self) -> None:
         stats = {
             **_SM_1216,

@@ -2101,6 +2101,13 @@ def _number_matches(value: float, whitelist: set[float]) -> bool:
         # 照样拦得住。
         if ref and abs(value - ref) <= 0.006 * abs(ref):
             return True
+        # 相对误差对**很小的数**太苛刻：0.0295 写成 0.03 是「保留 2 位小数」的标准
+        # 转写，绝对差只有 0.0005，肉眼完全一样，但相对差 1.7% 超过 0.6% 阈值。
+        # 2026-11-07 实测新疆：模型把标准差 0.0295 写成 0.03 ⇒ 被判编造、整段重写。
+        # 补一层**绝对误差**（保留 2 位小数的舍入界 0.005），只对「两边都足够小」
+        # 的数生效，大数不受影响（0.293 对 0.2025 差 0.09 照样拦）。
+        if ref and abs(value - ref) <= 0.005 and abs(ref) < 0.1:
+            return True
     return False
 
 
