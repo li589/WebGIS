@@ -713,6 +713,286 @@ def _layer_from_state(
     }
 
 
+def _same_variable_candidates(
+    variable: str,
+    layers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """列出「本机现在真能算」的同变量层：页面上的 + 目录产品族里已物化的成员。
+
+    2026-11-07 新增。背景：页面只挂着「等效散射 ω」，用户问「河南省土壤水分」，
+    这一层压根没有可统计的对象。旧实现回一句「当前地图上没有这一层的可统计
+    版本」——可本机明明有四族「散射约束产品」都带土壤水分，用户被这句话挡在
+    门外，还得自己回页面加图层。
+
+    严格只收**盘上已有产物**的层：``group_members`` 由
+    ``layer_identity._group_member_ids`` 按 sha1 反算目录名再验 ``meta.json``，
+    盘上没有就不列（绝不凭目录名编一个数出来）。
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(entry: dict[str, Any]) -> None:
+        key = str(entry.get("overlay_layer_id") or entry.get("catalog_id") or "")
+        if not key or key in seen:
+            return
+        seen.add(key)
+        out.append(entry)
+
+    def _qualified(layer: dict[str, Any]) -> str:
+        """页面层只带侧栏名（「土壤水分」），补出产品族名才分得清是哪一层。"""
+        base = _display(layer)
+        oid = str(layer.get("overlay_layer_id") or "")
+        if not oid:
+            return base
+        try:
+            from app.services.agent.server_tools_runtime import _qualified_layer_name
+
+            return _qualified_layer_name(oid, base) or base
+        except Exception:  # pragma: no cover - 补名失败不影响候选
+            return base
+
+    def _source_of(layer_id: str) -> str:
+        """smap / fy …… 判断「候选与页面是不是同一颗卫星」只看这个。"""
+        if not layer_id:
+            return ""
+        try:
+            from app.services.agent.server_tools_runtime import _layer_identity_fields
+
+            return str(_layer_identity_fields(layer_id).get("source") or "")
+        except Exception:  # pragma: no cover
+            return ""
+
+    # ① 页面上的同变量层（直接可算，排在前面）
+    for la in layers:
+        if dialogue_state.variable_from_name(_display(la)) != variable:
+            continue
+        oid = str(la.get("overlay_layer_id") or "")
+        _add(
+            {
+                "catalog_id": str(la.get("catalog_id") or ""),
+                "overlay_layer_id": oid,
+                "instance_id": str(la.get("instance_id") or ""),
+                "name": _qualified(la),
+                "source": _source_of(oid)
+                or _source_of(str(la.get("catalog_id") or "")),
+                "on_page": True,
+                "visible": bool(la.get("visible")),
+                "selected": bool(la.get("selected")),
+                "virtual": True,
+            }
+        )
+
+    # ② 目录产品族里已物化的同变量成员
+    try:
+        from app.services.agent.layer_identity import identity_fields
+        from app.services.layer_catalog import get_layer_catalog
+
+        items = list(get_layer_catalog().items or [])
+    except Exception:  # pragma: no cover - 目录不可用就只列页面层
+        items = []
+
+    for item in items:
+        lid = str(getattr(item, "layer_id", "") or "")
+        if not lid.startswith("method-"):
+            continue
+        try:
+            fields = identity_fields(
+                lid, display_name=str(getattr(item, "display_name", "") or "")
+            )
+        except Exception:  # pragma: no cover
+            continue
+        group = str(fields.get("product_group_label") or "").strip()
+        for member in fields.get("group_members") or []:
+            if not isinstance(member, dict) or member.get("variable") != variable:
+                continue
+            var_label = str(member.get("variable_label") or "").strip()
+            if group and var_label and not group.endswith(var_label):
+                name = f"{group} · {var_label}"
+            else:
+                name = group or var_label
+            _add(
+                {
+                    "catalog_id": lid,
+                    "overlay_layer_id": str(member.get("overlay_layer_id") or ""),
+                    "instance_id": "",
+                    "name": name,
+                    "source": str(fields.get("source") or ""),
+                    "on_page": False,
+                    "visible": False,
+                    "selected": False,
+                    "virtual": True,
+                }
+            )
+
+    out.sort(key=lambda e: (0 if e.get("on_page") else 1, str(e.get("name") or "")))
+    return out
+
+
+def _undecided_statistics_reply(
+    *,
+    text: str,
+    entities: dict[str, Any],
+    layers: list[dict[str, Any]],
+    sid: str,
+    intents: list[dict[str, Any]],
+    lead: str = "",
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """层定不下来时的答复：**要么直接算，要么给出固定的候选清单**。
+
+    2026-11-07：原先这一步只回一句 ``why``，措辞随模型/状态变化，同一个问题
+    两次问得到两种答复（一次自己挑了 SMAP 算出 0.2929，一次只回「当前地图上
+    没有这一层」）。现在收敛成三条确定路径：
+
+    1. 本机只有一种来源 ⇒ 没有可挑的余地，直接算；
+    2. 有多种来源 ⇒ 固定格式列出来，绝不替用户挑（「土壤水分」四个口径的均值
+       差别很大，替他挑就等于替他做了数据决定）；
+    3. 一层都没有 ⇒ 如实说没有，并说明要怎么才能有。
+
+    返回 ``(层, None)`` 表示用它继续取数，``(None, 回复)`` 表示到此为止。
+    """
+    variable = str(entities.get("variable") or "")
+    why = str(entities.get("why") or "").strip() or "请先指定一个图层。"
+    if not variable:
+        return None, {
+            "session_id": sid,
+            "reply": why,
+            "ui_intents": intents,
+            "topic_state": {},
+        }
+
+    label = dialogue_state.VARIABLE_LABELS.get(variable, variable)
+    # 只记「问的是哪个变量」和用户这一句明说的区域：层还没定，绝不写层
+    # （写了就会被下一轮当基线用）。下一句「用 SMAP 动态的」靠它接上变量。
+    patch: dict[str, str] = {"variable": variable}
+    if entities.get("region") and entities.get("region_from") == "message":
+        patch["region"] = str(entities["region"])
+    cands = [
+        c
+        for c in _same_variable_candidates(variable, layers)
+        if not _contradicts_hints(text, c)
+    ]
+
+    # ① 只有一种来源：**还得是页面这层、或与页面同源**才直接算。
+    # 跨来源时（页面挂风云、唯一候选是 SMAP）不能替用户换卫星——那正是
+    # _cross_source_guard 要拦的事，交给下面的清单让他自己点头。
+    if len(cands) == 1:
+        only = cands[0]
+        page_sources = _page_sources(layers)
+        if only.get("on_page") or (
+            only.get("source") and str(only["source"]) in page_sources
+        ):
+            return only, None
+
+    # ② 有候选：列清单，让用户点名
+    if cands:
+        region = str(entities.get("region") or "").strip()
+        day = str(entities.get("date") or "").strip()
+        scope = "、".join(x for x in (region, _readable_date(day) if day else "") if x)
+        tail = f"说一句「用 {_short_candidate_name(cands[0]['name'])}的」，" + (
+            f"我就按「{scope}」算给你。" if scope else "我就算给你。"
+        )
+        head: list[str] = []
+        if lead:
+            head.append(lead)
+        if len(cands) == 1:
+            head.append(f"本机只有这一个「{label}」可算，但它不在页面上：")
+            # 不写基线（还没定层），下一轮只能靠用户把这层的名字说出来
+            # ⇒ 引导语必须点名，不能写「就用它」，否则下一句解析不到对象。
+            tail = f"说一句「用 {_short_candidate_name(cands[0]['name'])}的」，" + (
+                f"我就按「{scope}」算给你。" if scope else "我就算给你。"
+            )
+        else:
+            head.append(
+                f"本机有 {len(cands)} 个「{label}」的版本，来源和口径都不一样，"
+                "均值差得不少，我不替你挑："
+            )
+        lines = [
+            *head,
+            "",
+            *[f"· {c['name']}" for c in cands],
+            "",
+            tail,
+        ]
+        return None, {
+            "session_id": sid,
+            "reply": "\n".join(lines),
+            "ui_intents": intents,
+            "topic_state": patch,
+        }
+
+    # ③ 一层都没有
+    pending = _unavailable_same_variable(variable)
+    if pending:
+        lname = "、".join(f"「{n}」" for n in pending[:2])
+        more = f"等 {len(pending)} 个" if len(pending) > 2 else ""
+        reply = (
+            f"{lead}"
+            f"本机现在还没有「{label}」的可统计产物，页面上也没有这一层。"
+            f"目录里有{lname}{more}同类产品，但还没有生成过本地数据——"
+            "先在「数据 → 产品」里跑一次工作流，回来我直接给你算。"
+        )
+    else:
+        reply = lead + why if lead else why
+    return None, {
+        "session_id": sid,
+        "reply": reply,
+        "ui_intents": intents,
+        "topic_state": patch,
+    }
+
+
+def _page_sources(layers: list[dict[str, Any]]) -> set[str]:
+    """页面上现在挂着哪些来源（smap / fy…），用来判断「候选和页面是不是同一颗卫星」。"""
+    out: set[str] = set()
+    for la in layers:
+        for lid in (
+            str(la.get("overlay_layer_id") or ""),
+            str(la.get("catalog_id") or ""),
+        ):
+            if not lid:
+                continue
+            try:
+                from app.services.agent.server_tools_runtime import (
+                    _layer_identity_fields,
+                )
+
+                src = str(_layer_identity_fields(lid).get("source") or "")
+            except Exception:  # pragma: no cover
+                src = ""
+            if src:
+                out.add(src)
+                break
+    return out
+
+
+def _short_candidate_name(name: str) -> str:
+    """「SMAP 动态散射约束产品 · 土壤水分」→「SMAP 动态」，用于引导句。"""
+    head = str(name or "").split("·")[0].strip()
+    return re.sub(r"(散射约束)?产品$", "", head).strip() or head
+
+
+def _unavailable_same_variable(variable: str) -> list[str]:
+    """目录里同变量、但本机还没有产物的层名（只用于解释「为什么算不了」）。"""
+    try:
+        from app.services.layer_catalog import get_layer_catalog
+
+        items = list(get_layer_catalog().items or [])
+    except Exception:  # pragma: no cover
+        return []
+    names: list[str] = []
+    for item in items:
+        lid = str(getattr(item, "layer_id", "") or "")
+        name = str(getattr(item, "display_name", "") or "").strip()
+        # 参考层（ref-*）是别人做好的成品，不算「本机待生产」的对象
+        if not lid or lid.startswith(("method-", "ref-")) or not name:
+            continue
+        if dialogue_state.variable_from_name(name) != variable:
+            continue
+        if name not in names:
+            names.append(name)
+    return names
+
+
 def _narrow_by_hints(
     text: str,
     candidates: list[dict[str, Any]],
@@ -780,6 +1060,12 @@ def resolve_entities(
     prior = dialogue_state.sanitize(state)
     follow_up = bool(_FOLLOWUP_RE.search(text)) or bool(_TAIL_NE_RE.search(text))
     variable = dialogue_state.variable_from_text(text)
+    # ★ 2026-11-07：省略变量的追问要能接上。「照候选清单说『用 SMAP 动态的』」
+    # 这句里没有变量词，上一版 variable=None ⇒ 候选池为空 ⇒ 只认页面上那层
+    # ω ⇒ 出口校验否掉 ⇒ 回一句「当前地图上没有与你点名的来源一致的图层」，
+    # 用户照着提示说反而更糊涂。上一轮问的是哪个变量，这里继承下来。
+    if variable is None and prior.get("variable") and _has_layer_hints(text):
+        variable = str(prior["variable"])
 
     target: dict[str, Any] | None = None
     layer_from = ""
@@ -862,6 +1148,17 @@ def resolve_entities(
         if len(var_only) == 1:
             target = var_only[0]
             layer_from = "variable"
+    # 目录产品族里已物化、但**没挂到页面上**的层：用户点名了来源/形态时，
+    # 这里也能选出唯一一层。2026-11-07「照候选清单说『用 SMAP 动态的』」
+    # 原先答不上来——候选只在 _statistics_reply 里列，解析阶段只认页面层，
+    # 于是页面挂风云 ω、盘上明明有 SMAP 动态土壤水分，却回「没有这一层」。
+    if target is None and variable and _has_layer_hints(text):
+        catalog_cands = _same_variable_candidates(variable, layers)
+        if catalog_cands:
+            picked_cat = _narrow_by_hints(text, catalog_cands, prefer_variable=variable)
+            if picked_cat is not None:
+                target = picked_cat
+                layer_from = "catalog"
     # 以上都不成立才看页面选中 / 唯一可见（保留旧行为，但降到最后）
     if target is None:
         # ★ 2026-11-06 修：用户已经点明变量时，兜底**只能在同变量的层里挑**。
@@ -934,7 +1231,7 @@ def resolve_entities(
     elif (
         not region
         and prior.get("region")
-        and layer_from == "state"
+        and layer_from in ("state", "catalog")
         and not _NO_REGION_RE.search(text)
     ):
         region = prior["region"]
@@ -1030,12 +1327,15 @@ def _statistics_reply(
     )
     target = entities.get("layer")
     if not isinstance(target, dict):
-        return {
-            "session_id": sid,
-            "reply": entities.get("why") or "请先指定一个图层。",
-            "ui_intents": intents,
-            "topic_state": {},
-        }
+        # 2026-11-07：这里原先直接回 why 一句，措辞随轮次漂移。改成交给
+        # _undecided_statistics_reply：能唯一确定就直接算，有多种来源就列清单。
+        picked, stop = _undecided_statistics_reply(
+            text=text, entities=entities, layers=layers, sid=sid, intents=intents
+        )
+        if picked is None:
+            return stop  # type: ignore[return-value]
+        target = picked
+        entities = {**entities, "layer": picked, "layer_from": "resolved"}
 
     # ★ 通用防线：与选层逻辑解耦。将来谁再改选层、正则或兜底顺序，只要「用户
     # 说的变量」和「实际挑中的层变量」对不上，就在这里被拦住——绝不拿另一个
@@ -1043,16 +1343,31 @@ def _statistics_reply(
     said_var = str(entities.get("variable") or "")
     target_var = dialogue_state.variable_from_name(_display(target))
     if said_var and target_var and said_var != target_var:
-        return {
-            "session_id": sid,
-            "reply": (
-                f"你说的是「{dialogue_state.VARIABLE_LABELS.get(said_var, said_var)}」，"
-                f"但按当前页面能统计的是「{_display(target)}」——两个不是同一个变量，"
-                "我不拿它顶替。请先确认要统计哪一层（也可以直接说完整图层名）。"
-            ),
-            "ui_intents": intents,
-            "topic_state": {},
-        }
+        # 2026-11-07：这里只回一句「两个不是同一个变量」太干。用户问土壤水分、
+        # 页面只挂着 ω 时，本机其实有四族可算的土壤水分——同一句话补上候选清单，
+        # 「绝不拿别的变量顶替」这条契约不变，只是顺手告诉他有哪些能选。
+        lead = (
+            f"你说的是「{dialogue_state.VARIABLE_LABELS.get(said_var, said_var)}」，"
+            f"但按当前页面能统计的是「{_display(target)}」——两个不是同一个变量，"
+            "我不拿它顶替。"
+        )
+        picked, stop = _undecided_statistics_reply(
+            text=text,
+            entities={**entities, "variable": said_var},
+            layers=layers,
+            sid=sid,
+            intents=intents,
+            lead=lead,
+        )
+        if picked is None:
+            return stop or {
+                "session_id": sid,
+                "reply": lead,
+                "ui_intents": intents,
+                "topic_state": {},
+            }
+        target = picked
+        entities = {**entities, "layer": picked, "variable": said_var}
 
     from app.services.agent.server_tools_runtime import _get_layer_statistics
 
@@ -1097,6 +1412,17 @@ def _statistics_reply(
         carry_note = "；".join(x for x in (carry_note, "产品沿用上一轮") if x)
     scope_prefix = f"按「{region}」行政边界" if region else "整层"
     if not res.get("ok"):
+        # ★ 2026-11-07：``error`` 是**给模型看的指令**（跨来源守卫那份甚至写着
+        # 「回答里不得出现任何统计数值」），旧代码把它原样拼进正文，用户会读到
+        # 一段自我训话。工具给了 ``user_facing`` 就直接用它当整段回复。
+        user_facing = str(res.get("user_facing") or "").strip()
+        if user_facing:
+            return {
+                "session_id": sid,
+                "reply": user_facing,
+                "ui_intents": intents,
+                "topic_state": {},
+            }
         reason = str(res.get("error") or "统计未成功")
         # 空片（整片 NoData）要单独说清：这不是「取数失败」，而是这一片本来就没有数据。
         # 外部测试第 3 轮模型说「11 月 13 日没有对应日期」——日期在，是片子里没值。

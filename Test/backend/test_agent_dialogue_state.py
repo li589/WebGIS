@@ -247,6 +247,124 @@ def test_statistics_refuses_when_variable_does_not_match(monkeypatch):
     assert "均值：" not in out["reply"]  # 一个数字都不许放出去
 
 
+def test_undecided_reply_lists_candidates_without_picking(monkeypatch):
+    """页面只挂 ω、问土壤水分：列出全部候选并让用户点名，一个数都不给。
+
+    2026-11-07：这一步原先只回一句「当前地图上没有这一层的可统计版本」，
+    本机明明有四族土壤水分；同一个问题两轮问还能得到两种答复（一次自己
+    挑了 SMAP 算出 0.2929）。现在收敛成固定清单，且不写会话基线。
+    """
+    from app.services.agent import mock_orchestrator
+
+    ctx = _ctx([OMEGA_LAYER])
+    cands = [
+        {
+            "catalog_id": "method-smap-dynamic",
+            "overlay_layer_id": "imported-a",
+            "name": "SMAP 动态散射约束产品 · 土壤水分",
+            "source": "smap",
+            "on_page": False,
+            "virtual": True,
+        },
+        {
+            "catalog_id": "method-fy-dynamic",
+            "overlay_layer_id": "imported-b",
+            "name": "风云卫星 动态散射约束产品 · 土壤水分",
+            "source": "fy",
+            "on_page": False,
+            "virtual": True,
+        },
+    ]
+    monkeypatch.setattr(
+        mock_orchestrator, "_same_variable_candidates", lambda var, ls: cands
+    )
+    out = mock_orchestrator._statistics_reply(
+        "河南省的土壤水分平均值是多少", ctx["active_layers"], ctx, "sid", [], state={}
+    )
+    reply = out["reply"]
+    assert "SMAP 动态散射约束产品 · 土壤水分" in reply
+    assert "风云卫星 动态散射约束产品 · 土壤水分" in reply
+    assert "我不替你挑" in reply
+    assert "均值：" not in reply  # 没定层之前一个数都不许出
+    # 只记「问的是哪个变量」和用户明说的区域，绝不写层——
+    # 写了层下一轮就会被当基线拿去统计。
+    assert "layer_id" not in out["topic_state"]
+    assert out["topic_state"].get("variable") == "sm"
+
+
+def test_undecided_reply_single_cross_source_candidate_needs_confirm(monkeypatch):
+    """只有一种来源、但页面挂的是另一颗卫星 ⇒ 让用户点头，不替他换卫星。"""
+    from app.services.agent import mock_orchestrator
+
+    ctx = _ctx([OMEGA_LAYER])
+    only = [
+        {
+            "catalog_id": "method-fy-dynamic",
+            "overlay_layer_id": "imported-b",
+            "name": "风云卫星 动态散射约束产品 · 土壤水分",
+            "source": "fy",
+            "on_page": False,
+            "virtual": True,
+        }
+    ]
+    monkeypatch.setattr(
+        mock_orchestrator, "_same_variable_candidates", lambda var, ls: only
+    )
+    # 页面这层属于另一颗卫星（真实页面同理：挂风云、唯一候选是 SMAP）
+    monkeypatch.setattr(mock_orchestrator, "_page_sources", lambda ls: {"smap"})
+    out = mock_orchestrator._statistics_reply(
+        "河南省的土壤水分平均值是多少", ctx["active_layers"], ctx, "sid", [], state={}
+    )
+    # 引导语必须点名那一层：这轮没定层、没写基线，下一句只靠「就用它」
+    # 是解析不到对象的（实测会答「没有与你点名的来源一致的图层」）。
+    assert "说一句「用 " in out["reply"]
+    assert "风云卫星 动态" in out["reply"]
+    assert "均值：" not in out["reply"]
+
+
+def test_tool_error_text_never_leaks_to_user(monkeypatch):
+    """工具的 ``error`` 是给模型的指令，正文只能用 ``user_facing``。
+
+    跨来源守卫那份 ``error`` 里写着「**回答里不得出现任何统计数值**」，
+    旧代码把它原样拼进正文，用户会读到一段自我训话（2026-11-07 实测）。
+    """
+    from app.services.agent import mock_orchestrator, server_tools_runtime
+
+    ctx = _ctx([OMEGA_LAYER])
+    layer = {
+        "catalog_id": "imported-x",
+        "overlay_layer_id": "imported-x",
+        "name": "SMAP 动态散射约束产品 · 土壤水分",
+    }
+    monkeypatch.setattr(
+        mock_orchestrator,
+        "resolve_entities",
+        lambda *a, **k: {
+            "layer": layer,
+            "variable": "sm",
+            "region": None,
+            "date": None,
+            "why": None,
+            "layer_from": "message",
+        },
+    )
+    monkeypatch.setattr(
+        server_tools_runtime,
+        "_get_layer_statistics",
+        lambda *a, **k: {
+            "ok": False,
+            "error_code": "cross_source_needs_confirm",
+            "error": "接下来只能这样回答：**回答里不得出现任何统计数值**",
+            "user_facing": "页面上现在挂的是「风云卫星·等效散射 ω」，要哪一个？",
+        },
+    )
+    out = mock_orchestrator._statistics_reply(
+        "河南省的土壤水分", ctx["active_layers"], ctx, "sid", [], state={}
+    )
+    assert "不得出现任何统计数值" not in out["reply"]
+    assert "页面上现在挂的是" in out["reply"]
+
+
 def test_tool_calls_write_topic_state():
     """模型自己查过哪一层，也要记进会话（界面意图那条路原本就记）。"""
     from app.services.agent.orchestrator import _state_patch_from_tool_calls
