@@ -374,9 +374,10 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
         if not isinstance(data, dict):
             continue
         if not data.get("ok"):
-            # 跨来源拦截的 error 是写给模型的操作指令（含「不得出现数值」这类话），
-            # 不能原样当正文；用工具给出的 user_facing 文案。
-            if data.get("error_code") == "cross_source_needs_confirm":
+            # 工具自己给了面向用户的文案（user_facing）就直接用：失败结果的 error
+            # 通常是写给模型的操作指令（含「不得出现数值」「不要提 mat」这类话），
+            # 原样当正文会变成内部黑话。2026-11-07 实测：模型把 mat 报错整段抄给用户。
+            if data.get("user_facing"):
                 friendly = str(data.get("user_facing") or "").strip()
                 if friendly:
                     return friendly
@@ -2486,6 +2487,10 @@ def _run_chat_impl(
                     dict(sc.get("args") or {}),
                     cred=cred,
                     client_context=client_context,
+                    # 用户原话交给工具侧的跨来源守卫：判断他有没有点名换卫星。
+                    # 2026-11-07 实测补上：上一版只在 Anthropic 那一路传了，DeepSeek
+                    # （OpenAI 兼容路径）漏传 ⇒ 守卫拿到空原话直接放行，等于没装。
+                    user_message=message,
                 )
                 steps.append(
                     {

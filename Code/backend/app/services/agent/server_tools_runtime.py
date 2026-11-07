@@ -3170,15 +3170,33 @@ def _get_layer_statistics(
     # 只支持 GeoTIFF 源：catalog 里部分老图层是 .mat/.nc，rasterio 直接读会抛异常
     reader = str(getattr(spec, "source_reader", "") or "").strip().lower()
     if reader and reader != "geotiff":
+        disp = _qualified_layer_name(catalog_id, _layer_display_name(catalog_id))
+        # requested 是紧凑写法（20251215），直接拼进正文会变成「取不到20251215的平均值」
+        _day = str(requested or "").strip()
+        if len(_day) == 8 and _day.isdigit():
+            _day = f"{_day[:4]}-{_day[4:6]}-{_day[6:]}"
+        _day_desc = f"{_day} 的" if _day else "你要的这天的"
         return {
             "ok": False,
             "catalog_id": catalog_id,
-            "display_name": _qualified_layer_name(
-                catalog_id, _layer_display_name(catalog_id)
-            ),
+            "display_name": disp,
             "requested_time": requested,
-            "error": f"该图层的源文件是 {reader} 格式（非 GeoTIFF），暂不支持整层统计；"
-            "请改用已物化为栅格的 imported-* 图层。",
+            # error 是给模型的操作指令，不直接给用户看：2026-11-07 实测模型会把它
+            # 原样抄进正文，用户收到「该图层的源文件是 mat 格式（非 GeoTIFF），
+            # 请改用已物化为栅格的 imported-* 图层」——纯内部黑话，等于没回答。
+            "error": f"「{disp}」这一层目前算不出数值：它在本地是原始 {reader} 产品，"
+            "还没转成可统计的栅格。请只回答两件事，不要给任何数字："
+            "① 这一层现在取不到平均值，原因是还没有可统计的栅格；"
+            "② 两条出路——换页面上已经出图、能统计的图层，或者先把它转成标准栅格再算。"
+            "正文里不要出现 mat/GeoTIFF/imported-* 这类内部说法。",
+            # 模型没吐正文时兜底直接用这段，保证用户看到的永远是人话
+            "user_facing": (
+                f"「{disp}」这一层我暂时算不出数值。它现在的原始数据格式不是"
+                "常用的栅格格式，图上能显示，但还没转成可统计的栅格，所以取不到"
+                f"{_day_desc}平均值。\n\n两条路：\n"
+                "① 换成页面上已经出图、能统计的图层，我马上按你的区域和日期算；\n"
+                "② 先把它转成标准栅格（跑一次处理流程），再回来统计。"
+            ),
         }
 
     spec_time = requested or getattr(spec, "default_time", None)
