@@ -350,11 +350,57 @@ def _parse_date_arg(message: str) -> str | None:
             r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?", message or ""
         )
     if not m:
+        # 2026-11-08 补：`20251113` 这种紧凑写法原来完全认不出——用户写「20251113
+        # 那天多少」，解析返回 None，于是**悄悄沿用上一轮的日期**去取数，还把那个
+        # 日期写成「你请求的日期」。日期认不出必须能认不出得**有话说**，
+        # 见 `_invalid_date_hint`。
+        m = re.search(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)", message or "")
+    if not m:
         return None
     year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    if not (1900 <= year <= 2200 and 1 <= month <= 12 and 1 <= day <= 31):
+    # 2026-11-08 补：原来只校验 `1 <= day <= 31`，于是 `2025-11-31` / `2025-02-30`
+    # 都能过，被当成有效日期去取数（取不到就回一句「该区域无观测」，看着像数据问题）。
+    if not (1900 <= year <= 2200):
+        return None
+    try:
+        datetime.date(year, month, day)
+    except ValueError:
         return None
     return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+#: 「看起来像日期」的四种写法。只用来判断「用户给了日期但那天不存在」，
+#: 合法与否交给 ``datetime.date`` 定。
+_DATE_SHAPES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<!\d)((?:19|20)\d{2})-(\d{1,2})-(\d{1,2})(?!\d)"),
+    re.compile(r"(?<!\d)((?:19|20)\d{2})/(\d{1,2})/(\d{1,2})(?!\d)"),
+    re.compile(r"(?<!\d)((?:19|20)\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?"),
+    re.compile(r"(?<!\d)((?:19|20)\d{2})(\d{2})(\d{2})(?!\d)"),
+)
+
+
+def _invalid_date_hint(message: str) -> str | None:
+    """句子里给了日期、但那一天不存在 ⇒ 返回原样片段，否则 ``None``。
+
+    2026-11-08 实测：连着问过广州市 11-09~11-16 之后，用户改口问
+    「20251301 那天广州市土壤水分多少」，系统把 13 月当成「没给日期」，
+    直接拿上一轮的 11-16 去取数，回了一句「你请求的日期是 2025-11-16，
+    实际取的是 11-09 至 11-16 这个块」——**把系统自己补的日期说成用户请求的**。
+    数值本身来自真实栅格，但归属是假的，比算错更难发现。
+
+    所以：日期写得不对就当场说不对，一条数都不出。
+    """
+    text = message or ""
+    for pattern in _DATE_SHAPES:
+        for m in pattern.finditer(text):
+            year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if not (1900 <= year <= 2200):
+                return m.group(0)
+            try:
+                datetime.date(year, month, day)
+            except ValueError:
+                return m.group(0)
+    return None
 
 
 def _timeline_data_range(
@@ -699,7 +745,18 @@ _SOURCE_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
 #: 「平均值是多少」都会被当成点了「平均版」那一层（回溯测试当场踩到）。
 _FORM_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"动态|逐日|每天|日尺度", re.I), "动态"),
-    (re.compile(r"平均(?!值)|月均|季均|气候态|多年", re.I), "平均"),
+    #: 2026-11-08 补：不只「平均值」。实测「这几天**平均多少**」被这句的
+    #: 「平均」判成点了「平均版」那一层 ⇒ 与页面上的动态版互相矛盾 ⇒
+    #: `_contradicts_hints` 认为页面没有他要的层 ⇒ 丢掉页面这层、改写成一堆
+    #: 候选反问（用户看着就是「明明页面上就开着，还问我要哪一版」）。
+    #: 「平均」后面跟的是**统计谓语**（多少/是多少/为/一下/的/数/量）时，
+    #: 它问的是「算个平均值」，不是「要平均版产品」。
+    (
+        re.compile(
+            r"平均(?!值|多少|是|为|约|大概|下|一|的|数|量)|月均|季均|气候态|多年", re.I
+        ),
+        "平均",
+    ),
 )
 
 

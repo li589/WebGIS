@@ -2915,6 +2915,49 @@ def _run_chat_impl(
     )
     client_context = sanitize_client_context(client_context)
 
+    # 2026-11-08 实测：用户问「20251301 那天广州市土壤水分多少」，13 月被当成
+    # 「这句话没给日期」，于是拿会话上一轮的 11-16 去取数，正文还写「你请求的日期
+    # 是 2025-11-16」——把系统补的日期说成用户请求的日期。数值有出处，归属是假的。
+    # 日期写错就当场说错，一条数都不出，也不动会话状态。
+    from app.services.agent.mock_orchestrator import _invalid_date_hint
+
+    bad_date = _invalid_date_hint(message)
+    if bad_date:
+        reply = (
+            f"「{bad_date}」不是一个有效日期，这次没有取数。\n\n"
+            "请给一个真实存在的日子（如 2025-11-13，或紧凑写法 20251113）；"
+            "要查一段时间就写成「2025-11-09 到 2025-11-16」。"
+        )
+        steps.append(
+            {"type": "thought", "summary": "日期校验未通过", "detail": bad_date}
+        )
+        usage = {
+            "prompt_tokens": estimate_tokens(message),
+            "completion_tokens": estimate_tokens(reply),
+            "total_tokens": 0,
+            "estimated": True,
+        }
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        append_turn(
+            user_id=user_id,
+            session_id=sid,
+            user_message=_compress_history_user(message),
+            assistant_message=reply,
+            state=topic_state,
+        )
+        out = {
+            "session_id": sid,
+            "reply": reply,
+            "ui_intents": [],
+            "provider": f"{protocol}-guard",
+            "profile_id": profile_id,
+            "usage": usage,
+            "steps": list(steps),
+            "confirmations": [],
+        }
+        _emit_stream_tail(on_event, reply=reply, ui_intents=[])
+        return out
+
     if protocol == "demo":
         steps.append(
             {
