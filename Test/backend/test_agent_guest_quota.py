@@ -80,3 +80,50 @@ def test_visitor_id_is_hashed_not_stored_raw(isolated):
     raw = "visitor-should-not-leak"
     key = rl._guest_quota_key(raw, "10.0.0.7")
     assert raw not in key
+
+
+class _FakeRequest:
+    """只带 cookies 的最小请求替身（has_valid_session 只用到这一项）。"""
+
+    def __init__(self, cookies: dict[str, str]) -> None:
+        self.cookies = cookies
+
+
+@pytest.fixture()
+def session_cookie_name():
+    from app.core.config import settings
+
+    return settings.session_cookie_name
+
+
+def test_no_cookie_is_not_a_session(session_cookie_name):
+    assert rl.has_valid_session(_FakeRequest({})) is False
+
+
+def test_bogus_cookie_is_not_a_session(session_cookie_name, monkeypatch):
+    """随便塞一个 cgda_session=fake 不能算已登录，否则额度直接被绕过。"""
+    monkeypatch.setattr(
+        "app.services.session_service.get_session", lambda token: None
+    )
+    req = _FakeRequest({session_cookie_name: "totally-fake-token"})
+    assert rl.has_valid_session(req) is False
+
+
+def test_real_session_is_recognised(session_cookie_name, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.session_service.get_session",
+        lambda token: {"user_id": 1} if token == "good" else None,
+    )
+    req = _FakeRequest({session_cookie_name: "good"})
+    assert rl.has_valid_session(req) is True
+
+
+def test_session_lookup_error_falls_back_to_guest(session_cookie_name, monkeypatch):
+    """会话存储故障时按游客处理（fail-closed），宁可多限不漏限。"""
+
+    def boom(token):  # noqa: ANN001, ARG001
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("app.services.session_service.get_session", boom)
+    req = _FakeRequest({session_cookie_name: "whatever"})
+    assert rl.has_valid_session(req) is False

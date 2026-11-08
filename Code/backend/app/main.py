@@ -276,6 +276,7 @@ def create_app() -> FastAPI:
             check_weather_tile_rate_limit,
             check_write_rate_limit,
             client_ip,
+            has_valid_session,
             rate_limited_response,
             should_rate_limit_agent_chat,
             should_rate_limit_agent_models_refresh,
@@ -349,14 +350,10 @@ def create_app() -> FastAPI:
         # 线上实际跑的是 BACKEND_ENV=development，把这条放进上面那个 if 里
         # 等于永不生效，所以这里不受环境开关影响，只由额度值本身控制
         # （BACKEND_AGENT_GUEST_DAILY_QUOTA<=0 即关闭）。
-        # 判定「不是游客」只看有没有会话 Cookie：伪造 Cookie 会在路由鉴权处
-        # 直接 401，拿不到任何回答，绕不过去。
+        # 「已登录」必须校验会话本身，不能只看 Cookie 存在——否则随便塞一个
+        # 假 Cookie 就跳过了额度。
         if should_rate_limit_agent_chat(path, method):
-            has_session = bool(
-                request.cookies.get(settings.session_cookie_name)
-                or request.cookies.get(settings.session_cookie_name + "_s")
-            )
-            if not has_session:
+            if not has_valid_session(request):
                 visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
                 guest = check_agent_guest_daily_quota(
                     visitor_id or None, client_ip(request)

@@ -521,6 +521,79 @@ def agent_delete_session(
     return {"ok": True, "session_id": session_id}
 
 
+class AgentQuotaResponse(BaseModel):
+    """助手日额度（供输入框上方的额度条展示）。"""
+
+    scope: Literal["account", "guest"]
+    limit: int = Field(description="当日上限；0 表示不限")
+    used: int = Field(description="今日已用次数")
+    remaining: int = Field(description="剩余次数；不限时为 -1")
+    percent: int = Field(description="剩余百分比 0~100；不限时为 100")
+    reset_at: str = Field(description="额度恢复时刻（北京时间次日 0 点）")
+    blocked: bool = Field(description="今日是否已用尽")
+    message: str | None = Field(default=None, description="给用户看的一句话")
+
+
+@router.get("/quota", response_model=AgentQuotaResponse)
+def agent_quota(request: Request) -> AgentQuotaResponse:
+    """查询当前请求者还剩多少助手额度（只读，不消耗额度）。
+
+    登录账号不占用访客额度；未登录按「访客号（缺省退回 IP）」统计，
+    口径与中间件里的实际拦截完全同源，避免「显示还有剩余却被拦」。
+    """
+    from app.api.rate_limit import (
+        beijing_quota_reset_at,
+        client_ip,
+        has_valid_session,
+        peek_agent_guest_daily_quota,
+    )
+
+    reset_at = beijing_quota_reset_at()
+    if has_valid_session(request):
+        return AgentQuotaResponse(
+            scope="account",
+            limit=0,
+            used=0,
+            remaining=-1,
+            percent=100,
+            reset_at=reset_at,
+            blocked=False,
+            message="已登录，不占用访客额度。",
+        )
+
+    visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
+    used, limit = peek_agent_guest_daily_quota(visitor_id or None, client_ip(request))
+    if limit <= 0:
+        return AgentQuotaResponse(
+            scope="guest",
+            limit=0,
+            used=0,
+            remaining=-1,
+            percent=100,
+            reset_at=reset_at,
+            blocked=False,
+            message=None,
+        )
+
+    remaining = max(0, limit - used)
+    percent = max(0, min(100, int(round(remaining / limit * 100))))
+    blocked = remaining <= 0
+    return AgentQuotaResponse(
+        scope="guest",
+        limit=limit,
+        used=used,
+        remaining=remaining,
+        percent=percent,
+        reset_at=reset_at,
+        blocked=blocked,
+        message=(
+            "未登录状态下 AI 助手今天的额度已用完，北京时间 0 点恢复；登录后可继续使用。"
+            if blocked
+            else None
+        ),
+    )
+
+
 @router.post("/chat", response_model=AgentChatResponse)
 def agent_chat(
     payload: AgentChatRequest,

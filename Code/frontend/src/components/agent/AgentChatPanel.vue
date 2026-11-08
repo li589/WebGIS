@@ -16,6 +16,7 @@ import {
   confirmAgentAction,
   deleteAgentSession,
   fetchAgentConfig,
+  getAgentQuota,
   getAgentSession,
   listAgentSessions,
   postAgentChat,
@@ -23,10 +24,12 @@ import {
   type AgentChatResponse,
   type AgentConfirmation,
   type AgentProfile,
+  type AgentQuota,
   type AgentSessionSummary,
   type AgentStep,
   type AgentUiIntent,
 } from '../../services/agent-api'
+import AgentQuotaBar from './AgentQuotaBar.vue'
 import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import { useUiStore } from '../../stores/ui'
@@ -167,6 +170,10 @@ const liveStatus = ref('')
 const stepsOpen = ref(false)
 const sendStartedAt = ref(0)
 const sessionMenuOpen = ref(false)
+/** 今日额度（游客按浏览器计数，登录账号不占额度）——见 AgentQuotaBar。 */
+const quota = ref<AgentQuota | null>(null)
+const quotaLoading = ref(false)
+const quotaBlocked = computed(() => quota.value?.blocked === true)
 const sessionSummaries = ref<AgentSessionSummary[]>([])
 const sessionsLoading = ref(false)
 let tickTimer: ReturnType<typeof setInterval> | null = null
@@ -1121,9 +1128,34 @@ function synthesizeReplyFromSteps(steps: ChatMessage['steps']): string | null {
   return null
 }
 
+/**
+ * 拉取今日额度（`GET /agent/quota`，只读、不消耗次数）。
+ *
+ * 失败时静默保留上一次的值：额度只是辅助信息，不能因为它弹错误打断对话。
+ */
+async function refreshQuota(): Promise<void> {
+  quotaLoading.value = true
+  try {
+    quota.value = await getAgentQuota()
+  } catch {
+    /* 静默：额度请求失败不影响正常提问 */
+  } finally {
+    quotaLoading.value = false
+  }
+}
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) void refreshQuota()
+  },
+  { immediate: true },
+)
+
 async function send() {
   const text = input.value.trim()
   if (!text || sending.value) return
+  if (quotaBlocked.value) return
   input.value = ''
   void nextTick(() => autosizeInput())
   errorText.value = null
@@ -1291,6 +1323,8 @@ async function send() {
     stepsOpen.value = false
     stopSendTick()
     void scrollToBottom()
+    // 每轮结束后刷新额度：用尽时输入区会立刻变成「已用完」态
+    void refreshQuota()
   }
 }
 
@@ -1592,6 +1626,7 @@ function onKeydown(ev: KeyboardEvent) {
       </div>
 
       <footer class="agent-chat-footer">
+        <AgentQuotaBar :quota="quota" :loading="quotaLoading" />
         <div class="agent-chat-context" aria-live="polite">
           <span v-if="mapPointLabel" class="agent-chat-chip" title="地图选点将随对话一并发送">
             选点 {{ mapPointLabel }}
@@ -1635,10 +1670,11 @@ function onKeydown(ev: KeyboardEvent) {
           v-else
           type="button"
           class="agent-chat-send"
-          :disabled="!input.trim()"
+          :disabled="!input.trim() || quotaBlocked"
+          :title="quotaBlocked ? quota?.message || '今日额度已用完' : undefined"
           @click="send"
         >
-          发送
+          发送给 AI
         </button>
       </footer>
       <button

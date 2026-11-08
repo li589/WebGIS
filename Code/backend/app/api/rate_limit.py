@@ -429,6 +429,65 @@ def check_agent_guest_daily_quota(visitor_id: str | None, ip: str) -> RateLimitR
     return RateLimitResult(True, 0)
 
 
+def has_valid_session(request) -> bool:  # type: ignore[no-untyped-def]
+    """请求是否带着**有效**的登录会话。
+
+    只看 Cookie 存不存在是不够的：随手塞一个 `cgda_session=fake` 就能骗过
+    「已登录」判定，从而完全跳过游客额度。
+
+    也不用 ``resolve_credential``：它在 development 下会走 dev_bypass，把所有
+    请求当成 standard 已登录——线上就跑在 development，用它等于额度永不生效。
+
+    这里直接校验会话本身（Redis 缓存优先，未命中才落库）；校验异常时按游客
+    处理，宁可多限一次也不漏限。
+    """
+    from app.core.config import settings
+    from app.services.session_service import get_session
+
+    token = request.cookies.get(settings.session_cookie_name)
+    if not token:
+        return False
+    try:
+        return get_session(token) is not None
+    except Exception as exc:  # noqa: BLE001 — fail-closed：当作游客
+        logger.warning("会话校验失败，按游客处理: %s", exc)
+        return False
+
+
+def beijing_quota_reset_at() -> str:
+    """下一次额度恢复时刻（北京次日 0 点，ISO 8601 带时区）。"""
+    now = datetime.now(UTC).astimezone(timezone(timedelta(hours=8)))
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return tomorrow.isoformat()
+
+
+def peek_agent_guest_daily_quota(visitor_id: str | None, ip: str) -> tuple[int, int]:
+    """只读查询游客当日已用次数，**不计数**（供额度条展示）。
+
+    返回 ``(已用, 上限)``；额度关闭时返回 ``(0, 0)``。
+    """
+    if _GUEST_QUOTA_LIMIT <= 0:
+        return 0, 0
+
+    key = _guest_quota_key(visitor_id, ip)
+
+    from app.core.redis_client import get_redis_client
+
+    client = get_redis_client()
+    if client is not None:
+        try:
+            raw = client.get(key)
+            used = int(raw) if raw else 0
+            return max(0, used), _GUEST_QUOTA_LIMIT
+        except Exception as exc:  # noqa: BLE001 — 降级读进程内计数
+            logger.warning("游客日额度查询降级为进程内: %s", exc)
+
+    with _guest_quota_memory_lock:
+        return _guest_quota_memory.get(key, 0), _GUEST_QUOTA_LIMIT
+
+
 def rate_limited_response(
     retry_after_seconds: int,
     *,

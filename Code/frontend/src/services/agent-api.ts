@@ -142,6 +142,35 @@ export interface AgentModelsRefreshResult {
   error?: string | null
 }
 
+/** 助手日额度（`GET /agent/quota`，只读，不消耗额度）。 */
+export interface AgentQuota {
+  /** account=已登录（不占访客额度）；guest=未登录访客。 */
+  scope: 'account' | 'guest'
+  /** 当日上限；0 表示不限。 */
+  limit: number
+  /** 今日已用次数。 */
+  used: number
+  /** 剩余次数；不限时为 -1。 */
+  remaining: number
+  /** 剩余百分比 0~100；不限时为 100。 */
+  percent: number
+  /** 恢复时刻（ISO 8601，北京时间次日 0 点）。 */
+  reset_at: string
+  /** 今日是否已用尽。 */
+  blocked: boolean
+  /** 用尽时的原因文案（直接展示给用户）。 */
+  message?: string | null
+}
+
+/**
+ * 查询今日助手额度。
+ *
+ * `silent`：拉额度是背景请求，不触发全局 loading，避免每次发完消息闪一下。
+ */
+export function getAgentQuota(): Promise<AgentQuota> {
+  return requestJson<AgentQuota>('/agent/quota', { silent: true })
+}
+
 export function postAgentChat(
   body: AgentChatRequest,
   init?: { signal?: AbortSignal },
