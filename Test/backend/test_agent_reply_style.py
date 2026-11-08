@@ -1149,3 +1149,97 @@ class TestGuardUnclaimedViewIntent:
             {"reply": "已把「SMAP 动态散射约束产品 · 土壤水分」从图层面板移除。", "ui_intents": []},
         )
         assert "没能把操作下发" in out["reply"]
+
+
+class TestRangeStatisticsGate:
+    """2026-11-08 r70：一句「这几天平均多少」被时间结构规则误判，编造的数字漏出去。
+
+    实测那一轮 `tool_calls=0`，正文却写着「平均土壤水分是 0.1097」和 8 个逐日值，
+    而且 0.1130/71、0.1140/72 这些数**磁盘上任何一个 tif 都对不上**（真值 0.0643/28）。
+    """
+
+    def test_these_days_is_a_statistics_request(self) -> None:
+        """「这几天」是日期区间，不是「补了几天」这种时间清单提问。"""
+        from app.services.agent.orchestrator import _wants_statistics
+
+        assert _wants_statistics("11 月 9 日到 16 日这几天平均下来是多少") is True
+        assert _wants_statistics("这几天平均下来是多少") is True
+
+    def test_time_structure_questions_still_excluded(self) -> None:
+        from app.services.agent.orchestrator import _wants_statistics
+
+        assert _wants_statistics("这一层一共补了几天") is False
+        assert _wants_statistics("这一层有多少天") is False
+        assert _wants_statistics("这一层有几个时间片") is False
+
+    def test_stat_value_with_variable_between_is_recognised(self) -> None:
+        """「平均土壤水分：0.064」这种最常见写法，旧正则一个数都收不上来。"""
+        from app.services.agent.orchestrator import _stat_values
+
+        assert _stat_values("平均土壤水分：0.064 m³/m³") == {0.064}
+        assert _stat_values("平均土壤水分是 **0.1097** m³/m³") == {0.1097}
+
+    def test_threshold_write_is_not_a_stat_value(self) -> None:
+        from app.services.agent.orchestrator import _stat_values
+
+        assert _stat_values("已把量程最小值改成 0.1") == set()
+
+    def test_numbers_without_tool_calls_are_replaced(self) -> None:
+        """零取数 + 正文带统计量名的数 ⇒ 必须被换掉，哪怕这句话不含统计关键词。"""
+        from app.services.agent.orchestrator import (
+            _MISSING_HISTORY_REPLY,
+            _UNGROUNDED_REPLY,
+            _statistics_fallback_reply,
+        )
+
+        fake = "按广州市统计，平均土壤水分是 **0.1097** m³/m³，有效像元 284 个。"
+        out, _ = _statistics_fallback_reply(
+            "11 月 9 日到 16 日这几天平均下来是多少",
+            fake,
+            [],
+            "sid-range-1",
+            None,
+            state={"region": "广州市"},
+            history_state={"region": "广州市"},
+        )
+        assert out != fake
+        # 测试环境把数据根指到空目录，规则引擎取不到数 ⇒ 只能给一句如实的「没取到」，
+        # 但无论如何都不能把编造的数字原样放出去。
+        assert out in (_UNGROUNDED_REPLY, _MISSING_HISTORY_REPLY) or "0.1097" not in out
+
+
+class TestDateRangeParsing:
+    def test_month_day_range(self) -> None:
+        from app.services.agent.mock_orchestrator import _parse_date_range
+
+        assert _parse_date_range("11 月 9 日到 16 日的平均", "20251216") == (
+            "20251109",
+            "20251116",
+        )
+
+    def test_full_date_range(self) -> None:
+        from app.services.agent.mock_orchestrator import _parse_date_range
+
+        assert _parse_date_range("2025-11-09 至 2025-11-16", "") == (
+            "20251109",
+            "20251116",
+        )
+
+    def test_day_only_range_borrows_month(self) -> None:
+        from app.services.agent.mock_orchestrator import _parse_date_range
+
+        assert _parse_date_range("9 日到 16 日这几天", "2025-11-13") == (
+            "20251109",
+            "20251116",
+        )
+
+    def test_decimal_range_is_not_a_date_range(self) -> None:
+        """「0.1 到 0.2 之间」不能被当成日期。"""
+        from app.services.agent.mock_orchestrator import _parse_date_range
+
+        assert _parse_date_range("把量程调到 0.1 到 0.2 之间", "2025-11-13") is None
+
+    def test_single_day_is_not_a_range(self) -> None:
+        from app.services.agent.mock_orchestrator import _parse_date_range
+
+        assert _parse_date_range("11 月 13 日的值", "2025-11-13") is None

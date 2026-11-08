@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import datetime
 import re
 import uuid
 from typing import Any
@@ -1274,7 +1275,19 @@ def resolve_entities(
     elif (
         not region
         and prior.get("region")
-        and layer_from in ("state", "catalog")
+        and (
+            layer_from in ("state", "catalog")
+            # 页面上只有一层时 _resolve_layer 会直接把它认成「用户点名」
+            # （layer_from="message"）。若这一层就是上一轮那一层，用户的这一句
+            # 其实还是在问同一个对象 —— 层没变，区域也不该凭空变成整层
+            # （2026-11-08 r70：上一轮「广州市 11-13」，这一轮「这几天平均」算成整层）。
+            or (
+                layer_from == "message"
+                and isinstance(target, dict)
+                and str(prior.get("layer_id") or "")
+                == str(target.get("catalog_id") or "")
+            )
+        )
         and not _NO_REGION_RE.search(text)
     ):
         region = prior["region"]
@@ -1393,6 +1406,179 @@ def _extreme_hint(unit: str | None, res: dict[str, Any], text: str) -> str | Non
     return f"- {label}：{value:.4f}{tail}（这是范围内单个像元的值，不是时间上的峰值）"
 
 
+#: 「11 月 9 日到 16 日」「2025-11-09 至 2025-11-16」「9 日到 16 日」这类**日期区间**。
+#: 按从具体到笼统的顺序匹配：先认完整年月日，再认「X 月 Y 日到 Z 日」，最后认
+#: 省略月份的「Y 日到 Z 日」（月份从会话日期/页面日期借）。
+_DATE_RANGE_RES = (
+    re.compile(
+        r"(20\d{2})\s*[-/年]\s*(\d{1,2})\s*[-/月]\s*(\d{1,2})\s*日?\s*"
+        r"(?:到|至|~|—|－|-)\s*(?:20\d{2}\s*[-/年])?(?:(\d{1,2})\s*[-/月]\s*)?(\d{1,2})"
+    ),
+    re.compile(
+        r"(\d{1,2})\s*月\s*(\d{1,2})\s*日?\s*(?:到|至|~|—|－|-)\s*"
+        r"(?:(\d{1,2})\s*月\s*)?(\d{1,2})\s*日"
+    ),
+    # 这里必须有「日」收尾，否则「0.1 到 0.2 之间」也会被当成日期区间
+    re.compile(r"(\d{1,2})\s*日\s*(?:到|至|~|—|－|-)\s*(\d{1,2})\s*日"),
+)
+
+
+def _parse_date_range(text: str, fallback_day: str | None) -> tuple[str, str] | None:
+    """认出一句话里的日期区间，返回 (YYYYMMDD, YYYYMMDD)；认不出返回 None。
+
+    只认**同一个月内或跨月**的连续区间，跨度限制在 2~62 天：区间统计要逐日真取数，
+    一句「从 2020 到 2025 年」要是放过去，就会变成上千次栅格读取。
+    """
+    body = str(text or "")
+    fb = _compact_date(str(fallback_day or ""))
+    fb_year = int(fb[0:4]) if len(fb) == 8 and fb.isdigit() else None
+    fb_month = int(fb[4:6]) if len(fb) == 8 and fb.isdigit() else None
+    cands: list[tuple[int, int, int, int, int, int]] = []
+    m = _DATE_RANGE_RES[0].search(body)
+    if m:
+        y1, m1, d1, m2, d2 = m.groups()
+        y2 = int(y1)
+        cands.append((int(y1), int(m1), int(d1), y2, int(m2 or m1), int(d2)))
+    else:
+        m = _DATE_RANGE_RES[1].search(body)
+        if m and fb_year:
+            m1, d1, m2, d2 = m.groups()
+            cands.append((fb_year, int(m1), int(d1), fb_year, int(m2 or m1), int(d2)))
+        else:
+            m = _DATE_RANGE_RES[2].search(body)
+            if m and fb_year and fb_month:
+                d1, d2 = m.groups()
+                cands.append((fb_year, fb_month, int(d1), fb_year, fb_month, int(d2)))
+    for y1, m1, d1, y2, m2, d2 in cands:
+        try:
+            start = datetime.date(y1, m1, d1)
+            end = datetime.date(y2, m2, d2)
+        except ValueError:
+            return None
+        if end < start:
+            start, end = end, start
+        span = (end - start).days + 1
+        if not 2 <= span <= 62:
+            return None
+        return start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
+    return None
+
+
+def _range_statistics_reply(
+    *,
+    text: str,
+    target: dict[str, Any],
+    region: str | None,
+    days: list[str],
+    name: str,
+    sid: str,
+    intents: list[dict[str, Any]],
+    client_context: dict[str, Any] | None,
+    state: dict[str, str] | None,
+    entities: dict[str, Any],
+) -> dict[str, Any]:
+    """日期区间的只读统计：逐日真取数，再给一个口径写清楚的合并均值。
+
+    2026-11-08 r70 实测留下的坑：一次 ``get_layer_statistics`` 只能读一片栅格，
+    用户问「11 月 9 日到 16 日这几天平均多少」时，旧实现拿**第一天**算完就写成
+    「整层的只读统计」——把 11-09 的 0.1586 说成 8 天的答案，数字是真、口径是假。
+    模型的工具路径当时也各答各的（一句逐日列 8 个数、一句给「合并 0.1097」还编错）。
+    这里固定成一种口径：**按各天有效像元数加权**（不是把日均值再平均），
+    缺测日不计入，并把「几天有数、几天缺测、每天多少」一起交出去。
+    """
+    from app.services.agent.server_tools_runtime import _get_layer_statistics
+
+    catalog_id = str(target.get("overlay_layer_id") or target["catalog_id"])
+    rows: list[dict[str, Any]] = []
+    for day in days:
+        args: dict[str, Any] = {"catalog_id": catalog_id, "time": day}
+        if region:
+            args["region"] = region
+        res = _get_layer_statistics(
+            args,
+            cred=None,
+            client_context=client_context,
+            user_message=text,
+            topic_state=state,
+        )
+        rows.append(
+            {
+                "day": day,
+                "ok": bool(res.get("ok")),
+                "mean": res.get("mean"),
+                "min": res.get("min"),
+                "max": res.get("max"),
+                "pixels": int(res.get("valid_pixels") or 0),
+                "daily": bool(res.get("is_daily_frame")),
+                "actual": str(res.get("actual_time") or day),
+                "block": "_" in str(res.get("actual_time") or ""),
+            }
+        )
+
+    good = [r for r in rows if r["ok"] and r["pixels"] > 0]
+    scope_prefix = f"按「{region}」行政边界" if region else "整层"
+    span_text = f"{_readable_date(days[0])} 至 {_readable_date(days[-1])}"
+    topic_state = _entities_state_patch(entities)
+    if not good:
+        return {
+            "session_id": sid,
+            "reply": (
+                f"「{name}」{scope_prefix}在 {span_text} 这 {len(days)} 天里"
+                "**每天都没有有效像元**，因此给不出任何平均值。"
+                "这通常是上游这几天没有观测入库，换个日期区间或换成另一版本再试。"
+            ),
+            "ui_intents": intents,
+            "topic_state": topic_state,
+        }
+
+    total_px = sum(r["pixels"] for r in good)
+    combined = sum(float(r["mean"]) * r["pixels"] for r in good) / total_px
+    lows = [float(r["min"]) for r in good if r["min"] is not None]
+    highs = [float(r["max"]) for r in good if r["max"] is not None]
+    missing = [r for r in rows if r not in good]
+    blocky = [r for r in good if r["block"]]
+
+    lines = [
+        f"「{name}」{scope_prefix}，{span_text} 共 {len(days)} 天：",
+        "",
+        f"- 合并平均：**{combined:.4f}**（按每天的有效像元数加权，"
+        f"不是把 {len(good)} 个日均值再平均）",
+        f"- 有效像元合计：{total_px} 个；期间单像元最低 {min(lows):.4f}、最高 {max(highs):.4f}"
+        if lows and highs
+        else f"- 有效像元合计：{total_px} 个",
+        f"- 有观测 {len(good)} 天，缺测 {len(missing)} 天——缺测日**不计入**合并平均",
+        "",
+        "逐日：",
+    ]
+    for r in rows:
+        day_text = _readable_date(r["day"])
+        if not (r["ok"] and r["pixels"] > 0):
+            lines.append(f"- {day_text}：该区域没有有效观测")
+        else:
+            note = ""
+            if r["block"] and r["actual"] != r["day"]:
+                note = "（取到的是跨天合成块值）"
+            lines.append(
+                f"- {day_text}：{float(r['mean']):.4f}，有效像元 {r['pixels']} 个{note}"
+            )
+    if blocky:
+        lines.extend(
+            [
+                "",
+                f"说明：其中 {len(blocky)} 天在图层时间清单里没有单日帧，取到的是"
+                "覆盖这些日期的多日合成块，块内各天共用同一个值。",
+            ]
+        )
+    lines.append("")
+    lines.append("本次只读统计，未创建图层、未写入产物、未提交工作流。")
+    return {
+        "session_id": sid,
+        "reply": "\n".join(lines),
+        "ui_intents": intents,
+        "topic_state": topic_state,
+    }
+
+
 def _statistics_reply(
     text: str,
     layers: list[dict[str, Any]],
@@ -1428,9 +1614,16 @@ def _statistics_reply(
         # 「整层 / 2025-12-16」（时间轴当天）——同一次对话里口径突然变了，用户看到的
         # 数字跟前三句没法比。原因：区域沿用只认 layer_from in ("state","catalog")，
         # 而这里标的是 "resolved"，于是两样都掉了。
-        # 只在用户这句话带层线索（来源/形态词）时补：问「土壤水分平均值」这种
-        # 没说清是哪一层的，仍按原行为让 _resolve_entities 决定，不擅自扩大沿用范围。
-        if state and _has_layer_hints(text):
+        # 只在两种情况补：① 用户这句话带层线索（来源/形态词）；② **收窄出来的层
+        # 就是上一轮那一层**——层没变，口径就不该自己变。②是 2026-11-08 r70 实测
+        # 补的：上一轮「广州市 11-13」，这一轮「11 月 9 日到 16 日这几天平均下来是
+        # 多少」既不带层线索也不带区域，于是区域整个丢掉、算成整层，数字跟上一轮
+        # 没法比。问「土壤水分平均值」这种没说清是哪一层的，仍按原行为交给
+        # _resolve_entities 决定，不擅自扩大沿用范围。
+        _same_layer_as_before = bool(state) and str(state.get("layer_id") or "") == str(
+            picked.get("catalog_id") or ""
+        )
+        if state and (_has_layer_hints(text) or _same_layer_as_before):
             if not entities.get("region") and state.get("region"):
                 if not _NO_REGION_RE.search(text):
                     entities = {
@@ -1489,6 +1682,34 @@ def _statistics_reply(
     # 「广州市」「四川省」这类行政区名必须进 region，否则算出来的是全球均值，
     # 用户会当成该市的值（外部测试 2026-11-04 就是这么错答的）。
     region = entities.get("region")
+
+    # 日期区间（「11 月 9 日到 16 日」「9 日至 16 日」）走单独一条路：一片栅格只能
+    # 代表一个时间块，拿区间里第一天算完再写成「整层的只读统计」，数字是真的、
+    # 口径是假的（2026-11-08 r70 实测：问 8 天的平均，回了 11-09 的 0.1586）。
+    # 模型路径当时还各答各的（一处逐日列 8 个数、一处给「合并 0.1097」且编错），
+    # 所以这里把它钉成一种口径：逐日真取数 + 按有效像元加权合并。
+    _rng = _parse_date_range(text, str(day or ""))
+    if _rng:
+        _start = datetime.date(int(_rng[0][0:4]), int(_rng[0][4:6]), int(_rng[0][6:8]))
+        _end = datetime.date(int(_rng[1][0:4]), int(_rng[1][4:6]), int(_rng[1][6:8]))
+        _days: list[str] = []
+        _cur = _start
+        while _cur <= _end:
+            _days.append(_cur.strftime("%Y%m%d"))
+            _cur += datetime.timedelta(days=1)
+        return _range_statistics_reply(
+            text=text,
+            target=target,
+            region=region,
+            days=_days,
+            name=_display(target),
+            sid=sid,
+            intents=intents,
+            client_context=client_context,
+            state=state,
+            entities=entities,
+        )
+
     stat_args: dict[str, Any] = {
         # 2026-11-06：必须用页面那一层实际挂着的产物 id（imported-*）。
         # 目录层 id（method-*）在盘上没有同名目录，拿它统计只会得到
