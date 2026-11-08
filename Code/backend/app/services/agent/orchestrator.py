@@ -2503,6 +2503,48 @@ def _has_cross_round_region(text: str, facts: dict[str, Any]) -> bool:
     return not all(any(k in m for k in known) for m in mentioned)
 
 
+#: 「这一次没取到」的说法。只用于「明明取到了却谎报没有」这一类矛盾判定，
+#: 不参与数值校验——「该区域没有有效观测」「这一片整幅是空的」是另外的说法。
+_UNAVAILABLE_CLAIM_RE = re.compile(
+    r"没有取到|没取到|取不到|未取到|没有拿到|没拿到|"
+    r"取数没有命中|没有命中|没有算出|没算出|没有返回数值|没有返回结果|"
+    r"给不出数值|给不出数"
+)
+
+
+def _claims_unavailable_but_has_stats(
+    reply: str, stats_list: list[dict[str, Any]] | None
+) -> bool:
+    """正文说「这个变量这次没取到」，可本轮这个变量的统计明明成功了。
+
+    2026-11-08 r72 实测 3/3：产品粘性把植被光学厚度 / 等效散射 ω 的统计请求
+    改回了土壤水分，模型于是如实转述「另外两个变量这次没有取到」。粘性已修，
+    但这类**谎报没数据**比直接报错更难发现——用户会以为本机没有这一层，
+    转头去重跑几小时的工作流。所以再加一道：一次问多个变量时，只要某一组
+    的数明明在本轮工具返回里，却写成「取不到」，就按工具返回整段补齐。
+    """
+    text = str(reply or "")
+    if not text or not _UNAVAILABLE_CLAIM_RE.search(text):
+        return False
+    items = [
+        d
+        for d in (stats_list or [])
+        if isinstance(d, dict) and d.get("mean") is not None
+    ]
+    # 只有一份统计时不算矛盾：那多半是「这一片没有有效像元」「该区域没观测」，
+    # 由别的分支负责说清，不该在这里整段重写。
+    if len(items) < 2:
+        return False
+    for chunk in re.split(r"[。！？\n；;]", text):
+        if not _UNAVAILABLE_CLAIM_RE.search(chunk):
+            continue
+        for data in items:
+            name = str(data.get("display_name") or "").strip()
+            if name and name in chunk:
+                return True
+    return False
+
+
 def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, bool]:
     """正文里的数值必须是**本轮**工具返回过的那组，对不上就整段换掉。
 
@@ -2561,7 +2603,11 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     # 数值对得上还不够：正文可能把这一层说成另一颗卫星/另一个区域/另一天。
     # 只在报了数值时查（身份类问答会被误伤），带「上一轮/相比」的整句豁免。
     conflict = _fact_conflict(text, facts)
-    if numbers_ok and not conflict:
+    if (
+        numbers_ok
+        and not conflict
+        and not _claims_unavailable_but_has_stats(text, facts.get("stats_list"))
+    ):
         return reply, False
     # 多份统计全部带上：一次问多个变量时只重建最后一份，会把用户问的其余项吞掉
     rebuilt = _rebuild_stats_reply(

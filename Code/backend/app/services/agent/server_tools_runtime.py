@@ -1592,6 +1592,25 @@ _VARIABLE_MENTION_RE: dict[str, re.Pattern[str]] = {
 }
 
 
+#: 「这一族的三个变量分别是多少」「三个变量都给我」「各个变量的值」——用户要的是
+#: **整族每一个变量**，不是其中某一个。产品粘性在这里必须让路。
+#:
+#: 2026-11-08 r72 实测 3/3：页面上只挂土壤水分，问「这一族的三个变量分别是多少」，
+#: 模型老老实实按植被光学厚度 / 等效散射 ω 的 id 各调了一次统计，结果三次全被
+#: 粘性改回土壤水分（原话里没有出现「植被光学厚度」「VOD」这些词，_mentions_variable
+#: 判为「没点名换变量」）。正文只能答「另外两个变量这次没有取到」，而磁盘上
+#: VOD 0.2800、ω 0.0963 都是现成的。粘性本是防「模型自己换产品」，不该拦住
+#: 「一次要多个变量」这种正当请求。
+_ASKS_ALL_VARIABLES_RE = re.compile(
+    r"(?:三|两|几|各|每|每一个|多个|多|三种|两种)\s*个?\s*变量"
+    r"|各个变量|每个变量|所有变量|全部变量"
+    r"|这一?族|该族|产品族"
+    r"|分别(?:是多少|是|给|统计|列出|看看|算|报)"
+    r"|各自(?:是多少|的均值|多少|的值)?",
+    re.I,
+)
+
+
 def _mentions_variable(message: str, variable: str) -> bool:
     """用户原话里有没有点名这个变量（用于判定「他是不是真的要换变量」）。"""
     pattern = _VARIABLE_MENTION_RE.get(variable)
@@ -1672,6 +1691,10 @@ def _product_sticky_layer(
     """
     base = _baseline_layer_id(topic_state, client_context)
     if not base or not catalog_id:
+        return catalog_id, None
+    # 整族多变量请求（「三个变量分别是多少」「这一族各是多少」）直接放行：
+    # 它要的就是同族每一层各取一次，粘回上一轮那层等于少答两个变量。
+    if _ASKS_ALL_VARIABLES_RE.search(user_message or ""):
         return catalog_id, None
     base_id, base_fields = _identity_of(base, client_context)
     req_id, req_fields = _identity_of(catalog_id, client_context)

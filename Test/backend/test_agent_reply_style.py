@@ -1243,3 +1243,63 @@ class TestDateRangeParsing:
         from app.services.agent.mock_orchestrator import _parse_date_range
 
         assert _parse_date_range("11 月 13 日的值", "2025-11-13") is None
+
+
+class TestAllVariablesRequest:
+    """2026-11-08 r72：「这一族的三个变量分别是多少」被产品粘性拦成只答一个变量。
+
+    实测 3/3：模型按 VOD / ω 的 id 各调一次统计，全被粘性改回土壤水分，
+    正文只能答「另外两个变量这次没有取到」——磁盘上 0.2800 / 0.0963 都是现成的。
+    """
+
+    def test_multi_variable_phrasings_are_recognised(self) -> None:
+        from app.services.agent.server_tools_runtime import _ASKS_ALL_VARIABLES_RE
+
+        for text in (
+            "这一族的三个变量分别是多少",
+            "三个变量的值都给我",
+            "各个变量分别是多少",
+            "每个变量的均值",
+        ):
+            assert _ASKS_ALL_VARIABLES_RE.search(text), text
+
+    def test_switching_product_is_not_a_multi_variable_request(self) -> None:
+        from app.services.agent.server_tools_runtime import _ASKS_ALL_VARIABLES_RE
+
+        for text in (
+            "换成风云卫星的动态版看看",
+            "再换回平均版",
+            "河南省和广东省哪个更湿",
+            "平均值是多少",
+        ):
+            assert not _ASKS_ALL_VARIABLES_RE.search(text), text
+
+    def test_false_unavailable_claim_is_detected(self) -> None:
+        from app.services.agent.orchestrator import _claims_unavailable_but_has_stats
+
+        stats = [
+            {"display_name": "土壤水分", "mean": 0.153, "valid_pixels": 350259},
+            {"display_name": "植被光学厚度", "mean": 0.28, "valid_pixels": 350259},
+        ]
+        reply = "土壤水分是 0.153。植被光学厚度这次没有取到数值，不能凭印象给数。"
+        assert _claims_unavailable_but_has_stats(reply, stats) is True
+
+    def test_single_stat_never_counted_as_contradiction(self) -> None:
+        """只有一份统计时不算矛盾：那是「这一片没有有效像元」由别的分支说清。"""
+        from app.services.agent.orchestrator import _claims_unavailable_but_has_stats
+
+        stats = [{"display_name": "土壤水分", "mean": 0.153, "valid_pixels": 350259}]
+        assert (
+            _claims_unavailable_but_has_stats("土壤水分这次没有取到数值。", stats) is False
+        )
+
+    def test_region_empty_is_not_an_unavailable_claim(self) -> None:
+        """「该区域没有有效观测」是真话，不能当成谎报。"""
+        from app.services.agent.orchestrator import _claims_unavailable_but_has_stats
+
+        stats = [
+            {"display_name": "土壤水分", "mean": 0.153, "valid_pixels": 350259},
+            {"display_name": "植被光学厚度", "mean": 0.28, "valid_pixels": 350259},
+        ]
+        reply = "植被光学厚度在广州市范围内没有有效观测，同日整幅是有值的。"
+        assert _claims_unavailable_but_has_stats(reply, stats) is False
