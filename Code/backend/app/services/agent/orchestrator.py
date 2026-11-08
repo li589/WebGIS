@@ -1993,6 +1993,10 @@ def _wants_statistics(message: str) -> bool:
     return bool(_STATISTICS_WORDS.search(text))
 
 
+#: 「区间里挑一天」类提问：答案不是合并值，别被区间重算顶掉（2026-11-08 r75）。
+_RANGE_PICK_RE = re.compile(r"哪一天|哪天|哪日|最大|最小|最高|最低|极值")
+
+
 def _statistics_tool_called(steps: list[dict[str, Any]]) -> bool:
     """本轮是否真的调过取数类工具（统计 / 覆盖 / 元数据 / 点采样）。
 
@@ -2657,6 +2661,32 @@ def _grounded_statistics(text: str) -> bool:
     return any(k in text for k in ("均值", "有效像元", "有效栅格"))
 
 
+def _asks_date_range(
+    message: str, state: dict[str, str] | None, client_context: dict[str, Any] | None
+) -> bool:
+    """这句话里是不是一个 ≥2 天的日期区间。
+
+    判据与 ``mock_orchestrator._parse_date_range`` 同源（直接复用，避免两处漂移）：
+    区间要先有「月/日」才能认，所以「9 日到 16 日」这种说法需要一个基准日期，
+    依次取会话状态里的日期、页面时间轴日期。
+    """
+    try:
+        from app.services.agent.mock_orchestrator import _parse_date_range
+    except Exception:  # pragma: no cover - 极端情况下退回「不当区间看」
+        return False
+    day = ""
+    if isinstance(state, dict):
+        day = str(state.get("date") or "")
+    if not day and isinstance(client_context, dict):
+        timeline = client_context.get("timeline")
+        if isinstance(timeline, dict):
+            day = str(timeline.get("date") or "")
+    try:
+        return _parse_date_range(message or "", day) is not None
+    except Exception:  # pragma: no cover
+        return False
+
+
 #: 明确的「回指上文」措辞。这类词单独出现在**首轮**＝用户在引用不存在的历史。
 #:
 #: 只收毫不含糊的说法：「再说一遍/这个/那个」太宽（可能指当前选中的层），
@@ -2740,9 +2770,21 @@ def _statistics_fallback_reply(
             }
         )
         return _MISSING_HISTORY_REPLY, None
-    if _statistics_tool_called(list(steps)):
+    # 日期区间（≥2 天）先于「模型调过工具就放行」：多天合并是纯算术，模型算得出来，
+    # 但**口径不可控**。2026-11-08 r75 实测同一句话「11 月 9 日到 16 日这几天平均
+    # 下来是多少」——规则引擎按有效像元加权给 0.1000，模型自己把 4 个日均值简单
+    # 平均得 0.095，两条路两个数。同一天、同一区域、同一个问题给两个数，比算错
+    # 更难发现（用户只会记住其中一个）。所以区间一律由引擎算，模型调没调工具都一样。
+    # 例外：问的是「区间里哪一天最大/最小」这类**挑一天**的问题，答案不是合并值，
+    # 引擎那段「合并平均 + 逐日明细」答非所问，仍交给模型（它有逐日数）。
+    range_question = bool(
+        _wants_statistics(message)
+        and _asks_date_range(message, state, client_context)
+        and not _RANGE_PICK_RE.search(message or "")
+    )
+    if _statistics_tool_called(list(steps)) and not range_question:
         return reply, None
-    if not _wants_statistics(message):
+    if not range_question and not _wants_statistics(message):
         # 闸门之外的第二道（2026-11-08 r70-A3 实测）：那一轮 0 次工具调用，
         # 正文却写着「平均土壤水分是 0.1097」和 8 个逐日值。只要**正文里挂着
         # 统计量名的数**、而本轮一次数据工具都没调，这些数就必然来自历史或凭空
@@ -2772,10 +2814,21 @@ def _statistics_fallback_reply(
     topic_patch = dialogue_state.sanitize(patch) if patch else None
     text = str(fallback.get("reply") or "").strip()
     if text and _grounded_statistics(text):
+        # 区间问题要靠引擎那段「合并平均 / 逐日明细」才作数。引擎若因为认不出层、
+        # 或落到县区级说明而没走区间分支，就不拿它顶替模型原文（模型这一轮真调过
+        # 工具的话，它的数是 grounding 过的）。
+        if range_question and "合并平均" not in text:
+            if _statistics_tool_called(list(steps)):
+                return reply, None
+            return (_UNGROUNDED_REPLY if _looks_numeric(reply) else reply), None
         steps.append(
             {
                 "type": "tool_result",
-                "summary": "服务端强制取数（模型本轮未调用任何数据工具）",
+                "summary": (
+                    "服务端重算日期区间合并（口径固定为按有效像元加权）"
+                    if range_question
+                    else "服务端强制取数（模型本轮未调用任何数据工具）"
+                ),
                 "detail": text[:800],
             }
         )

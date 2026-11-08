@@ -1356,3 +1356,72 @@ class TestCountyLevelRegion:
         assert "地级市" in reply
         assert "天河区" in reply
         assert "0.15" not in reply
+
+
+class TestDateRangeAlwaysEngine:
+    """2026-11-08 r75：同一句区间提问，模型与引擎给出两个不同的合并值。
+
+    实测「11 月 9 日到 16 日这几天平均下来是多少」（广州市）：规则引擎按有效像元
+    加权给 **0.1000**，模型自己把 4 个日均值简单平均得 **0.095**。哪条路生效取决
+    于模型这一轮有没有调工具 —— 同一天同一区域问同一个问题给两个数，用户只会记住
+    其中一个。多天合并是纯算术，口径必须唯一，所以区间一律由引擎算。
+    """
+
+    def test_asks_date_range(self) -> None:
+        from app.services.agent.orchestrator import _asks_date_range
+
+        ctx = {"timeline": {"date": "2025-11-13"}}
+        assert _asks_date_range("11 月 9 日到 16 日这几天平均下来是多少", {}, ctx) is True
+        # 只给日子时借会话日期里的月份
+        assert _asks_date_range("9 日到 16 日平均多少", {"date": "2025-11-13"}, None) is True
+        # 单日、量程调整都不是区间
+        assert _asks_date_range("11 月 13 日的值", {}, ctx) is False
+        assert _asks_date_range("把量程调到 0.1 到 0.2 之间", {}, ctx) is False
+
+    def test_range_question_wins_over_model_tool_calls(self, monkeypatch) -> None:
+        """模型调过工具也要被引擎重算——这是本条修复的全部意义。"""
+        from app.services.agent import mock_orchestrator as M
+        from app.services.agent.orchestrator import _statistics_fallback_reply
+
+        canned = (
+            "「SMAP 平均散射约束产品 · 土壤水分」按「广州市」行政边界，2025-11-09 至"
+            " 2025-11-16 共 8 天：\n- 合并平均：**0.1000**（按每天的有效像元数加权）"
+        )
+        monkeypatch.setattr(M, "forced_statistics_reply", lambda *a, **k: {"reply": canned})
+        steps = [
+            {"type": "tool", "summary": f"get_layer_statistics(day={i})"} for i in range(8)
+        ]
+        model_reply = "如果只按有观测的 4 天简单平均，结果是 **0.095**。"
+        out, _ = _statistics_fallback_reply(
+            "11 月 9 日到 16 日这几天平均下来是多少",
+            model_reply,
+            steps,
+            "t-range",
+            {"timeline": {"date": "2025-11-13"}},
+            state={"region": "广州市", "date": "2025-11-13"},
+            history_state={"region": "广州市"},
+        )
+        assert "合并平均" in out
+        assert "0.1000" in out
+        assert "0.095" not in out
+
+    def test_non_range_question_still_respects_model(self, monkeypatch) -> None:
+        """非区间问题不许因为这条改动被引擎顶掉。"""
+        from app.services.agent import mock_orchestrator as M
+        from app.services.agent.orchestrator import _statistics_fallback_reply
+
+        def _boom(*a, **k):
+            raise AssertionError("非区间问题不应调用规则引擎")
+
+        monkeypatch.setattr(M, "forced_statistics_reply", _boom)
+        reply = "平均 0.064 m³/m³，有效像元 28 个。"
+        out, _ = _statistics_fallback_reply(
+            "广州市 11 月 13 日的土壤水分平均值",
+            reply,
+            [{"type": "tool", "summary": "get_layer_statistics"}],
+            "t-norange",
+            {"timeline": {"date": "2025-11-13"}},
+            state={"region": "广州市"},
+            history_state={"region": "广州市"},
+        )
+        assert out == reply
