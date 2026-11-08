@@ -1518,3 +1518,59 @@ class TestDateArgValidation:
         )
         assert out.get("ok") is False
         assert "不是一个有效日期" in str(out.get("error"))
+
+
+class TestCoverageResolvedConsistency:
+    """2026-11-08 r80：覆盖工具同一个返回里对「命中哪一片」给了两套说法。
+
+    实测（SMAP 平均版，请求 20251113）：
+      顶层   actual_time=20251113、is_daily_frame=true、hit_source=ondemand_frame
+      resolved.actual_time=20251109_20251116、reason=「本地没有 20251113 的独立
+             逐日帧，落在时间块 20251109_20251116 内」
+    模型引用哪句都不算错，于是同一层同一句可能被答成「当天独立观测」，也可能被答成
+    「跨天合成值」——这正是外部报告第 2 条要修的那个问题，只在顶层修了一半。
+    """
+
+    def _patch(self, monkeypatch, *, local_keys, hit):
+        from app.services.agent import server_tools_runtime as R
+
+        class _FakeSpec:
+            def resolve_time_key(self, t, prefer_finest=False):
+                return hit
+
+        monkeypatch.setattr(
+            "app.services.overlay_registry.get_overlay_spec", lambda cid: _FakeSpec()
+        )
+        monkeypatch.setattr(R, "_local_time_keys", lambda cid: local_keys)
+        monkeypatch.setattr(R, "_temporal_shape_fields", lambda *a, **k: {})
+        monkeypatch.setattr(R, "_layer_identity_fields", lambda *a, **k: {})
+        monkeypatch.setattr(R, "_qualified_layer_name", lambda *a, **k: "测试层")
+        return R
+
+    def test_ondemand_frame_rewrites_resolved(self, monkeypatch) -> None:
+        R = self._patch(
+            monkeypatch, local_keys=["20251109_20251116"], hit="20251113"
+        )
+        out = R._get_layer_coverage(
+            {"catalog_id": "imported-136c60293bbf", "time": "20251113"},
+            cred=None,
+            client_context=None,
+        )
+        assert out.get("ok") is True
+        assert out["hit_source"] == "ondemand_frame"
+        assert out["resolved"]["actual_time"] == out["actual_time"] == "20251113"
+        assert "按需补出" in out["resolved"]["reason"]
+
+    def test_block_hit_keeps_block_wording(self, monkeypatch) -> None:
+        """命中块时，resolved 仍要说「落在块内、相邻日期同值」。"""
+        R = self._patch(
+            monkeypatch, local_keys=["20251109_20251116"], hit="20251109_20251116"
+        )
+        out = R._get_layer_coverage(
+            {"catalog_id": "imported-136c60293bbf", "time": "20251113"},
+            cred=None,
+            client_context=None,
+        )
+        assert out["hit_source"] == "block"
+        assert out["resolved"]["actual_time"] == "20251109_20251116"
+        assert "落在时间块" in out["resolved"]["reason"]

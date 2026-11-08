@@ -3024,6 +3024,23 @@ def _get_layer_coverage(
     if not hit_key:
         hit_key = resolved.get("actual_time")
         hit_source = "block" if hit_key else "none"
+    # 按需补出的单日帧不在 time_list 里，而 _resolve_coverage 只看 local_dates ⇒
+    # 它会写「本地没有这一天的独立逐日帧，落在时间块 X 内，取的是这一块的值」。
+    # 这与上面那条「顶层 actual_time 是权威命中」直接打架：2026-11-08 实测
+    # 20251113，同一个返回里 resolved.actual_time=20251109_20251116（块）、
+    # 顶层 actual_time=20251113、is_daily_frame=true —— 模型引用哪句都不算错，
+    # 于是同一层同一句可能被答成「当天独立观测」也可能被答成「跨天合成值」。
+    # 权威命中是单日帧时，把 resolved 一并改写成同一口径。
+    if hit_source == "ondemand_frame" and hit_key:
+        resolved = {
+            "status": "available",
+            "channel": "local",
+            "actual_time": hit_key,
+            "reason": (
+                f"本地有 {hit_key} 这一天的按需补出单日帧（NAS 单日反演），"
+                "取到的是当天独立观测，不是跨天合成块"
+            ),
+        }
     # 时间事实与元数据/统计同源（报告 优先2「共用解析逻辑」）：
     # period_* 描述「这次实际命中的那一片」，is_single_block/span 描述「整层只有几片」。
     facts = _temporal_facts(local_dates)
