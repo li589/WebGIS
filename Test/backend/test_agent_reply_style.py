@@ -1452,3 +1452,69 @@ class TestLlmDownReplyBilling:
 
         out = _llm_down_reply("存储端登录接口返回 HTTP 530")
         assert "取数服务暂时不可用" in out
+
+
+class TestDateArgValidation:
+    """2026-11-08 r79：非法日期被静默当成「有效日期」，回的是另一天的数。
+
+    实测（SMAP 平均版）：
+      time='abc'      → 落到图层默认帧 20260102，给出 0.1509（用户问的那天根本不存在）
+      time='2025111'  → 同上
+      time='20251301' → 13 月，被字符串区间比较判成落在 20251203_20260201 块内，
+                        回了一整块季均的 0.1665
+    这三条正文里都看不出异常，是「数字看着正常、口径全错」的那类。
+    """
+
+    def test_valid_formats_still_work(self) -> None:
+        from app.services.agent.server_tools_runtime import _parse_date8
+
+        assert _parse_date8("20251113") == "20251113"
+        assert _parse_date8("2025-11-13") == "20251113"
+        assert _parse_date8("2025/11/13") == "20251113"
+        assert _parse_date8("2025-11-13T06:00:00") == "20251113"
+        # 年月 / 年：按既有约定取首日
+        assert _parse_date8("2025-11") == "20251101"
+        assert _parse_date8("2025") == "20250101"
+        # 块键原样返回（点名的整段不能被截成第一天）
+        assert _parse_date8("20251201_20260201") == "20251201_20260201"
+
+    def test_impossible_calendar_dates_rejected(self) -> None:
+        from app.services.agent.server_tools_runtime import _parse_date8
+
+        assert _parse_date8("20251301") is None  # 13 月
+        assert _parse_date8("2025-13-01") is None
+        assert _parse_date8("20250230") is None  # 2 月 30
+        assert _parse_date8("20251201_20251301") is None  # 块键端点非法
+
+    def test_garbage_and_short_values_rejected(self) -> None:
+        from app.services.agent.server_tools_runtime import _parse_date8
+
+        for text in ("abc", "2025111", "上周三", "", "  "):
+            assert _parse_date8(text) is None, text
+
+    def test_invalid_time_is_reported_not_silently_defaulted(self) -> None:
+        """统计工具拿到非法 time 必须报错，不许回落到图层默认帧。"""
+        from app.services.agent.server_tools_runtime import _get_layer_statistics
+
+        out = _get_layer_statistics(
+            {"catalog_id": "imported-136c60293bbf", "time": "abc"},
+            cred=None,
+            client_context=None,
+            user_message="",
+        )
+        assert out.get("ok") is False
+        assert "不是一个有效日期" in str(out.get("error"))
+        # 绝不能返回任何数值（回落到默认帧的旧行为会带 mean/valid_pixels 出来）
+        assert out.get("mean") is None and out.get("valid_pixels") is None
+
+    def test_point_sampling_rejects_invalid_time(self) -> None:
+        from app.services.agent.server_tools_runtime import _sample_layer_point
+
+        out = _sample_layer_point(
+            {"catalog_id": "imported-136c60293bbf", "lng": 113.7, "lat": 23.8, "time": "上周三"},
+            cred=None,
+            client_context=None,
+            user_message="",
+        )
+        assert out.get("ok") is False
+        assert "不是一个有效日期" in str(out.get("error"))

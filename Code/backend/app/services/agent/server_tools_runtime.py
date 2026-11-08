@@ -1392,6 +1392,16 @@ def _sample_layer_point(
     # 缺时间就取页面时间轴日期；页面没给才继续往默认帧退。
     if not time_key:
         time_key = _page_timeline_date(client_context)
+    # 同整层统计的规矩：给了时间却不是有效日期 ⇒ 报错，不许悄悄用默认帧顶替。
+    # 点查尤其不能含糊——用户点的是屏幕上这一帧，答成另一天的值等于骗人。
+    if time_key and _parse_date8(time_key) is None:
+        return {
+            "ok": False,
+            "error": (
+                f"「{time_key}」不是一个有效日期，这次没有采样。"
+                "请用 YYYY-MM-DD 或 YYYYMMDD。"
+            ),
+        }
 
     catalog_id = _normalize_layer_id(str(args.get("catalog_id") or ""))
     # 与整层统计同一条规矩：点名了就认点名（但没点名换产品时改回上一轮那层）；
@@ -2791,15 +2801,32 @@ def _parse_date8(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
+    from datetime import date as _date
+
+    def _valid(ymd: str) -> bool:
+        """是不是真实存在的日历日。"""
+        try:
+            _date(int(ymd[0:4]), int(ymd[4:6]), int(ymd[6:8]))
+        except (TypeError, ValueError):
+            return False
+        return True
+
     if re.fullmatch(r"\d{8}_\d{8}", text):
-        return text
+        # 两端都得是真日历日。2026-11-08 实测：``20251301``（13 月）能通过
+        # ``_assert_time_available`` 里的字符串区间比较 —— '20251203' <=
+        # '20251301' <= '20260201' 成立 —— 于是用户问一个不存在的日期，拿到的是
+        # 一整个 63 天季均块的均值，正文还写着「2025-12-03 至 2026-02-01」。
+        return text if (_valid(text[:8]) and _valid(text[9:])) else None
     digits = "".join(ch for ch in text if ch.isdigit())
     if len(digits) >= 8:
-        return digits[:8]
+        cand = digits[:8]
+        return cand if _valid(cand) else None
     if len(digits) == 6:  # 'YYYY-MM' → 当月第一天
-        return digits + "01"
+        cand = digits + "01"
+        return cand if _valid(cand) else None
     if len(digits) == 4:  # 'YYYY' → 当年第一天
-        return digits + "0101"
+        cand = digits + "0101"
+        return cand if _valid(cand) else None
     return None
 
 
@@ -3610,7 +3637,22 @@ def _get_layer_statistics(
         return {"ok": False, "error": f"无权访问图层: {catalog_id}"}
 
     # ② 时间：显式 → 页面日期 → 图层默认（后者必须标注，否则就是"日期对不上"的根因）
-    explicit_time = _parse_date8(args.get("time") or args.get("date"))
+    raw_time = args.get("time") or args.get("date")
+    explicit_time = _parse_date8(raw_time)
+    # 传了 time 却解析不出来 ⇒ 必须报错，不许当成「没给时间」。
+    # 2026-11-08 实测：time='abc' 和 time='2025111'（7 位）都解析成 None，
+    # 于是按「没给时间」落到图层默认帧 20260102，回了 0.1509 这个**另一天**的数，
+    # 正文还看不出任何异常。用户问哪天就答哪天，问不出就说不出来。
+    if raw_time not in (None, "") and not explicit_time:
+        return {
+            "ok": False,
+            "catalog_id": catalog_id,
+            "error": (
+                f"「{raw_time}」不是一个有效日期，这次没有取数。"
+                "请用 YYYY-MM-DD（如 2025-11-13）或 YYYYMMDD；"
+                "要整段合成块就写“起_止”两个日期（如 20251201_20260201）。"
+            ),
+        }
     page_date = _parse_date8(_page_timeline_date(client_context))
     requested = explicit_time or page_date
     if explicit_time:
