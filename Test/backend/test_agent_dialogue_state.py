@@ -292,6 +292,91 @@ def test_undecided_reply_lists_candidates_without_picking(monkeypatch):
     assert out["topic_state"].get("variable") == "sm"
 
 
+def test_named_version_narrows_by_page_source(monkeypatch):
+    """点名了口径（「换回平均版」）时按页面同源收窄，不再反问「用哪个」。
+
+    2026-11-08 实测 r69：动态版→平均版→动态版→「再换回平均版」，回了一句
+    「本机有 2 个「土壤水分」的版本…我不替你挑」。口径已经说死了，剩下的只有
+    来源分歧；页面是 SMAP、同源候选唯一 ⇒ 直接用它。跨来源才需要用户点头，
+    那是 _cross_source_guard 的职责，不是这里的反问。
+    """
+    from app.services.agent import mock_orchestrator
+
+    ctx = _ctx([OMEGA_LAYER])
+    cands = [
+        {
+            "catalog_id": "method-smap-season-mean",
+            "overlay_layer_id": "imported-136c60293bbf",
+            "name": "SMAP 平均散射约束产品 · 土壤水分",
+            "source": "smap",
+            "on_page": False,
+            "virtual": True,
+        },
+        {
+            "catalog_id": "method-fy-omega-doy-avg",
+            "overlay_layer_id": "imported-fyavg",
+            "name": "风云卫星 平均散射约束产品 · 土壤水分",
+            "source": "fy",
+            "on_page": False,
+            "virtual": True,
+        },
+    ]
+    monkeypatch.setattr(
+        mock_orchestrator, "_same_variable_candidates", lambda var, ls: cands
+    )
+    monkeypatch.setattr(mock_orchestrator, "_page_sources", lambda ls: {"smap"})
+    layer, reply = mock_orchestrator._undecided_statistics_reply(
+        text="再换回平均版",
+        entities={"variable": "sm", "why": "没定层", "region": "广州市"},
+        layers=ctx["active_layers"],
+        sid="sid",
+        intents=[],
+    )
+    assert reply is None, "同源候选唯一时不该再反问"
+    assert layer is not None
+    assert layer["name"] == "SMAP 平均散射约束产品 · 土壤水分"
+    assert layer["catalog_id"] == "method-smap-season-mean"
+
+
+def test_named_variable_without_version_still_asks(monkeypatch):
+    """只说变量、没点口径时仍要列清单（口径没定，不能替用户挑平均还是动态）。"""
+    from app.services.agent import mock_orchestrator
+
+    ctx = _ctx([OMEGA_LAYER])
+    cands = [
+        {
+            "catalog_id": "method-smap-season-mean",
+            "overlay_layer_id": "imported-136c60293bbf",
+            "name": "SMAP 平均散射约束产品 · 土壤水分",
+            "source": "smap",
+            "on_page": False,
+            "virtual": True,
+        },
+        {
+            "catalog_id": "method-fy-omega-doy-avg",
+            "overlay_layer_id": "imported-fyavg",
+            "name": "风云卫星 平均散射约束产品 · 土壤水分",
+            "source": "fy",
+            "on_page": False,
+            "virtual": True,
+        },
+    ]
+    monkeypatch.setattr(
+        mock_orchestrator, "_same_variable_candidates", lambda var, ls: cands
+    )
+    monkeypatch.setattr(mock_orchestrator, "_page_sources", lambda ls: {"smap"})
+    layer, reply = mock_orchestrator._undecided_statistics_reply(
+        text="河南省的土壤水分平均值是多少",
+        entities={"variable": "sm", "why": "没定层", "region": "河南省"},
+        layers=ctx["active_layers"],
+        sid="sid",
+        intents=[],
+    )
+    assert layer is None
+    assert reply is not None
+    assert "我不替你挑" in reply["reply"]
+
+
 def test_undecided_reply_single_cross_source_candidate_needs_confirm(monkeypatch):
     """只有一种来源、但页面挂的是另一颗卫星 ⇒ 让用户点头，不替他换卫星。"""
     from app.services.agent import mock_orchestrator

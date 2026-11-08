@@ -899,6 +899,29 @@ def _undecided_statistics_reply(
         ):
             return only, None
 
+    # ①.5 用户点名了**口径**（「换回平均版」）、但没点来源 ⇒ 别把别的卫星也摆出来
+    # 让他挑。2026-11-08 实测 r69：动态版→平均版→动态版→「再换回平均版」，回了一句
+    # 「本机有 2 个「土壤水分」的版本…我不替你挑」。上一轮刚用过 SMAP 平均，这句反问
+    # 等于让用户把已经说过的话重复一遍；而口径已经定死，剩下的分歧只有来源，候选里
+    # 与页面同源的**只有一个**，选它并不构成「替用户换卫星」（跨来源才需要点头，
+    # 那是 _cross_source_guard 的职责）。同源候选仍多于一个时照旧列清单，不猜。
+    #
+    # 只说变量（「河南省的土壤水分平均值是多少」）时不走这条路：那时口径还没定，
+    # 平均/动态两套结果差得不少，确实该让用户自己说（见
+    # test_undecided_reply_lists_candidates_without_picking）。
+    if len(cands) > 1:
+        from app.services.agent.server_tools_runtime import _mentions_version
+
+        if any(_mentions_version(text, fam) for fam in ("average", "dynamic")):
+            page_sources = _page_sources(layers)
+            same_source = [
+                c
+                for c in cands
+                if c.get("on_page") or str(c.get("source") or "") in page_sources
+            ]
+            if len(same_source) == 1:
+                return same_source[0], None
+
     # ② 有候选：列清单，让用户点名
     if cands:
         region = str(entities.get("region") or "").strip()
