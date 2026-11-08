@@ -42,10 +42,11 @@ const isAccount = computed(() => props.quota?.scope === 'account')
 const headline = computed(() => {
   if (props.loading && !props.quota) return '正在获取额度'
   const q = props.quota
-  if (!q) return '今日 AI 助手额度'
-  if (isAccount.value) return '今日 AI 助手额度'
-  if (q.limit <= 0) return '今日 AI 助手额度不限'
-  if (tone.value === 'blocked') return '今日额度已用完'
+  if (!q) return ''
+  // 左侧标题已经写了「今日 AI 助手额度」，这里再返回同样的字会变成左右各一遍
+  if (isAccount.value) return '不限次数'
+  if (q.limit <= 0) return '不限次数'
+  if (tone.value === 'blocked') return '已用完'
   return `剩余 ${percent.value}%`
 })
 

@@ -369,6 +369,122 @@ def _parse_date_arg(message: str) -> str | None:
     return f"{year:04d}-{month:02d}-{day:02d}"
 
 
+#: 「2025 年 12 月」「25 年 12 月」「2025-12」「12 月」这类**只要年月、不要日**的说法。
+#: 必须和 `_parse_date_arg` 分开：那边要求「年-月-日」齐全，于是 2026-11-08 实测
+#: 「对啊，25年12月的」解析成 None，被当成「这句话没提日期」，静默落回页面时间轴
+#: 停在的 07-31，把「12 月平均」答成 7 月块——日期丢了却一声不响，比算错更难发现。
+#: 顺序：先认带年的完整年月，再认 2025-12，最后认光秃秃的「12 月」（年份只能借）。
+_MONTH_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<!\d)(\d{4}|\d{2})\s*年\s*(\d{1,2})\s*月份?"),
+    re.compile(r"(?<!\d)(\d{4})\s*[-/]\s*(\d{1,2})(?!\s*[-/])(?!\d)"),
+    re.compile(r"(?<!\d)(\d{1,2})\s*月份?(?!\s*\d)"),
+)
+
+#: 「这句话里提到了某个月」。只用来判断「提了月但认不出是哪年哪月」，
+#: 认得出与否交给 `_parse_month_arg`。
+_MONTH_HINT_RE = re.compile(r"\d{1,4}\s*年\s*\d{1,2}\s*月|\d{1,2}\s*月份?(?!\s*\d)")
+
+
+def _parse_month_arg(
+    text: str, fallback_year: int | None = None
+) -> tuple[int, int] | None:
+    """从一句话里抓「年 + 月」，返回 ``(year, month)``；认不出返回 ``None``。
+
+    两位年份按 20XX 解释（「25 年」= 2025）。只写了「12 月」时年份借上一轮或
+    时间轴的年份；借不到就返回 ``None``，让上层去说「不知道是哪一年」，
+    **绝不自己编一个年份**。
+    """
+    body = str(text or "")
+    for index, pattern in enumerate(_MONTH_RES):
+        m = pattern.search(body)
+        if not m:
+            continue
+        if index == 2:
+            if not fallback_year:
+                return None
+            year, month = int(fallback_year), int(m.group(1))
+        else:
+            raw_year, month = int(m.group(1)), int(m.group(2))
+            year = raw_year + 2000 if raw_year < 100 else raw_year
+        if not (1900 <= year <= 2200 and 1 <= month <= 12):
+            return None
+        return year, month
+    return None
+
+
+def _month_day_list(year: int, month: int) -> list[str]:
+    """该月每一天，``YYYYMMDD``。给「这一月没有整月块、只能逐日合并」用。"""
+    first = datetime.date(year, month, 1)
+    nxt = datetime.date(
+        year + (1 if month == 12 else 0), 1 if month == 12 else month + 1, 1
+    )
+    days: list[str] = []
+    cur = first
+    while cur < nxt:
+        days.append(cur.strftime("%Y%m%d"))
+        cur += datetime.timedelta(days=1)
+    return days
+
+
+def _period_day(raw: Any) -> datetime.date | None:
+    """把 ``period_start`` / ``period_end`` 解析成日期。
+
+    工具层回的是 **8 位紧凑写法**（``20251201``），不是 ``2025-12-01``——
+    按带横线的写法切片会静默解析失败，整月块判定永远为假，于是「12 月有数据」
+    被误答成「这一层没有 12 月」。这里两种写法都认。
+    """
+    digits = re.sub(r"\D", "", str(raw or ""))
+    if len(digits) != 8:
+        return None
+    try:
+        return datetime.date(int(digits[0:4]), int(digits[4:6]), int(digits[6:8]))
+    except ValueError:
+        return None
+
+
+def _month_scan(catalog_id: str, year: int, month: int) -> tuple[str | None, bool]:
+    """扫该层的时间清单：返回 ``(整月块键 | None, 这一月在清单里出现过吗)``。
+
+    为什么不直接「挑月里某一天去取、看它命中什么」：那样要么撞上按需补出的
+    单日帧（12-15 那天广州 247 像元全空，于是把「12 月平均」答成「这一片没有
+    有效像元」），要么把块键传给按需补帧逻辑，让它抛「日期必须是 8 位」——
+    日志脏、还慢。时间清单是现成的事实，先读它就知道该走哪条路。
+    """
+    try:
+        from app.services.agent.server_tools_runtime import _local_time_keys
+
+        keys = _local_time_keys(catalog_id) or []
+    except Exception:  # noqa: BLE001 - 清单读不到就退回逐日合并，不影响正确性
+        return None, True
+    prefix = f"{year:04d}{month:02d}"
+    present = False
+    for key in keys:
+        text = str(key)
+        if text.startswith(prefix) or f"_{prefix}" in text:
+            present = True
+        m = re.fullmatch(r"(\d{8})_(\d{8})", text)
+        if m and m.group(1).startswith(prefix) and m.group(2).startswith(prefix):
+            return f"{m.group(1)}_{m.group(2)}", True
+    return None, present
+
+
+def _month_block_covers(res: dict[str, Any], year: int, month: int) -> bool:
+    """这条统计命中的时间块，是不是「该月的整月合成块」。
+
+    判据：起止都在该月内，且跨度 ≥20 天。命中单日帧（起止同一天）或跨月块
+    都算否——那些不该被当成月均值。
+    """
+    start = _period_day(res.get("period_start"))
+    end = _period_day(res.get("period_end")) or start
+    if start is None or end is None:
+        return False
+    if (start.year, start.month) != (year, month):
+        return False
+    if (end.year, end.month) != (year, month):
+        return False
+    return (end - start).days >= 20
+
+
 #: 「看起来像日期」的四种写法。只用来判断「用户给了日期但那天不存在」，
 #: 合法与否交给 ``datetime.date`` 定。
 _DATE_SHAPES: tuple[re.Pattern[str], ...] = (
@@ -1441,6 +1557,19 @@ def resolve_entities(
         day = prior["date"]
         date_from = "state"
 
+    # 只要年月（「25 年 12 月」「2025-12」「12 月」）——用户要的是**整月口径**。
+    # 单独带一个 `month` 字段回给统计分支：那里绝不能把它当成「这句话没提日期」
+    # 去落回页面时间轴（2026-11-08 实测就是把 12 月的问题答成了 7 月块）。
+    month_hint: tuple[int, int] | None = None
+    if not day:
+        year_hint_num = 0
+        for candidate in (prior.get("date"), _context_date(client_context)):
+            head = str(candidate or "")[:4]
+            if head.isdigit():
+                year_hint_num = int(head)
+                break
+        month_hint = _parse_month_arg(text, year_hint_num or None)
+
     if target is not None:
         variable = variable or dialogue_state.variable_from_name(_display(target))
 
@@ -1453,6 +1582,7 @@ def resolve_entities(
         "region_from": region_from,
         "date": day,
         "date_from": date_from,
+        "month": month_hint,
         "follow_up": follow_up,
     }
 
@@ -1800,6 +1930,37 @@ def _statistics_reply(
     from app.services.agent.server_tools_runtime import _get_layer_statistics
 
     day = entities.get("date")
+    # 「2025 年 12 月」「25 年 12 月」这种**只要年月**的说法：用户要的是整月口径。
+    # 绝不能落回页面时间轴——2026-11-08 实测就是拿页面停在的 07-31 顶上，
+    # 把「12 月平均土壤水分」答成 7 月块（数值都真，月份全错，还一声不响）。
+    month_scope: tuple[int, int] | None = None
+    month_anchor = ""
+    _raw_month = entities.get("month")
+    if not day and _raw_month:
+        try:
+            month_scope = (int(_raw_month[0]), int(_raw_month[1]))
+        except (TypeError, ValueError, IndexError):
+            month_scope = None
+    if month_scope:
+        # 锚点必须是**整月块自己**（20251201_20251231），不能挑月里某一天：
+        # 2026-11-08 实测取月中 12-15，正好命中按需补出的单日帧（preview_20251215），
+        # 那天广州 247 个像元全 NoData，于是「12 月平均」被答成「这一片没有有效像元」；
+        # 而 12 月整月块本身有 36/247 像元、均值 0.3399。差的就是锚点选在哪。
+        # 具体用哪个键，等 target 定下来再查时间清单（见下面 month_anchor）。
+        day = f"{month_scope[0]:04d}-{month_scope[1]:02d}-01"
+    # 句子里明明提到了月份，却认不出是哪一年哪一月（「去年的 12 月」这种）：
+    # 宁可说没听懂，也不能落回页面时间轴——那正是「12 月问题答成 7 月」的老路。
+    if not day and not month_scope and _MONTH_HINT_RE.search(str(text or "")):
+        return {
+            "session_id": sid,
+            "reply": (
+                "你这句里提到了月份，但我没认出是**哪一年哪一月**，所以这次没有取数，"
+                "也没有拿页面时间轴上停着的日期顶替。\n\n"
+                "请说成年月，比如「2025 年 12 月」；或者说具体某一天，比如「2025-12-15」。"
+            ),
+            "ui_intents": intents,
+            "topic_state": {},
+        }
     if not day and isinstance(client_context, dict):
         timeline = client_context.get("timeline")
         if isinstance(timeline, dict):
@@ -1856,13 +2017,46 @@ def _statistics_reply(
             entities=entities,
         )
 
+    _target_cid = str(target.get("overlay_layer_id") or target["catalog_id"])
+    if month_scope:
+        # 只在该层**确实有该月整月块**时才用块键取数；没有就直接走逐日合并。
+        # 把块键发给按需补帧逻辑会抛「日期必须是 8 位」并拖慢整条链路。
+        month_anchor, _month_present = _month_scan(
+            _target_cid, month_scope[0], month_scope[1]
+        )
+        if not month_anchor:
+            if not _month_present:
+                return {
+                    "session_id": sid,
+                    "reply": (
+                        f"「{_display(target)}」里**没有 {month_scope[0]} 年 "
+                        f"{month_scope[1]:02d} 月的数据**，所以这个月的平均值取不到。\n\n"
+                        "这次没有拿别的月份顶替。你可以换个月份，"
+                        "或者让我把这一层实际有的时间块列出来。"
+                    ),
+                    "ui_intents": intents,
+                    "topic_state": _entities_state_patch(entities),
+                }
+            return _range_statistics_reply(
+                text=text,
+                target=target,
+                region=region,
+                days=_month_day_list(month_scope[0], month_scope[1]),
+                name=_display(target),
+                sid=sid,
+                intents=intents,
+                client_context=client_context,
+                state=state,
+                entities=entities,
+            )
+
     stat_args: dict[str, Any] = {
         # 2026-11-06：必须用页面那一层实际挂着的产物 id（imported-*）。
         # 目录层 id（method-*）在盘上没有同名目录，拿它统计只会得到
         # 「不是本地运行时产物」，兜底路径就会退化成一句「本次未取到数值」——
         # 而模型正常调工具时是同一条链路、同一天，本来能算出数。
-        "catalog_id": str(target.get("overlay_layer_id") or target["catalog_id"]),
-        "time": day or None,
+        "catalog_id": _target_cid,
+        "time": month_anchor or day or None,
     }
     if region:
         stat_args["region"] = region
@@ -1874,6 +2068,25 @@ def _statistics_reply(
         # 与模型路径同一条规矩：会话里记着的对象才是「上一轮那层」的事实源
         topic_state=state,
     )
+    # 兜底：清单说有整月块、实际却没按整月块返回（工具异常/产物被换掉）时，
+    # 不能把命中某一天的数当成月均值——改走逐日合并，口径与区间统计一致。
+    if (
+        month_scope
+        and isinstance(res, dict)
+        and not _month_block_covers(res, month_scope[0], month_scope[1])
+    ):
+        return _range_statistics_reply(
+            text=text,
+            target=target,
+            region=region,
+            days=_month_day_list(month_scope[0], month_scope[1]),
+            name=_display(target),
+            sid=sid,
+            intents=intents,
+            client_context=client_context,
+            state=state,
+            entities=entities,
+        )
     topic_state = _entities_state_patch(entities)
     carry_note = _carry_note(entities)
 
@@ -1970,6 +2183,15 @@ def _statistics_reply(
         + (f"（占 {float(pct) * 100:.1f}%）" if pct is not None else ""),
         f"- 实际数据时间块：{block}",
     ]
+    if month_scope:
+        # 问的是「某月」：明确说这是月均、不是某一天。否则用户会以为系统又给他
+        # 挑了一天（12 月那次就是这么被质疑的：「一开始问的月，怎么又变成天的了」）。
+        lines.insert(
+            5,
+            f"- 口径：你要的是 **{month_scope[0]} 年 {month_scope[1]:02d} 月整月**，"
+            f"这一层该月本身就是整月合成块（{block}），"
+            "所以上面的均值就是这个月的月均，不是某一天的值。",
+        )
     # 问「换算成百分比」时补一句确定性换算（模型这一轮没调工具、由规则引擎接管
     # 的情况下，否则用户只拿到 0.2025，问的换算没答）
     hint = _percent_hint(unit, mean, text)
@@ -1979,7 +2201,7 @@ def _statistics_reply(
     extreme = _extreme_hint(unit, res, text)
     if extreme:
         lines.insert(3, extreme)
-    requested = str(res.get("requested_time") or "").strip()
+    requested = "" if month_scope else str(res.get("requested_time") or "").strip()
     if requested and requested != str(res.get("actual_time") or ""):
         lines.append(
             f"- 你请求的日期是 {_readable_date(requested)}，它落在上面的时间块内，"
