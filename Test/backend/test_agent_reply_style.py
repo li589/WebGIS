@@ -1574,3 +1574,83 @@ class TestCoverageResolvedConsistency:
         assert out["hit_source"] == "block"
         assert out["resolved"]["actual_time"] == "20251109_20251116"
         assert "落在时间块" in out["resolved"]["reason"]
+
+
+class TestSearchLayerRanking:
+    """2026-11-08 r80：搜「SMAP」把风云排第一，因为它的**描述**里也写了 SMAP。
+
+    实测：「风云卫星 动态散射约束产品」的 description 是「风云卫星亮温与 SMAP
+    辅助数据联合反演…」，与真正的 SMAP 层拿同样的满分，再按 catalog 顺序排就到
+    了第一位。模型按「第一条最相关」的直觉挑层就会挑错。
+    另外「植被光学厚度」只命中两个动态族——两个平均族明明也有该变量产物，
+    却因为族名和描述里都没有这个词而搜不到。
+    """
+
+    class _Item:
+        def __init__(self, layer_id, name, desc="", tags=None):
+            self.layer_id = layer_id
+            self.display_name = name
+            self.description = desc
+            self.tags = tags or []
+            self.status = "active"
+            self.category = "product"
+
+    class _Catalog:
+        def __init__(self, items):
+            self.items = items
+
+    def _patch(self, monkeypatch, items, members=None):
+        from app.services.agent import server_tools_runtime as R
+
+        monkeypatch.setattr(
+            "app.services.layer_catalog.get_layer_catalog",
+            lambda: self._Catalog(items),
+        )
+        monkeypatch.setattr(R, "_filter_ids", lambda ids, cred: list(ids))
+        monkeypatch.setattr(R, "_local_time_keys", lambda cid: [])
+        monkeypatch.setattr(R, "_temporal_shape_fields", lambda *a, **k: {})
+        monkeypatch.setattr(R, "_product_class", lambda cid: "derived_product")
+
+        def _names(lid, fallback=None):
+            return (fallback or lid, "")
+
+        def _identity(cid, display=None):
+            return {
+                "is_product_group": True,
+                "group_members": (members or {}).get(cid, []),
+            }
+
+        monkeypatch.setattr(R, "_layer_names", _names)
+        monkeypatch.setattr(R, "_layer_identity_fields", _identity)
+        return R
+
+    def test_name_match_beats_description_match(self, monkeypatch) -> None:
+        items = [
+            self._Item("method-fy-omega-doy-dynamic", "风云卫星 动态散射约束产品",
+                       desc="风云卫星亮温与 SMAP 辅助数据联合反演：8 天合成"),
+            self._Item("method-smap-omega-doy-avg", "SMAP 平均散射约束产品",
+                       desc="omega_avg_daily / omega_block"),
+        ]
+        R = self._patch(monkeypatch, items)
+        out = R._search_layers({"query": "SMAP", "limit": 5}, cred=None,
+                               client_context=None)
+        ids = [x["layer_id"] for x in out["layers"]]
+        assert ids[0] == "method-smap-omega-doy-avg", ids
+        # 描述命中的仍然保留，只是排后面
+        assert "method-fy-omega-doy-dynamic" in ids
+
+    def test_member_variable_makes_family_searchable(self, monkeypatch) -> None:
+        items = [
+            self._Item("method-smap-omega-doy-avg", "SMAP 平均散射约束产品"),
+            self._Item("method-fy-omega-doy-avg", "风云卫星 平均散射约束产品"),
+        ]
+        members = {
+            "method-smap-omega-doy-avg": [{"variable_label": "植被光学厚度"}],
+            "method-fy-omega-doy-avg": [{"variable_label": "植被光学厚度"}],
+        }
+        R = self._patch(monkeypatch, items, members)
+        out = R._search_layers(
+            {"query": "植被光学厚度", "limit": 5}, cred=None, client_context=None
+        )
+        assert out["count"] == 2
+        assert {x["layer_id"] for x in out["layers"]} == set(members)

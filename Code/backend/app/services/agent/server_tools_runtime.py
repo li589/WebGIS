@@ -2346,6 +2346,8 @@ def _slim_layer_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "unit",
         "origin_catalog_id",
         "variable_id",
+        # 内部打分，不对外输出（page_hits 里手动 pop，这里统一过滤）
+        "_match",
     }
     for key, val in entry.items():
         if key in _DROP:
@@ -2544,12 +2546,30 @@ def _search_layers(
         tags = getattr(item, "tags", None) or []
         tag_s = " ".join(str(t) for t in tags) if isinstance(tags, list) else str(tags)
         qualified, aliases = _layer_names(lid, display)
-        blob = f"{lid} {display} {desc} {tag_s} {aliases}".casefold()
-        if not _hit(blob):
-            continue
         info = page.get(lid)
         _shape_keys = _local_time_keys(lid)
         _identity = _layer_identity_fields(lid, display=display)
+        # 成员变量名也算「这一层能提供什么」：族名里没有「植被光学厚度」，
+        # 但该族确实带着这个变量的产物，用户按变量名搜就该搜到它。
+        # 2026-11-08 实测：搜「植被光学厚度」只出了两个动态族（描述里恰好提到），
+        # 两个平均族一个有 VOD 产物却完全搜不到，模型据此会说「这一族没有该变量」。
+        _member_labels = " ".join(
+            str(m.get("variable_label") or "")
+            for m in (_identity.get("group_members") or [])
+            if isinstance(m, dict)
+        )
+        # 名称命中优先于描述命中。2026-11-08 实测：搜「SMAP」时，
+        # 「风云卫星 动态散射约束产品」因为 description 里写着「与 SMAP 辅助数据
+        # 联合反演」而拿到同样的满分，再按 catalog 顺序排就把它排到了第一位——
+        # 模型按「第一条最相关」的直觉挑层，就会把风云当成 SMAP 的层。
+        # 只靠描述/标签命中的仍然保留（用户确实可能这么描述），但压到名称命中之下。
+        name_blob = f"{lid} {display} {qualified} {aliases} {_member_labels}".casefold()
+        score = _match_score(name_blob)
+        if not score:
+            blob = f"{name_blob} {desc.casefold()} {tag_s.casefold()}"
+            if not _hit(blob):
+                continue
+            score = min(_match_score(blob) or 1, 40)
         entry: dict[str, Any] = {
             "layer_id": lid,
             "display_name": qualified,
@@ -2561,6 +2581,8 @@ def _search_layers(
             "selected": bool(info["selected"]) if info else False,
             "layer_kind": "catalog_reference",
             "product_class": _product_class(lid),
+            # 命中强度：名称命中排在描述命中之前（sort 里第一顺位）
+            "_match": score,
             # 仅在真有本地时间片时给出形态，避免参考层一堆 unknown 噪音
             **(
                 _temporal_shape_fields(_shape_keys, layer_id=lid) if _shape_keys else {}
@@ -2586,9 +2608,10 @@ def _search_layers(
                 else "本条产品族在本机还没有任何产物，需要先跑工作流。"
             )
         catalog_hits.append(entry)
-    # 目录层里 imported-* 也优先于 ref-* 之类的参考层
+    # 目录层：命中强度 → 页面上的 → imported-* → 编号
     catalog_hits.sort(
         key=lambda e: (
+            -int(e.get("_match") or 0),
             0 if e.get("on_page") else 1,
             0 if str(e.get("layer_id") or "").startswith("imported-") else 1,
             str(e.get("layer_id") or ""),
