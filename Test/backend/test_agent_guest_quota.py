@@ -199,3 +199,143 @@ def test_session_error_counts_as_guest(session_cookie_name, monkeypatch):
     req = _FakeRequest({session_cookie_name: "whatever"})
     assert rl.session_role(req) is None
     assert rl.is_guest_request(req) is True
+
+
+# ---------------------------------------------------------------------------
+# 三道闸：访客号 20 / 同 IP 100 / 全站 300（2026-11-08 新增）
+# ---------------------------------------------------------------------------
+# 防的是「清 localStorage 换个新访客号」这种绕过：第一道按浏览器记，清一下即
+# 清零；所以补第二道绑网络、第三道绑全站。这里把上限压小以便快速触顶。
+
+
+@pytest.fixture()
+def small_limits(isolated, monkeypatch):
+    """把三道闸压到 2 / 5 / 7，方便几次调用就触顶。"""
+    monkeypatch.setattr(rl, "_GUEST_QUOTA_LIMIT", 2)
+    monkeypatch.setattr(rl, "_GUEST_IP_QUOTA_LIMIT", 5)
+    monkeypatch.setattr(rl, "_GUEST_GLOBAL_QUOTA_LIMIT", 7)
+    return {"visitor": 2, "ip": 5, "global": 7}
+
+
+def test_layer_blocks_on_visitor_quota(small_limits):
+    for _ in range(small_limits["visitor"]):
+        result, scope = rl.check_agent_guest_quota_layers("v1", "10.1.0.1")
+        assert result.allowed is True
+        assert scope is None
+
+    result, scope = rl.check_agent_guest_quota_layers("v1", "10.1.0.1")
+    assert result.allowed is False
+    assert scope == rl.QUOTA_SCOPE_VISITOR
+    assert 1 <= result.retry_after_seconds <= 24 * 3600 + 60
+
+
+def test_same_ip_caps_across_browsers(small_limits):
+    """换新访客号（＝清 localStorage）也突破不了同 IP 上限。"""
+    ip = "10.1.0.2"
+    for i in range(small_limits["visitor"]):
+        assert rl.check_agent_guest_quota_layers(f"browser-{i}a", ip)[0].allowed
+        assert rl.check_agent_guest_quota_layers(f"browser-{i}b", ip)[0].allowed
+
+    # 已用 4 次（IP 上限 5），新浏览器还能用 1 次
+    assert rl.check_agent_guest_quota_layers("browser-fresh", ip)[0].allowed
+
+    # 第 6 次开始被 IP 那道挡住，且报的是 ip 而不是 visitor
+    result, scope = rl.check_agent_guest_quota_layers("browser-newer", ip)
+    assert result.allowed is False
+    assert scope == rl.QUOTA_SCOPE_IP
+
+
+def test_global_cap_across_ips(small_limits):
+    """换 IP 也突破不了全站总量。"""
+    used = 0
+    ip_idx = 0
+    while used < small_limits["global"]:
+        ip = f"10.2.0.{ip_idx}"
+        ip_idx += 1
+        for i in range(small_limits["visitor"]):
+            if used >= small_limits["global"]:
+                break
+            assert rl.check_agent_guest_quota_layers(f"g-{used}", ip)[0].allowed
+            used += 1
+            if used % small_limits["visitor"] == 0:
+                break
+
+    result, scope = rl.check_agent_guest_quota_layers("g-overflow", "10.2.9.9")
+    assert result.allowed is False
+    assert scope == rl.QUOTA_SCOPE_GLOBAL
+
+
+def test_blocked_request_does_not_consume_other_layers(small_limits):
+    """被后一道拦下时，前面几道不该白掉一次额度（先预检、后统一计数）。"""
+    ip = "10.3.0.1"
+    used = 0
+    idx = 0
+    while used < small_limits["ip"]:
+        # 每个访客最多 2 次（visitor 上限），轮流换号把 IP 额度用满
+        allowed, _scope = rl.check_agent_guest_quota_layers(f"ipfill-{idx}", ip)
+        assert allowed.allowed is True
+        used += 1
+        if used % small_limits["visitor"] == 0:
+            idx += 1
+
+    # IP 已满：新访客号这一次被拒，但它的访客桶应该还是 0
+    result, scope = rl.check_agent_guest_quota_layers("unlucky", ip)
+    assert (result.allowed, scope) == (False, rl.QUOTA_SCOPE_IP)
+
+    peeked = rl.peek_agent_guest_quota_layers("unlucky", ip)
+    assert peeked[rl.QUOTA_SCOPE_VISITOR] == (0, small_limits["visitor"])
+
+
+def test_disabled_layer_is_skipped(small_limits, monkeypatch):
+    monkeypatch.setattr(rl, "_GUEST_IP_QUOTA_LIMIT", 0)
+    monkeypatch.setattr(rl, "_GUEST_GLOBAL_QUOTA_LIMIT", 0)
+    peeked = rl.peek_agent_guest_quota_layers("v-solo", "10.4.0.1")
+    assert set(peeked) == {rl.QUOTA_SCOPE_VISITOR}
+    # 只剩访客号一道时，同一 IP 上的另一个访客不受影响
+    for _ in range(small_limits["visitor"]):
+        assert rl.check_agent_guest_quota_layers("v-solo", "10.4.0.1")[0].allowed
+    assert rl.check_agent_guest_quota_layers("v-solo", "10.4.0.1")[0].allowed is False
+    assert rl.check_agent_guest_quota_layers("v-other", "10.4.0.1")[0].allowed is True
+
+
+def test_ip_key_is_hashed_and_dated(isolated):
+    ip = "203.0.113.77"
+    key = rl._guest_ip_quota_key(ip)
+    day, _ttl = rl._beijing_day_and_ttl()
+    assert ip not in key, "IP 不应明文进 Redis 键"
+    assert day in key
+    assert key != rl._guest_global_quota_key()
+
+
+class _FakeIpRequest:
+    """带 headers / client 的请求替身（client_ip 只用到这两项）。"""
+
+    def __init__(self, headers: dict[str, str], peer: str = "172.20.0.1") -> None:
+        self.headers = headers
+        self.client = type("C", (), {"host": peer})()
+
+
+def test_client_ip_prefers_gateway_real_ip(monkeypatch):
+    """信任代理时优先读网关写的 X-Real-IP；XFF 首段可被客户端伪造，不采信。"""
+    import types
+
+    monkeypatch.setattr(
+        "app.core.config.settings", types.SimpleNamespace(trust_proxy=True)
+    )
+    req = _FakeIpRequest(
+        {
+            "x-real-ip": "203.0.113.5",
+            "x-forwarded-for": "1.2.3.4, 203.0.113.5",
+        }
+    )
+    assert rl.client_ip(req) == "203.0.113.5"
+
+
+def test_client_ip_ignores_headers_when_proxy_untrusted(monkeypatch):
+    import types
+
+    monkeypatch.setattr(
+        "app.core.config.settings", types.SimpleNamespace(trust_proxy=False)
+    )
+    req = _FakeIpRequest({"x-real-ip": "203.0.113.5"})
+    assert rl.client_ip(req) == "172.20.0.1"

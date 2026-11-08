@@ -215,16 +215,25 @@ def client_ip(request) -> str:  # type: ignore[no-untyped-def]
 
     默认不信任 ``X-Forwarded-For`` / ``X-Real-IP``（可被客户端伪造）。
     仅当 ``settings.trust_proxy``（``BACKEND_TRUST_PROXY``）为真时才解析转发头。
+
+    ★ 2026-11-08：``X-Real-IP`` **优先于** ``X-Forwarded-For``，且只取 XFF 的
+    **最后一段**以外的值也不信任——原因：``geoflow.cgdas.dpdns.org`` 走
+    Cloudflare，网关（nginx）用 ``real_ip_header CF-Connecting-IP`` 把真实客户端
+    地址还原进 ``$remote_addr``，再以 ``proxy_set_header X-Real-IP $remote_addr``
+    传给后端，这个头是**网关自己覆盖写的**，客户端伪造无效。
+    而 ``X-Forwarded-For`` 是 ``$proxy_add_x_forwarded_for`` 追加的，第一段来自
+    客户端，随手就能填。
     """
     from app.core.config import settings
 
     if settings.trust_proxy:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("x-real-ip")
+        real_ip = (request.headers.get("x-real-ip") or "").strip()
         if real_ip:
             return real_ip
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            # 网关追加模式下，最后一段才是网关看到的对端地址
+            return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -365,6 +374,18 @@ _GUEST_QUOTA_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_DAILY_QUOTA", "20"))
 _guest_quota_memory: dict[str, int] = {}
 _guest_quota_memory_lock = Lock()
 
+#: 第二道：同一出口 IP 每日总量。第一道按浏览器访客号计，清 localStorage / 换
+#: 浏览器 / 无痕窗口都能重置，所以补一道绑在网络上、换号换不掉的上限。
+#: 值要比单人额度宽，否则同一个办公室/实验室共用出口的人会互相挤占。
+_GUEST_IP_QUOTA_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_IP_DAILY_QUOTA", "100"))
+
+#: 第三道：全站游客每日总量（最终熔断）。不管换多少访客号、多少 IP，总量封顶，
+#: 直接卡住账单。一次提问约 1.8 万 tokens，按 0.23 元/百万 token 约 0.004 元，
+#: 300 次 ≈ 1.2 元/天、36 元/月。
+_GUEST_GLOBAL_QUOTA_LIMIT = int(
+    os.getenv("BACKEND_AGENT_GUEST_GLOBAL_DAILY_QUOTA", "300")
+)
+
 
 def guest_quota_limit() -> int:
     """当前生效的游客日额度（0 = 关闭）。"""
@@ -427,6 +448,106 @@ def check_agent_guest_daily_quota(visitor_id: str | None, ip: str) -> RateLimitR
             return RateLimitResult(False, ttl)
         _guest_quota_memory[key] = count
     return RateLimitResult(True, 0)
+
+
+def _guest_ip_quota_key(ip: str) -> str:
+    """同一出口 IP 的当日计数键（换浏览器/清缓存换不掉这个桶）。"""
+    day, _ttl = _beijing_day_and_ttl()
+    digest = hashlib.sha1(ip.encode("utf-8")).hexdigest()[:16]
+    return f"cgda:quota:guestip:{digest}:{day}"
+
+
+def _guest_global_quota_key() -> str:
+    """全站游客当日总量键（不分人、不分 IP，最终熔断）。"""
+    day, _ttl = _beijing_day_and_ttl()
+    return f"cgda:quota:guestall:{day}"
+
+
+def _daily_peek(key: str) -> int:
+    """只读当前计数（Redis 优先，异常降级进程内）。"""
+    from app.core.redis_client import get_redis_client
+
+    client = get_redis_client()
+    if client is not None:
+        try:
+            raw = client.get(key)
+            return int(raw) if raw else 0
+        except Exception as exc:  # noqa: BLE001 — 降级读进程内
+            logger.warning("日额度读取降级为进程内: %s", exc)
+    with _guest_quota_memory_lock:
+        return _guest_quota_memory.get(key, 0)
+
+
+def _daily_incr(key: str, ttl: int) -> int:
+    """计数 +1；Redis 首次写入时把过期时间设到北京次日 0 点之后。"""
+    from app.core.redis_client import get_redis_client
+
+    client = get_redis_client()
+    if client is not None:
+        try:
+            count = int(client.incr(key))
+            if count == 1:
+                client.expire(key, ttl + 120)
+            return count
+        except Exception as exc:  # noqa: BLE001 — 降级为进程内计数
+            logger.warning("日额度计数降级为进程内: %s", exc)
+    with _guest_quota_memory_lock:
+        if len(_guest_quota_memory) > 4096:
+            day, _ = _beijing_day_and_ttl()
+            for stale in [k for k in _guest_quota_memory if day not in k]:
+                _guest_quota_memory.pop(stale, None)
+        count = _guest_quota_memory.get(key, 0) + 1
+        _guest_quota_memory[key] = count
+        return count
+
+
+#: 三道闸的标识（供中间件挑提示语、日志定位）。
+QUOTA_SCOPE_VISITOR = "visitor"
+QUOTA_SCOPE_IP = "ip"
+QUOTA_SCOPE_GLOBAL = "global"
+
+
+def _guest_quota_layers(visitor_id: str | None, ip: str) -> list[tuple[str, str, int]]:
+    """三道闸的 (作用域, 计数键, 上限)，上限 <=0 的道视为关闭、直接剔除。"""
+    layers = [
+        (QUOTA_SCOPE_VISITOR, _guest_quota_key(visitor_id, ip), _GUEST_QUOTA_LIMIT),
+        (QUOTA_SCOPE_IP, _guest_ip_quota_key(ip), _GUEST_IP_QUOTA_LIMIT),
+        (QUOTA_SCOPE_GLOBAL, _guest_global_quota_key(), _GUEST_GLOBAL_QUOTA_LIMIT),
+    ]
+    return [item for item in layers if item[2] > 0]
+
+
+def check_agent_guest_quota_layers(
+    visitor_id: str | None, ip: str
+) -> tuple[RateLimitResult, str | None]:
+    """三道闸联合判定：**任意一道满额即拒**，三道都有余额才扣次数。
+
+    顺序 访客号 → 同 IP → 全站。实现上先全部只读预检、通过后再统一落计数，
+    避免「前一道已扣、后一道把人拦住」让用户白掉一次额度。并发抢跑时允许
+    极小超发（防的是滥用，不是精确计费）。
+
+    返回 ``(判定, 拦截作用域)``；放行时作用域为 ``None``。
+    """
+    _day, ttl = _beijing_day_and_ttl()
+    layers = _guest_quota_layers(visitor_id, ip)
+    if not layers:
+        return RateLimitResult(True, 0), None
+    for scope, key, limit in layers:
+        if _daily_peek(key) >= limit:
+            return RateLimitResult(False, ttl), scope
+    for _scope, key, _limit in layers:
+        _daily_incr(key, ttl)
+    return RateLimitResult(True, 0), None
+
+
+def peek_agent_guest_quota_layers(
+    visitor_id: str | None, ip: str
+) -> dict[str, tuple[int, int]]:
+    """只读探三道闸各自的 ``(已用, 上限)``；已关闭的道不出现在结果里。"""
+    result: dict[str, tuple[int, int]] = {}
+    for scope, key, limit in _guest_quota_layers(visitor_id, ip):
+        result[scope] = (_daily_peek(key), limit)
+    return result
 
 
 def session_role(request) -> str | None:  # type: ignore[no-untyped-def]
@@ -516,28 +637,15 @@ def beijing_quota_reset_at() -> str:
 
 
 def peek_agent_guest_daily_quota(visitor_id: str | None, ip: str) -> tuple[int, int]:
-    """只读查询游客当日已用次数，**不计数**（供额度条展示）。
+    """只读查询**访客号那一维**的当日已用次数（不计数）。
 
     返回 ``(已用, 上限)``；额度关闭时返回 ``(0, 0)``。
+    正式判定请看 ``peek_agent_guest_quota_layers``——它同时反映同 IP / 全站两道。
     """
     if _GUEST_QUOTA_LIMIT <= 0:
         return 0, 0
-
     key = _guest_quota_key(visitor_id, ip)
-
-    from app.core.redis_client import get_redis_client
-
-    client = get_redis_client()
-    if client is not None:
-        try:
-            raw = client.get(key)
-            used = int(raw) if raw else 0
-            return max(0, used), _GUEST_QUOTA_LIMIT
-        except Exception as exc:  # noqa: BLE001 — 降级读进程内计数
-            logger.warning("游客日额度查询降级为进程内: %s", exc)
-
-    with _guest_quota_memory_lock:
-        return _guest_quota_memory.get(key, 0), _GUEST_QUOTA_LIMIT
+    return max(0, _daily_peek(key)), _GUEST_QUOTA_LIMIT
 
 
 def rate_limited_response(

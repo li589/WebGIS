@@ -542,10 +542,13 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
     口径与中间件里的实际拦截完全同源，避免「显示还有剩余却被拦」。
     """
     from app.api.rate_limit import (
+        QUOTA_SCOPE_GLOBAL,
+        QUOTA_SCOPE_IP,
+        QUOTA_SCOPE_VISITOR,
         beijing_quota_reset_at,
         client_ip,
         is_guest_request,
-        peek_agent_guest_daily_quota,
+        peek_agent_guest_quota_layers,
         session_role,
     )
 
@@ -564,7 +567,8 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
         )
 
     visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
-    used, limit = peek_agent_guest_daily_quota(visitor_id or None, client_ip(request))
+    layers = peek_agent_guest_quota_layers(visitor_id or None, client_ip(request))
+    used, limit = layers.get(QUOTA_SCOPE_VISITOR, (0, 0))
     if limit <= 0:
         return AgentQuotaResponse(
             scope="guest",
@@ -578,8 +582,31 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
         )
 
     remaining = max(0, limit - used)
+    # 三道闸任意一道满额都发不出去，进度条就按「已用尽」显示，
+    # 否则会出现「显示还剩 15 次却一直报错」的困惑。
+    blocked_by = QUOTA_SCOPE_VISITOR if remaining <= 0 else None
+    if blocked_by is None:
+        for scope in (QUOTA_SCOPE_IP, QUOTA_SCOPE_GLOBAL):
+            pair = layers.get(scope)
+            if pair and pair[1] > 0 and pair[0] >= pair[1]:
+                blocked_by = scope
+                break
+    if blocked_by is not None:
+        remaining = 0
     percent = max(0, min(100, int(round(remaining / limit * 100))))
-    blocked = remaining <= 0
+    blocked = blocked_by is not None
+    message = None
+    if blocked_by == QUOTA_SCOPE_IP:
+        message = (
+            "当前网络今天的 AI 助手体验额度已用完，北京时间 0 点恢复；"
+            "登录后可继续使用。"
+        )
+    elif blocked_by == QUOTA_SCOPE_GLOBAL:
+        message = (
+            "今天的 AI 助手体验总额度已用完，北京时间 0 点恢复；登录后可继续使用。"
+        )
+    elif blocked:
+        message = "未登录状态下 AI 助手今天的额度已用完，北京时间 0 点恢复；登录后可继续使用。"
     return AgentQuotaResponse(
         scope="guest",
         limit=limit,
@@ -588,11 +615,7 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
         percent=percent,
         reset_at=reset_at,
         blocked=blocked,
-        message=(
-            "未登录状态下 AI 助手今天的额度已用完，北京时间 0 点恢复；登录后可继续使用。"
-            if blocked
-            else None
-        ),
+        message=message,
     )
 
 

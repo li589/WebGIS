@@ -269,7 +269,7 @@ def create_app() -> FastAPI:
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
             check_agent_chat_rate_limit,
-            check_agent_guest_daily_quota,
+            check_agent_guest_quota_layers,
             check_agent_models_refresh_rate_limit,
             check_feedback_upload_rate_limit,
             check_login_rate_limit,
@@ -349,30 +349,42 @@ def create_app() -> FastAPI:
         # 未登录访客的「按天」额度（与上面按环境旁路的分钟级限流分开）：
         # 线上实际跑的是 BACKEND_ENV=development，把这条放进上面那个 if 里
         # 等于永不生效，所以这里不受环境开关影响，只由额度值本身控制
-        # （BACKEND_AGENT_GUEST_DAILY_QUOTA<=0 即关闭）。
+        # （对应环境变量 <=0 即关闭）。
         #
         # ★ 2026-11-08：判据从「有没有会话」改成「会话是什么角色」。
         # 前端「以游客身份进入」用的就是共享的 demo 账号，登录后同样有合法会话
         # Cookie；只看 Cookie 会把这批人判成已登录而完全不限额——他们恰恰是最
         # 该限的。现在 demo/guest 一律按游客计，admin/standard 才免额度。
+        #
+        # 三道闸同时生效，任意一道满额即拒（详见 rate_limit 里的说明）：
+        #   ① 浏览器访客号 20 次  ② 同一出口 IP 100 次  ③ 全站游客 300 次
         if should_rate_limit_agent_chat(path, method):
             if is_guest_request(request):
+                ip = client_ip(request)
                 visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
-                guest = check_agent_guest_daily_quota(
-                    visitor_id or None, client_ip(request)
+                guest, blocked_by = check_agent_guest_quota_layers(
+                    visitor_id or None, ip
                 )
                 if not guest.allowed:
                     logger.info(
-                        "游客日额度用尽 ip=%s visitor=%s",
-                        client_ip(request),
+                        "游客日额度用尽 scope=%s ip=%s visitor=%s",
+                        blocked_by,
+                        ip,
                         "有" if visitor_id else "无",
+                    )
+                    message = {
+                        "ip": "当前网络今天的 AI 助手体验额度已用完，"
+                        "北京时间 0 点恢复；用正式账号登录后可继续使用。",
+                        "global": "今天的 AI 助手体验总额度已用完，"
+                        "北京时间 0 点恢复；用正式账号登录后可继续使用。",
+                    }.get(
+                        blocked_by or "",
+                        "AI 助手今天的额度已用完，北京时间 0 点恢复；"
+                        "用正式账号登录后可继续使用。",
                     )
                     return rate_limited_response(
                         guest.retry_after_seconds,
-                        message=(
-                            "AI 助手今天的额度已用完，北京时间 0 点恢复；"
-                            "用正式账号登录后可继续使用。"
-                        ),
+                        message=message,
                         request_id=request_id,
                     )
         return await call_next(request)
