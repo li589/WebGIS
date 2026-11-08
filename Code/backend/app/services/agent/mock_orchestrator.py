@@ -1601,6 +1601,17 @@ def _entities_state_patch(entities: dict[str, Any]) -> dict[str, str]:
     # 日期只记用户明确说过 / 明确要求沿用的那一个；页面上的当前日期不算承诺
     if entities.get("date") and entities.get("date_from") in ("message", "state"):
         patch["date"] = str(entities["date"])
+    elif entities.get("month"):
+        # 「2025 年 12 月」这种整月口径也要记下来（存成 ``YYYY-MM``）：下一句
+        # 「换成广州市呢」「换成植被光学厚度」没提时间，就得沿用这个月。
+        # 2026-11-09 r116 实测：不记月份 ⇒ 追问退回页面那天（12-15），
+        # 而 12-15 在广州是整片缺测，于是「河南 12 月 → 换广州」答成「这里算不出」。
+        try:
+            patch["date"] = (
+                f"{int(entities['month'][0]):04d}-{int(entities['month'][1]):02d}"
+            )
+        except (TypeError, ValueError, IndexError):
+            pass
     return patch
 
 
@@ -1994,6 +2005,16 @@ def _statistics_reply(
     from app.services.agent.server_tools_runtime import _get_layer_statistics
 
     day = entities.get("date")
+    # 这一句没提日期（「换成广州市呢」），但上一轮记着时间口径 —— 沿用，别退回页面。
+    # 原来这条沿用只写在「层还没定」的分支里；层一旦从会话状态取到就直接跳过了，
+    # 于是追问会掉到页面时间轴那天（2026-11-09 r116 实测：河南 12 月 → 换广州 →
+    # 取到 12-15，广州当天整片缺测，答成「算不出」）。整月口径存成 ``2025-12``，
+    # 由下面那段 month_scope 认出来。
+    if not day and not entities.get("month") and isinstance(state, dict):
+        carried_date = str(state.get("date") or "").strip()
+        if carried_date:
+            day = carried_date
+            entities = {**entities, "date": carried_date, "date_from": "state"}
     # 「2025 年 12 月」「25 年 12 月」这种**只要年月**的说法：用户要的是整月口径。
     # 绝不能落回页面时间轴——2026-11-08 实测就是拿页面停在的 07-31 顶上，
     # 把「12 月平均土壤水分」答成 7 月块（数值都真，月份全错，还一声不响）。
@@ -2005,6 +2026,17 @@ def _statistics_reply(
             month_scope = (int(_raw_month[0]), int(_raw_month[1]))
         except (TypeError, ValueError, IndexError):
             month_scope = None
+    # 上一轮记的是整月口径（状态里存 ``2025-12``），这一句只换了区域或变量——
+    # 沿用那个月，不能退回页面那一天。2026-11-09 r116 实测：「河南 12 月」之后
+    # 接「换成广州市呢」，模型拿页面日期 12-15 去取，广州当天 247 像元全缺测，
+    # 答复成了「这天算不出」，与上一句的整月口径完全不是一回事。
+    if not month_scope:
+        _carried_date = str(entities.get("date") or "")
+        if re.fullmatch(r"\d{4}-\d{2}", _carried_date):
+            try:
+                month_scope = (int(_carried_date[:4]), int(_carried_date[5:7]))
+            except ValueError:
+                month_scope = None
     if month_scope:
         # 锚点必须是**整月块自己**（20251201_20251231），不能挑月里某一天：
         # 2026-11-08 实测取月中 12-15，正好命中按需补出的单日帧（preview_20251215），

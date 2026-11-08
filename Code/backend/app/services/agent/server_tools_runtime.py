@@ -3618,6 +3618,44 @@ def _slice_suggest_dates(
     return out
 
 
+#: 用户点到具体某一天时，不能按整月处理。与 ``orchestrator._DAY_GIVEN_RE``
+#: 同义；这里独立一份是为了避免 server_tools_runtime 反向依赖 orchestrator。
+_DAY_IN_MESSAGE_RE = re.compile(
+    r"\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*日?"
+    r"|\d{8}(?![\d_])"
+    r"|(?<!\d)\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
+    r"|(?<![\d月])\d{1,2}\s*[日号]"
+)
+
+
+def _month_block_for_message(
+    user_message: str, explicit_time: str | None, catalog_id: str
+) -> str | None:
+    """用户这句话点的是整月时，返回该层的整月块键；否则 ``None``。
+
+    三个条件同时成立才改写，任一条不满足都保持原样（问某一天就答那一天）：
+    ① 模型传了具体某一天；② 用户原话里确实是「某年某月」；③ 该层真有这个整月块。
+    """
+    text = str(user_message or "")
+    if not text or not explicit_time or len(explicit_time) != 8:
+        return None
+    if _DAY_IN_MESSAGE_RE.search(text):
+        return None
+    try:
+        from app.services.agent import mock_orchestrator as mo
+
+        parsed = mo._parse_month_arg(text, int(explicit_time[:4]))
+        if not parsed:
+            return None
+        year, month = int(parsed[0]), int(parsed[1])
+        if (year, month) != (int(explicit_time[:4]), int(explicit_time[4:6])):
+            return None
+        block, present = mo._month_scan(catalog_id, year, month)
+        return block if present else None
+    except Exception:  # noqa: BLE001 - 认不出月份就按原来的日期走
+        return None
+
+
 def _get_layer_statistics(
     args: dict[str, Any],
     *,
@@ -3701,6 +3739,18 @@ def _get_layer_statistics(
         time_source = "page"
     else:
         time_source = "layer_default"
+
+    # 用户问的是「某一个月」时，即使模型传的是月里某一天，也按该月整块取数。
+    #
+    # 2026-11-09 r117 实测：问「广州市和河南省 2025年12月哪个土壤水分高」，
+    # 模型两次调用都传 time=2025-12-15（页面那天）——广州当天整片缺测、河南只有
+    # 8 个像元（均值 0.115），比较结论完全错；而 12 月整块是 0.3399/36 像元与
+    # 0.2484/1284 像元。**多区域的比较只能靠模型自己取数**（规则引擎一次只算
+    # 一个区域），所以月份口径必须在工具这一层就对齐，不能等下游兜。
+    month_block = _month_block_for_message(user_message, explicit_time, catalog_id)
+    if month_block:
+        requested = month_block
+        time_source = "requested"
 
     # 可选空间范围（报告 优先1「输入至少包括统计范围」）：缺省＝整幅，绝不默认缩到视口
     bbox_raw = args.get("bbox")

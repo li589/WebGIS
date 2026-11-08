@@ -341,3 +341,152 @@ class TestAsksMonthScope:
             history_state={},
         )
         assert out == model_reply
+
+
+class TestCarriedMonthScope:
+    """整月口径要跟着对话走（2026-11-09 r116 实测）。
+
+    「2025年12月河南省的平均土壤水分」之后接「换成广州市呢」，月份被丢掉、
+    退回页面那天（12-15）；而 12-15 在广州是整片缺测，于是答成「这天算不出」，
+    与上一句的整月口径完全不是一回事。状态里必须记着 ``2025-12`` 并沿用。
+    """
+
+    CTX = {
+        "active_layers": [
+            {
+                "catalog_id": "imported-55359b8ecd3d",
+                "instance_id": "i-0",
+                "name": "风云卫星 平均散射约束产品 · 土壤水分",
+                "overlay_layer_id": "imported-55359b8ecd3d",
+                "visible": True,
+                "selected": True,
+            }
+        ],
+        "timeline": {"hour": 0, "date": "2025-12-15", "playing": False},
+        "selected_layer_id": "imported-55359b8ecd3d",
+    }
+    STATE = {
+        "layer_id": "imported-55359b8ecd3d",
+        "layer_name": "风云卫星 平均散射约束产品 · 土壤水分",
+        "variable": "sm",
+        "region": "河南省",
+        "date": "2025-12",
+    }
+
+    def test_month_question_is_stored_as_month_in_state(self):
+        from app.services.agent import mock_orchestrator as mo
+
+        ents = mo.resolve_entities(
+            "2025年12月河南省的平均土壤水分",
+            self.CTX["active_layers"],
+            client_context=self.CTX,
+            state={},
+        )
+        patch = mo._entities_state_patch(ents)
+        assert patch["date"] == "2025-12"
+        assert patch["region"] == "河南省"
+
+    @pytest.mark.parametrize(
+        "text",
+        ["换成广州市呢", "换成植被光学厚度", "那整幅呢"],
+    )
+    def test_follow_up_keeps_month(self, text):
+        from app.services.agent import orchestrator as orch
+
+        assert orch._carried_month_scope(text, self.STATE) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        ["12月16日广州的土壤水分", "2025-12-16 广州的土壤水分", "20251216 广州的土壤水分"],
+    )
+    def test_explicit_day_cancels_carried_month(self, text):
+        from app.services.agent import orchestrator as orch
+
+        assert orch._carried_month_scope(text, self.STATE) is False
+
+    @pytest.mark.parametrize("state", [{}, {"date": "2025-12-15"}, None])
+    def test_only_month_state_carries(self, state):
+        from app.services.agent import orchestrator as orch
+
+        assert orch._carried_month_scope("换成广州市呢", state) is False
+
+    def test_model_day_does_not_overwrite_month_state(self):
+        """模型自己挑的 12-15 不能把状态里的「2025-12」顶掉。"""
+        from app.services.agent import orchestrator as orch
+
+        patch = {"layer_id": "imported-55359b8ecd3d", "region": "广州市", "date": "2025-12-15"}
+        out = orch._drop_model_day_over_month("换成广州市呢", self.STATE, patch)
+        assert "date" not in out
+        assert out["region"] == "广州市"
+
+    def test_explicit_day_does_update_state(self):
+        from app.services.agent import orchestrator as orch
+
+        patch = {"region": "广州市", "date": "2025-12-16"}
+        out = orch._drop_model_day_over_month("12月16日广州的土壤水分", self.STATE, patch)
+        assert out["date"] == "2025-12-16"
+
+    def test_day_state_is_left_alone(self):
+        """上一轮本来问的就是某一天，模型传来的日期照常写回。"""
+        from app.services.agent import orchestrator as orch
+
+        state = {**self.STATE, "date": "2025-12-16"}
+        patch = {"date": "2025-12-18"}
+        assert orch._drop_model_day_over_month("换成广州市呢", state, patch)["date"] == "2025-12-18"
+
+
+class TestToolMonthRewrite:
+    """工具层：用户点的是整月，模型传的却是月里某一天 —— 按整月块取数。
+
+    r117 实测「广州和河南 2025年12月哪个土壤水分高」：模型两次都传 12-15，
+    广州当天整片缺测、河南只有 8 个像元，比较结论全错。多区域比较只能靠模型
+    自己取数（规则引擎一次算一个区域），所以口径必须在工具层就对齐。
+    """
+
+    def _patch(self, monkeypatch, block, present=True):
+        from app.services.agent import mock_orchestrator as mo
+
+        monkeypatch.setattr(
+            mo, "_month_scan", lambda cid, y, m: (block, present), raising=True
+        )
+
+    def test_month_message_rewrites_day_to_block(self, monkeypatch):
+        from app.services.agent.server_tools_runtime import _month_block_for_message
+
+        self._patch(monkeypatch, "20251201_20251231")
+        assert (
+            _month_block_for_message("25年12月广州的平均土壤水分", "20251215", "imported-x")
+            == "20251201_20251231"
+        )
+
+    def test_explicit_day_is_not_rewritten(self, monkeypatch):
+        from app.services.agent.server_tools_runtime import _month_block_for_message
+
+        self._patch(monkeypatch, "20251201_20251231")
+        assert (
+            _month_block_for_message("2025年12月16日广州的土壤水分", "20251215", "imported-x")
+            is None
+        )
+
+    def test_other_month_is_not_rewritten(self, monkeypatch):
+        from app.services.agent.server_tools_runtime import _month_block_for_message
+
+        self._patch(monkeypatch, "20251101_20251130")
+        assert (
+            _month_block_for_message("11月广州的平均土壤水分", "20251215", "imported-x") is None
+        )
+
+    def test_absent_block_returns_none(self, monkeypatch):
+        from app.services.agent.server_tools_runtime import _month_block_for_message
+
+        self._patch(monkeypatch, None, present=False)
+        assert (
+            _month_block_for_message("25年12月广州的平均土壤水分", "20251215", "imported-x")
+            is None
+        )
+
+    def test_no_message_no_rewrite(self, monkeypatch):
+        from app.services.agent.server_tools_runtime import _month_block_for_message
+
+        self._patch(monkeypatch, "20251201_20251231")
+        assert _month_block_for_message("", "20251215", "imported-x") is None

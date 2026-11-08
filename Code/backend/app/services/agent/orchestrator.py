@@ -1560,6 +1560,32 @@ def _state_patch_from_tool_calls(
     return patch
 
 
+def _drop_model_day_over_month(
+    message: str, state: dict[str, str] | None, patch: dict[str, str]
+) -> dict[str, str]:
+    """整月口径不许被模型自己挑的那一天改写。
+
+    用户上一轮问的是「2025 年 12 月」（状态里 ``date=2025-12``），这一轮只说
+    「换成广州市呢」，模型却按页面日期传 ``time=2025-12-15``。这个日期一旦写回
+    状态，下一句追问就彻底没有月份了，而且本轮取数也会退到那天（广州 12-15 是
+    整片缺测）。用户没有点具体某一天时，月份保持粘住。
+
+    2026-11-09 r116 实测：「河南 12 月」→「换成广州市呢」被答成「12-15 这天
+    没有有效像元」，与上一句的整月口径不是一回事。
+    """
+    if not isinstance(patch, dict) or "date" not in patch:
+        return patch
+    if not isinstance(state, dict):
+        return patch
+    if not re.fullmatch(r"\d{4}-\d{2}", str(state.get("date") or "")):
+        return patch
+    if _DAY_GIVEN_RE.search(message or ""):
+        return patch
+    out = dict(patch)
+    out.pop("date", None)
+    return out
+
+
 def _state_patch_from_tool_results(
     results: list[dict[str, Any]],
 ) -> dict[str, str]:
@@ -2596,6 +2622,12 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
     text = reply or ""
     if not text:
         return reply, False
+    # 本轮答复由**服务端重算**得出（见 _statistics_fallback_reply 的
+    # ``authoritative`` 标记）：这句话本身就是工具数据的确定性投影，
+    # 再拿「工具返回过的数」去校验它，反而会把月份/区间口径重算出来的正确答复
+    # 改回模型自己挑的那一天。2026-11-09 r113 实测即此。
+    if any(isinstance(s, dict) and s.get("authoritative") for s in (steps or [])):
+        return reply, False
     facts = _round_facts(steps)
     whitelist: set[float] = facts["numbers"]
     if not whitelist:
@@ -2647,6 +2679,172 @@ def _guard_reply_numbers(reply: str, steps: list[dict[str, Any]]) -> tuple[str, 
         sorted(mentioned)[:6],
     )
     return rebuilt, True
+
+
+#: 句子里「像行政区」的写法：用来兜「认不出来也要说清楚」。
+_REGION_TOKEN_RE = re.compile(
+    r"[\u4e00-\u9fa5]{2,8}(?:自治区|特别行政区|省|市|盟|州|地区)"
+)
+#: 这些不是具体地名，别拿去做「认不出行政区」的提示。
+_NOT_PLACE_WORDS = (
+    "地级市",
+    "县级市",
+    "副省级市",
+    "城市",
+    "都市",
+    "全市",
+    "全省",
+    "全国",
+    "省市",
+    "地市",
+    "城区",
+    "市区",
+    "地区",
+)
+#: 正则只能按「后缀」切，会把前面的年月/动词一起吃进来（「2025年12月河兰省」
+#: 会得到「月河兰省」），这些首字一律剥掉再拿去解析。
+#: 注意别加「日」——「日喀则市」是地名。
+_PLACE_LEAD_TRIM = "年月号的在了是和与及对把将换成改调看查算给按问请帮还就也又再"
+
+
+def _trim_place_token(token: str) -> str:
+    """把「月河南省」「换成河南省」这类前缀动词/时间词剥成纯地名。"""
+    out = str(token or "")
+    while out and out[0] in _PLACE_LEAD_TRIM:
+        out = out[1:]
+    return out
+
+
+def _has_region_scoped_stats(steps: list[dict[str, Any]]) -> bool:
+    """本轮取数里有没有「按行政区 / 矩形框」算出来的统计。"""
+    for step in steps or []:
+        if not isinstance(step, dict) or step.get("type") != "tool_result":
+            continue
+        data: Any = step.get("detail")
+        if isinstance(data, str) and data.strip().startswith("{"):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(data, dict) and data.get("scope") in ("region", "bbox"):
+            return True
+    return False
+
+
+def _unknown_region_token(message: str) -> str | None:
+    """句子里提到一个「像行政区、但解析不出来」的名字；没有则 None。"""
+    try:
+        from app.services.agent.region import resolve_region
+    except Exception:  # noqa: BLE001 - 区域库缺失时不做这个判断
+        return None
+    for match in _REGION_TOKEN_RE.finditer(str(message or "")):
+        text = str(message or "")
+        start = match.start()
+        token = match.group(0)
+        while token and token[0] in _PLACE_LEAD_TRIM:
+            token = token[1:]
+            start += 1
+        # 「12月18日广州市」这种：正则会把「日广州市」一起切进来。只有紧跟在
+        # 数字后面的「日 / 号」才是日期尾巴——「日喀则市」不能剥（见上面注释）。
+        while token and token[0] in "日号" and start > 0 and text[start - 1].isdigit():
+            token = token[1:]
+            start += 1
+        if len(token) < 3 or token in _NOT_PLACE_WORDS:
+            continue
+        try:
+            if resolve_region(token) is not None:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        return token
+    return None
+
+
+def _stats_region(steps: list[dict[str, Any]]) -> str | None:
+    """本轮统计实际用的行政区名（取最后一份按区域算的统计）。"""
+    found: str | None = None
+    for step in steps or []:
+        if not isinstance(step, dict) or step.get("type") != "tool_result":
+            continue
+        data: Any = step.get("detail")
+        if isinstance(data, str) and data.strip().startswith("{"):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+        if (
+            isinstance(data, dict)
+            and data.get("scope") == "region"
+            and data.get("region")
+        ):
+            found = str(data["region"])
+    return found
+
+
+def _append_region_scope_note(
+    message: str, reply: str, steps: list[dict[str, Any]]
+) -> str:
+    """把「你要的区域其实没按那个范围算」补一句到正文末尾。
+
+    两类必须点名，否则用户会拿错值：
+
+    1. **县 / 市辖区一级**（系统只到省与地级市）。2026-11-09 r113 实测：问
+       「广州市天河区的平均土壤水分」，模型自己把 region 降成「广州市」，
+       答复只写「按广州市行政边界」，全程没出现「天河区」三个字——用户会
+       把整市值当成天河区的。规则引擎里那道县区提示写了 ``if not region``，
+       区域一旦解析成市就被跳过，所以必须在最终正文上补。
+    2. **行政区名解析不出来**（写错字、库里没有），结果退回整幅栅格。
+       答复虽写了「整层」，但用户问的是那个地方，得点名说没认出来，
+       否则「整幅均值」会被当成「那个地方的均值」。
+    """
+    text = str(reply or "")
+    if not text:
+        return reply
+    msg = str(message or "")
+
+    county = None
+    try:
+        from app.services.agent.mock_orchestrator import _county_like_region_name
+
+        county = _county_like_region_name(msg)
+    except Exception:  # noqa: BLE001 - 区域库缺失时不做这个判断
+        county = None
+    if county and county not in text:
+        city = None
+        idx = msg.find(county)
+        if idx > 0:
+            head = re.search(r"([\u4e00-\u9fa5]{2,6}市)$", msg[:idx])
+            if head:
+                city = _trim_place_token(head.group(1)) or None
+        scope = f"「{city}」整市" if city else "它所属的地级市"
+        return text + (
+            f"\n\n补一句口径：你说的「{county}」是县/区一级，系统只做到**省级和地级市**，"
+            f"切不出这一级的边界。上面的数是按{scope}的范围算的，不是「{county}」单独的值；"
+            "要精确到区县，给我一个矩形范围（西、南、东、北四个经纬度），我按框统计。"
+        )
+
+    if not _has_region_scoped_stats(steps):
+        unknown = _unknown_region_token(msg)
+        if unknown and unknown not in text:
+            return text + (
+                f"\n\n另外要说明：你提到的「{unknown}」我没能对应到系统里的行政区，"
+                "所以这次算的是**整幅栅格**，不是那个地方的范围。"
+                "如果它是某个省或地级市，请再说一次规范名称；也可以直接给我矩形范围。"
+            )
+        return text
+
+    # 句子里的地名没认出来，但结果仍按某个行政区算了——说明这一轮悄悄换成了
+    # 别的区域（模型把「河兰省」顺成了「河南省」，或者沿用了上一轮的区域）。
+    # 不点明的话，用户会把那个省的值当成自己写的地方的值。
+    unknown = _unknown_region_token(msg)
+    if unknown and unknown not in text:
+        used = _stats_region(steps)
+        if used and used not in unknown:
+            return text + (
+                f"\n\n另外要说明：你说的「{unknown}」我没在系统里找到，"
+                f"上面的数是按「{used}」算的。如果不是这个区域，请再说一次规范名称。"
+            )
+    return text
 
 
 def _looks_numeric(text: str) -> bool:
@@ -2735,6 +2933,11 @@ def _asks_month_scope(
         from app.services.agent.mock_orchestrator import _parse_month_arg
     except Exception:  # pragma: no cover - 极端情况下退回「不当月份看」
         return False
+    # 句子已经点到某一天（「12 月 16 日」「2025-12-16」）就不再按月看：他要的是
+    # 那一天的观测，按月合并会把他的日期吞掉。`_parse_month_arg` 只认到「年月」，
+    # 「2025年12月16日」也能被它认成 (2025, 12)，必须在这里先挡。
+    if _DAY_GIVEN_RE.search(message or ""):
+        return False
     year: int | None = None
     if isinstance(state, dict):
         raw = str(state.get("date") or "")
@@ -2750,6 +2953,33 @@ def _asks_month_scope(
         return _parse_month_arg(message or "", year) is not None
     except Exception:  # pragma: no cover
         return False
+
+
+#: 「12 月 16 日」「2025-12-16」「20251216」这类**具体某一天**的写法。
+#: 用来判断「沿用上一轮整月口径」会不会把用户明确指的那一天顶掉。
+_DAY_GIVEN_RE = re.compile(
+    r"\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*日?"
+    r"|\d{8}(?![\d_])"
+    r"|(?<!\d)\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
+    r"|(?<![\d月])\d{1,2}\s*[日号]"
+)
+
+
+def _carried_month_scope(message: str, state: dict[str, str] | None) -> bool:
+    """这一句没提月份，但上一轮记着**整月口径**——算不算沿用那个月。
+
+    2026-11-09 r116 实测：「2025年12月河南省的平均土壤水分」之后接
+    「换成广州市呢」，月份整个丢掉、退回页面那天（12-15），而广州 12-15
+    是整片缺测，于是答成「这天算不出」——和上一句的整月口径不是一回事。
+    状态里整月口径存成 ``2025-12``（见 ``_entities_state_patch``）。
+
+    只在这一句**没有另给具体日期**时才沿用：用户说了「12 月 16 日」就以他说的为准。
+    """
+    if not isinstance(state, dict):
+        return False
+    if not re.fullmatch(r"\d{4}-\d{2}", str(state.get("date") or "")):
+        return False
+    return not _DAY_GIVEN_RE.search(message or "")
 
 
 #: 明确的「回指上文」措辞。这类词单独出现在**首轮**＝用户在引用不存在的历史。
@@ -2842,14 +3072,21 @@ def _statistics_fallback_reply(
     # 更难发现（用户只会记住其中一个）。所以区间一律由引擎算，模型调没调工具都一样。
     # 例外：问的是「区间里哪一天最大/最小」这类**挑一天**的问题，答案不是合并值，
     # 引擎那段「合并平均 + 逐日明细」答非所问，仍交给模型（它有逐日数）。
+    _month_carried = _carried_month_scope(message, state)
     range_question = bool(
-        _wants_statistics(message)
-        and (
-            _asks_date_range(message, state, client_context)
-            or _asks_month_scope(message, state, client_context)
+        (
+            _wants_statistics(message)
+            and (
+                _asks_date_range(message, state, client_context)
+                or _asks_month_scope(message, state, client_context)
+                or _month_carried
+            )
         )
-        and not _RANGE_PICK_RE.search(message or "")
-    )
+        # 「换成广州市呢」这类纯换对象的追问不含「平均/多少」，_wants_statistics
+        # 是 False；但它这一轮真去取了数（模型自己调了 get_layer_statistics），
+        # 而上一轮是整月口径 ⇒ 必须由引擎按整月重算，否则会答成页面那天。
+        or (_month_carried and _statistics_tool_called(list(steps)))
+    ) and not _RANGE_PICK_RE.search(message or "")
     if _statistics_tool_called(list(steps)) and not range_question:
         return reply, None
     if not range_question and not _wants_statistics(message):
@@ -2904,6 +3141,12 @@ def _statistics_fallback_reply(
                     else "服务端强制取数（模型本轮未调用任何数据工具）"
                 ),
                 "detail": text[:800],
+                # ★ 2026-11-09：这一段是**服务端自己重算**的结果，不是模型原文。
+                # 标了它，_guard_reply_numbers 就不会再拿「模型自己那次工具调用」
+                # 当参照把这句正确的答复改回去（r113 实测：问「25年12月河南省」，
+                # 模型自带 12-15 单日帧 0.115/8 像元、引擎整月块算出 0.2484/1284，
+                # 守卫把白名单只建成前者，于是把正确的整月答复重写成了 0.115/8）。
+                "authoritative": True,
             }
         )
         return text, topic_patch
@@ -3427,7 +3670,11 @@ def _run_chat_impl(
                 # 模型查过哪一层 = 这一轮的对象，记进会话状态（否则下一句追问只能靠页面猜）
                 topic_state = dialogue_state.merge(
                     topic_state,
-                    **_state_patch_from_tool_calls(all_uses, client_context),
+                    **_drop_model_day_over_month(
+                        message,
+                        topic_state,
+                        _state_patch_from_tool_calls(all_uses, client_context),
+                    ),
                 )
                 steps.append(
                     {
@@ -3563,6 +3810,8 @@ def _run_chat_impl(
                         "summary": "正文数值与本轮取数对不上，已按工具返回重写",
                     }
                 )
+            # 区域口径兜底：县/区一级、或地名没认出来时，必须在正文里点明
+            reply = _append_region_scope_note(message, reply, list(steps))
             if not intents:
                 fallback = mock_chat(
                     message,
@@ -3650,7 +3899,12 @@ def _run_chat_impl(
             pre_call_state = topic_state
             # 同 Anthropic 分支：模型查过的层要记进会话状态
             topic_state = dialogue_state.merge(
-                topic_state, **_state_patch_from_tool_calls(calls, client_context)
+                topic_state,
+                **_drop_model_day_over_month(
+                    message,
+                    topic_state,
+                    _state_patch_from_tool_calls(calls, client_context),
+                ),
             )
             steps.append(
                 {
@@ -3804,6 +4058,8 @@ def _run_chat_impl(
                     "summary": "正文数值与本轮取数对不上，已按工具返回重写",
                 }
             )
+        # 同 Anthropic 分支：区域口径（县区级 / 地名认不出）必须在正文里点明
+        reply = _append_region_scope_note(message, reply, list(steps))
         if not intents:
             fallback = mock_chat(
                 message,
