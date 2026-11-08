@@ -202,3 +202,81 @@ class TestResolveEntitiesMonth:
         )
         assert out["date"] == "2025-12-15"
         assert out["month"] is None
+
+
+# ---------------------------------------------------------------------------
+# 闸门这一侧：月份必须和「X 日到 Y 日」同等对待，否则模型原文被放行。
+#
+# 2026-11-08 用户实测：模型这一轮调过一次 get_layer_statistics，传的 time
+# 是页面时间轴上停着的 12-15（那天广州 247 像元全缺测），闸门按「调过工具
+# 就尊重原文」放行，于是「12 月平均」被答成「这天算不出平均值」。
+# 根因是 `_asks_date_range` 只认「X 日到 Y 日」，对「25 年 12 月」返回 False。
+# ---------------------------------------------------------------------------
+
+
+class TestAsksMonthScope:
+    CTX = {
+        "active_catalog_ids": ["imported-55359b8ecd3d"],
+        "active_layers": [
+            {
+                "catalog_id": "imported-55359b8ecd3d",
+                "instance_id": "i-0",
+                "name": "风云卫星 平均散射约束产品 · 土壤水分",
+                "overlay_layer_id": "imported-55359b8ecd3d",
+                "visible": True,
+                "selected": True,
+            }
+        ],
+        "timeline": {"hour": 0, "date": "2025-12-15", "playing": False},
+        "selected_layer_id": "imported-55359b8ecd3d",
+    }
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "25年12月广州的平均土壤水分",
+            "2025年12月广州的平均土壤水分",
+            "2025-12 广州市土壤水分平均",
+            "12月广州的平均土壤水分",
+        ],
+    )
+    def test_month_phrasings_are_recognised(self, text):
+        from app.services.agent import orchestrator as orch
+
+        assert orch._asks_month_scope(text, {}, self.CTX) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "12月15日广州市土壤水分",  # 具体某一天，不是整月
+            "广州市土壤水分",  # 没提时间
+            "20251113 那天广州市土壤水分",
+        ],
+    )
+    def test_non_month_phrasings_are_not_recognised(self, text):
+        from app.services.agent import orchestrator as orch
+
+        assert orch._asks_month_scope(text, {}, self.CTX) is False
+
+    def test_year_can_come_from_state(self):
+        """只写「12月」时年份借会话状态。"""
+        from app.services.agent import orchestrator as orch
+
+        assert (
+            orch._asks_month_scope("12月的平均", {"date": "2024-12-01"}, {}) is True
+        )
+
+    def test_no_year_anywhere_is_not_recognised(self):
+        """借不到年份就不当成可算的请求，交给上层去问哪一年。"""
+        from app.services.agent import orchestrator as orch
+
+        assert orch._asks_month_scope("12月的平均", {}, {}) is False
+
+    def test_month_makes_range_question_true(self):
+        """月份命中后，区间闸门要把它当成「区间」，从而不让模型原文过关。"""
+        from app.services.agent import orchestrator as orch
+
+        msg = "25年12月广州的平均土壤水分"
+        assert orch._wants_statistics(msg) is True
+        assert orch._asks_date_range(msg, {}, self.CTX) is False
+        assert orch._asks_month_scope(msg, {}, self.CTX) is True

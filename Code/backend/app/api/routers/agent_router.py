@@ -544,12 +544,14 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
     from app.api.rate_limit import (
         beijing_quota_reset_at,
         client_ip,
-        has_valid_session,
+        is_guest_request,
         peek_agent_guest_daily_quota,
+        session_role,
     )
 
     reset_at = beijing_quota_reset_at()
-    if has_valid_session(request):
+    if not is_guest_request(request):
+        role = session_role(request) or "account"
         return AgentQuotaResponse(
             scope="account",
             limit=0,
@@ -558,7 +560,7 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
             percent=100,
             reset_at=reset_at,
             blocked=False,
-            message="已登录，不占用访客额度。",
+            message=f"已用「{role}」账号登录，不占用访客额度。",
         )
 
     visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]

@@ -2700,6 +2700,46 @@ def _asks_date_range(
         return False
 
 
+def _asks_month_scope(
+    message: str, state: dict[str, str] | None, client_context: dict[str, Any] | None
+) -> bool:
+    """这句话问的是不是「某一个月」（整月口径），而不是某一天。
+
+    ★ 2026-11-08（用户实测「25 年 12 月广州的平均土壤水分」被答成 12-01 单日）：
+    ``_parse_date_range`` 只认「X 日到 Y 日」，对「25 年 12 月」直接返回 None，
+    于是 ``range_question=False`` —— 而模型这一轮调过一次 ``get_layer_statistics``，
+    闸门按「调过工具就尊重原文」放行，模型自己挑的那一天就成了答案。
+
+    实测模型挑的是 12-01：该层（风云卫星 平均散射约束 · 土壤水分）12 月只有
+    12-01/02/03 三个按需补出的单日帧，12-01 在广州 247 个像元全缺测，于是
+    「12 月平均」被答成「这天算不出平均值」，还附带一句「换成 12-16/12-13/12-18」。
+    数值一个都没错，粒度完全不是用户问的。月份必须与「X 日到 Y 日」同等对待，
+    一律交给引擎按整月合并。
+
+    年份借会话状态或页面时间轴；借不到时 ``_parse_month_arg`` 返回 None，
+    这里也跟着返回 False（不把「12 月」当成可算的请求，让上层去问哪一年）。
+    """
+    try:
+        from app.services.agent.mock_orchestrator import _parse_month_arg
+    except Exception:  # pragma: no cover - 极端情况下退回「不当月份看」
+        return False
+    year: int | None = None
+    if isinstance(state, dict):
+        raw = str(state.get("date") or "")
+        if len(raw) >= 4 and raw[:4].isdigit():
+            year = int(raw[:4])
+    if year is None and isinstance(client_context, dict):
+        timeline = client_context.get("timeline")
+        if isinstance(timeline, dict):
+            raw = str(timeline.get("date") or "")
+            if len(raw) >= 4 and raw[:4].isdigit():
+                year = int(raw[:4])
+    try:
+        return _parse_month_arg(message or "", year) is not None
+    except Exception:  # pragma: no cover
+        return False
+
+
 #: 明确的「回指上文」措辞。这类词单独出现在**首轮**＝用户在引用不存在的历史。
 #:
 #: 只收毫不含糊的说法：「再说一遍/这个/那个」太宽（可能指当前选中的层），
@@ -2792,7 +2832,10 @@ def _statistics_fallback_reply(
     # 引擎那段「合并平均 + 逐日明细」答非所问，仍交给模型（它有逐日数）。
     range_question = bool(
         _wants_statistics(message)
-        and _asks_date_range(message, state, client_context)
+        and (
+            _asks_date_range(message, state, client_context)
+            or _asks_month_scope(message, state, client_context)
+        )
         and not _RANGE_PICK_RE.search(message or "")
     )
     if _statistics_tool_called(list(steps)) and not range_question:

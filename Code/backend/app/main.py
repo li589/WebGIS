@@ -276,7 +276,7 @@ def create_app() -> FastAPI:
             check_weather_tile_rate_limit,
             check_write_rate_limit,
             client_ip,
-            has_valid_session,
+            is_guest_request,
             rate_limited_response,
             should_rate_limit_agent_chat,
             should_rate_limit_agent_models_refresh,
@@ -350,10 +350,13 @@ def create_app() -> FastAPI:
         # 线上实际跑的是 BACKEND_ENV=development，把这条放进上面那个 if 里
         # 等于永不生效，所以这里不受环境开关影响，只由额度值本身控制
         # （BACKEND_AGENT_GUEST_DAILY_QUOTA<=0 即关闭）。
-        # 「已登录」必须校验会话本身，不能只看 Cookie 存在——否则随便塞一个
-        # 假 Cookie 就跳过了额度。
+        #
+        # ★ 2026-11-08：判据从「有没有会话」改成「会话是什么角色」。
+        # 前端「以游客身份进入」用的就是共享的 demo 账号，登录后同样有合法会话
+        # Cookie；只看 Cookie 会把这批人判成已登录而完全不限额——他们恰恰是最
+        # 该限的。现在 demo/guest 一律按游客计，admin/standard 才免额度。
         if should_rate_limit_agent_chat(path, method):
-            if not has_valid_session(request):
+            if is_guest_request(request):
                 visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
                 guest = check_agent_guest_daily_quota(
                     visitor_id or None, client_ip(request)
@@ -367,8 +370,8 @@ def create_app() -> FastAPI:
                     return rate_limited_response(
                         guest.retry_after_seconds,
                         message=(
-                            "未登录状态下 AI 助手今天的额度已用完，"
-                            "北京时间 0 点恢复；登录后可继续使用。"
+                            "AI 助手今天的额度已用完，北京时间 0 点恢复；"
+                            "用正式账号登录后可继续使用。"
                         ),
                         request_id=request_id,
                     )

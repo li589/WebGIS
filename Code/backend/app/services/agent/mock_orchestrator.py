@@ -1721,6 +1721,32 @@ def _parse_date_range(text: str, fallback_day: str | None) -> tuple[str, str] | 
     return None
 
 
+#: 工具层的「结构性」错误：换哪一天都一样失败，逐日重试毫无意义。
+#:
+#: 只有「这层根本不是可统计的栅格」「id 认不出」「没有权限」这三类算结构性；
+#: 「这片区域这天没有有效像元」是数据本身的状态，属于可预期结果，不在此列。
+_STRUCTURAL_STAT_ERROR_RE = re.compile(
+    r"还没转成可统计的栅格|无法识别这个图层标识|无权访问"
+)
+
+
+def _user_facing_tool_error(err: str) -> str:
+    """把工具层的 error 变成能直接给用户看的一句话。
+
+    工具返回的 error 里经常内嵌**写给模型的指令**，例如实测的这一句：
+
+        这一层目前算不出数值：…还没转成可统计的栅格。请只回答两件事，
+        不要给任何数字：① … ② …。正文里不要出现 mat/GeoTIFF/imported-* 这类内部说法。
+
+    兜底路径把 error 原样转述给用户时，这段"请只回答…"就成了莫名其妙的操作要求。
+    只保留描述问题的那一句，指令部分丢掉。
+    """
+    body = str(err or "").strip()
+    if not body:
+        return ""
+    return re.split(r"请只回答|请不要|不要给任何数字|正文里不要", body)[0].strip()
+
+
 def _range_statistics_reply(
     *,
     text: str,
@@ -1747,6 +1773,7 @@ def _range_statistics_reply(
 
     catalog_id = str(target.get("overlay_layer_id") or target["catalog_id"])
     rows: list[dict[str, Any]] = []
+    struct_error = ""
     for day in days:
         args: dict[str, Any] = {"catalog_id": catalog_id, "time": day}
         if region:
@@ -1769,14 +1796,51 @@ def _range_statistics_reply(
                 "daily": bool(res.get("is_daily_frame")),
                 "actual": str(res.get("actual_time") or day),
                 "block": "_" in str(res.get("actual_time") or ""),
+                "error": str(res.get("error") or ""),
             }
         )
+        # ★ 2026-11-08：「这一层根本不能统计」不属于「这几天没观测」。
+        # 实测 imported-nas-fy-avg-sm 是原始 auto 产品，31 天逐日全部返回同一句
+        # 「还没转成可统计的栅格」，旧实现跑满 31 次再答「这 31 天每天都没有有效
+        # 像元」——原因说错、还白跑 31 次取数。结构性错误第一次就停，原样转述。
+        err = str(res.get("error") or "")
+        if err and _STRUCTURAL_STAT_ERROR_RE.search(err):
+            struct_error = err
+            break
 
     good = [r for r in rows if r["ok"] and r["pixels"] > 0]
     scope_prefix = f"按「{region}」行政边界" if region else "整层"
     span_text = f"{_readable_date(days[0])} 至 {_readable_date(days[-1])}"
     topic_state = _entities_state_patch(entities)
+    if struct_error:
+        clean = _user_facing_tool_error(struct_error)
+        tail = "这次没有取到任何数值，也没有换成别的日期或版本顶替。"
+        if "还没转成可统计的栅格" in clean:
+            tail = (
+                "换页面上已经出过图、能统计的图层，或者先把这个产品转成标准栅格再算。"
+                "这次没有取到任何数值，也没有改用别的日期或版本顶替。"
+            )
+        return {
+            "session_id": sid,
+            "reply": f"{clean}\n\n{tail}",
+            "ui_intents": intents,
+            "topic_state": topic_state,
+        }
     if not good:
+        # 所有天都失败、且原因一致时，说原因而不是「每天都没有有效像元」——
+        # 「这层不能统计」和「这层这几天没观测」是两件事，说错了用户会去重跑反演。
+        distinct = {_user_facing_tool_error(r["error"]) for r in rows if r["error"]}
+        if len(distinct) == 1:
+            return {
+                "session_id": sid,
+                "reply": (
+                    f"{distinct.pop()}\n\n"
+                    f"所以 {span_text} 这 {len(days)} 天一个数都取不到，"
+                    "这次没有改用别的日期或版本顶替。"
+                ),
+                "ui_intents": intents,
+                "topic_state": topic_state,
+            }
         return {
             "session_id": sid,
             "reply": (

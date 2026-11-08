@@ -3,7 +3,8 @@
  * 助手额度条（输入框上方）。
  *
  * 数据来自 `GET /agent/quota`，与后端中间件的拦截口径同源：
- * 未登录按「访客号（缺省退回 IP）+ 北京自然日」计数，登录账号不占额度。
+ * 游客（未登录，或用「以游客身份进入」的共享 demo 账号）按「访客号
+ * （缺省退回 IP）+ 北京自然日」计数；admin / standard 正式账号不占额度。
  *
  * 三种状态对应三套配色/文案：
  *   - 正常：还能问；
@@ -53,7 +54,7 @@ const headline = computed(() => {
 const detail = computed(() => {
   const q = props.quota
   if (!q) return '向 AI 提问或发送指令会使用此额度。'
-  if (isAccount.value) return '已登录，不占用访客额度，可正常提问。'
+  if (isAccount.value) return '已用正式账号登录，不占这份额度，可正常提问。'
   if (q.limit <= 0) return '本站当前未限制访客提问次数。'
   if (tone.value === 'blocked') return q.message || '今日额度已用完，0 点恢复。'
   return '向 AI 提问或发送指令会使用此额度。可手动切换图层、选择日期和查看数据。'

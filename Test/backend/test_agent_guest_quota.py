@@ -127,3 +127,75 @@ def test_session_lookup_error_falls_back_to_guest(session_cookie_name, monkeypat
     monkeypatch.setattr("app.services.session_service.get_session", boom)
     req = _FakeRequest({session_cookie_name: "whatever"})
     assert rl.has_valid_session(req) is False
+
+
+# ---------------------------------------------------------------------------
+# 按角色判定：游客登录用的是共享 demo 账号，它同样有合法会话 Cookie。
+# 只看「有没有会话」会把这类请求判成已登录、从而完全不限额——2026-11-08
+# 实测确认过（游客登录后 /agent/quota 直接返回 scope=account）。
+# ---------------------------------------------------------------------------
+
+
+def _patch_session(monkeypatch, role_by_token: dict[str, dict]):
+    monkeypatch.setattr(
+        "app.services.session_service.get_session",
+        lambda token: role_by_token.get(token),
+    )
+
+
+def test_guest_login_with_demo_account_still_counts(session_cookie_name, monkeypatch):
+    """「以游客身份进入」= demo 会话，必须照样占游客额度。"""
+    _patch_session(monkeypatch, {"demo-token": {"user_id": 2, "role": "demo"}})
+    req = _FakeRequest({session_cookie_name: "demo-token"})
+    assert rl.session_role(req) == "demo"
+    assert rl.is_guest_request(req) is True
+
+
+def test_admin_session_is_exempt(session_cookie_name, monkeypatch):
+    _patch_session(monkeypatch, {"admin-token": {"user_id": 1, "role": "admin"}})
+    req = _FakeRequest({session_cookie_name: "admin-token"})
+    assert rl.session_role(req) == "admin"
+    assert rl.is_guest_request(req) is False
+
+
+def test_standard_session_is_exempt(session_cookie_name, monkeypatch):
+    _patch_session(monkeypatch, {"std-token": {"user_id": 3, "role": "standard"}})
+    req = _FakeRequest({session_cookie_name: "std-token"})
+    assert rl.is_guest_request(req) is False
+
+
+def test_role_is_case_insensitive(session_cookie_name, monkeypatch):
+    _patch_session(monkeypatch, {"t": {"user_id": 2, "role": "DEMO"}})
+    req = _FakeRequest({session_cookie_name: "t"})
+    assert rl.session_role(req) == "demo"
+    assert rl.is_guest_request(req) is True
+
+
+def test_no_cookie_counts_as_guest(session_cookie_name):
+    assert rl.session_role(_FakeRequest({})) is None
+    assert rl.is_guest_request(_FakeRequest({})) is True
+
+
+def test_bogus_cookie_counts_as_guest(session_cookie_name, monkeypatch):
+    _patch_session(monkeypatch, {})
+    req = _FakeRequest({session_cookie_name: "fake"})
+    assert rl.session_role(req) is None
+    assert rl.is_guest_request(req) is True
+
+
+def test_session_without_role_counts_as_guest(session_cookie_name, monkeypatch):
+    """会话里没有 role 字段（旧数据）时不能当成免额度账号。"""
+    _patch_session(monkeypatch, {"old-token": {"user_id": 9}})
+    req = _FakeRequest({session_cookie_name: "old-token"})
+    assert rl.session_role(req) is None
+    assert rl.is_guest_request(req) is True
+
+
+def test_session_error_counts_as_guest(session_cookie_name, monkeypatch):
+    def boom(token):  # noqa: ANN001, ARG001
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("app.services.session_service.get_session", boom)
+    req = _FakeRequest({session_cookie_name: "whatever"})
+    assert rl.session_role(req) is None
+    assert rl.is_guest_request(req) is True

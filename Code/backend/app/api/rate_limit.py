@@ -429,8 +429,57 @@ def check_agent_guest_daily_quota(visitor_id: str | None, ip: str) -> RateLimitR
     return RateLimitResult(True, 0)
 
 
+def session_role(request) -> str | None:  # type: ignore[no-untyped-def]
+    """请求背后的**会话角色**；没有有效会话返回 ``None``。
+
+    为什么要角色而不只是"有没有会话"：前端「以游客身份进入」用的是共享的 demo
+    账号（``stores/auth.ts`` 的 guest 凭证），登录成功后同样拿得到一个**完全合法**
+    的会话 Cookie。只看 Cookie 存在与否，这批人会被判成"已登录"从而完全不限额——
+    而他们恰恰是最需要限额的那批人。实测确认过：游客登录后 ``/agent/quota``
+    直接返回 ``scope=account``，20 次额度一次也用不上。
+
+    所以判据落到角色上：``demo`` / ``guest`` 一律按游客计。会话校验异常时返回
+    ``None``（fail-closed：宁可多限一次也不漏限）。
+    """
+    from app.core.config import settings
+    from app.services.session_service import get_session
+
+    token = request.cookies.get(settings.session_cookie_name)
+    if not token:
+        return None
+    try:
+        sess = get_session(token)
+    except Exception as exc:  # noqa: BLE001 — fail-closed：当作没有会话
+        logger.warning("会话校验失败，按游客处理: %s", exc)
+        return None
+    if not isinstance(sess, dict):
+        return None
+    role = str(sess.get("role") or "").strip().lower()
+    return role or None
+
+
+#: 哪些角色算「游客」——共享账号，必须按浏览器匿名号限次。
+#:
+#: ``demo`` 是前端「以游客身份进入」用的共享账号；``guest`` 留给以后真正的匿名
+#: 游客角色。admin / standard 是实名账号，不占这份额度。
+_GUEST_ROLES = frozenset({"demo", "guest"})
+
+
+def is_guest_request(request) -> bool:  # type: ignore[no-untyped-def]
+    """这个请求要不要按游客额度限次。
+
+    * 没有会话（含伪造 Cookie 校验不过）→ 是；
+    * 会话角色是 demo / guest（含「以游客身份进入」）→ 是；
+    * admin / standard → 否。
+    """
+    role = session_role(request)
+    if role is None:
+        return True
+    return role in _GUEST_ROLES
+
+
 def has_valid_session(request) -> bool:  # type: ignore[no-untyped-def]
-    """请求是否带着**有效**的登录会话。
+    """请求是否带着**有效**的登录会话（不区分角色，保持向后兼容）。
 
     只看 Cookie 存不存在是不够的：随手塞一个 `cgda_session=fake` 就能骗过
     「已登录」判定，从而完全跳过游客额度。
@@ -440,6 +489,9 @@ def has_valid_session(request) -> bool:  # type: ignore[no-untyped-def]
 
     这里直接校验会话本身（Redis 缓存优先，未命中才落库）；校验异常时按游客
     处理，宁可多限一次也不漏限。
+
+    ★ 2026-11-08：判定额度**不要**用这个函数，用 ``is_guest_request``。这个
+    只看"有没有会话"，游客登录（demo 账号）同样算"有"，会把该限的人放过去。
     """
     from app.core.config import settings
     from app.services.session_service import get_session
