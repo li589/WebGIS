@@ -523,6 +523,167 @@ class TestPageSelectionEmptySignal:
         assert "page_selection_empty" not in out
 
 
+class TestProductGroupNotHiddenByPageCatalogId:
+    """页面层的 catalog_id 是产品族 id 时，**不能**把整条族记录过滤掉。
+
+    2026-11-08 r58 实测（3/3 复现）：页面只挂「SMAP 动态 · 土壤水分」，
+    问「SMAP 动态的土壤水分和植被光学厚度分别是多少」，模型回答
+    「本机现有产物里，SMAP 动态散射约束产品只挂了土壤水分这一层」，
+    还建议用户「去数据管理页确认是否已生成植被光学厚度这一支产物」——
+    而盘上 `imported-5427e1020d63`(VOD) / `imported-94501b455dcd`(ω)
+    与 `imported-a8940443fd6d`(SM) 同 run、同 12 片，都在。
+
+    根因：`_page_layer_index` 会把 `catalog_id` 也登记进索引，而
+    `seen = set(page.keys())` 又把整份索引当「已在页面上」⇒ 族记录被过滤，
+    模型看不到 `group_members` 里另外两个变量层的产物 id。族 id 只是
+    「这层属于哪族」的标记，不等于「这一族本身已作为图层挂在页面上」。
+    """
+
+    _CTX = {
+        "active_catalog_ids": ["method-smap-omega-doy-dynamic"],
+        "active_layers": [
+            {
+                "catalog_id": "method-smap-omega-doy-dynamic",
+                "overlay_layer_id": "imported-a8940443fd6d",
+                "name": "SMAP 动态散射约束产品 · 土壤水分",
+                "selected": True,
+                "visible": True,
+            }
+        ],
+    }
+
+    def test_group_record_survives_page_catalog_id(self) -> None:
+        from app.services.agent.server_tools_runtime import _search_layers
+
+        out = _search_layers(
+            {"query": "SMAP 动态 植被光学厚度", "limit": 20},
+            cred=None,
+            client_context=self._CTX,
+        )
+        ids = [str(e.get("layer_id") or "") for e in out.get("layers") or []]
+        assert "method-smap-omega-doy-dynamic" in ids, (
+            "产品族记录被页面 catalog_id 吃掉了，模型将看不到同族其它变量层的产物 id"
+        )
+
+    def test_group_record_carries_all_members(self) -> None:
+        from app.services.agent.server_tools_runtime import _search_layers
+
+        out = _search_layers(
+            {"query": "SMAP 动态 植被光学厚度", "limit": 20},
+            cred=None,
+            client_context=self._CTX,
+        )
+        group = next(
+            (
+                e
+                for e in out.get("layers") or []
+                if e.get("layer_id") == "method-smap-omega-doy-dynamic"
+            ),
+            None,
+        )
+        assert group is not None
+        assert group.get("is_product_group") is True
+        # 盘上有产物才列（绝不编造）；本机三层俱在时必须一层不少
+        members = group.get("group_members") or []
+        codes = {str(m.get("variable_label") or "") for m in members}
+        assert {"土壤水分", "植被光学厚度"} <= codes or members == [], (
+            f"族成员不完整：{codes}"
+        )
+
+    def test_page_layer_not_duplicated(self) -> None:
+        from app.services.agent.server_tools_runtime import _search_layers
+
+        out = _search_layers(
+            {"query": "SMAP 动态 植被光学厚度", "limit": 20},
+            cred=None,
+            client_context=self._CTX,
+        )
+        ids = [str(e.get("layer_id") or "") for e in out.get("layers") or []]
+        assert ids.count("imported-a8940443fd6d") <= 1, "页面上那一层被重复列出"
+
+
+class TestShrinkKeepsStatistics:
+    """早期轮次的工具返回被截断时，数值不能丢。
+
+    2026-11-08 r59-d2 实测：一份 1994 字符的统计返回，`mean` 在 318 位、
+    `value_basis` 在 1075、`min` 在 1585、`max` 在 1614、`std` 在 1641。
+    阈值曾为 700，按位置截就把极值与时间口径全切掉，模型跳到第 4 跳只能回
+    「均值、有效像元数这些数字没有回传上来」。现在阈值抬到 2000，这类返回整份保留。
+    """
+
+    @staticmethod
+    def _stat_payload() -> str:
+        import json
+
+        # 模拟真实统计返回：外层元信息很长，数值字段排在最后
+        payload = {
+            "ok": True,
+            "catalog_id": "imported-a8940443fd6d",
+            "resolved_layer_id": "",
+            "display_name": "SMAP 动态散射约束产品 · 土壤水分",
+            "answer_lead": "我按「SMAP 动态散射约束产品 · 土壤水分」取数",
+            "scope": "full_extent",
+            "requested_bbox": None,
+            "region": None,
+            "region_level": None,
+            "region_geometry_crs": "WGS84",
+            # 真实返回里 temporal_summary 约 1290 字符，是「数值字段排在最后」的主因
+            "temporal_summary": "共 12 个时间片，" + "填充" * 650,
+            "actual_time": "20251216",
+            "period_start": "20251216",
+            "period_end": "20251216",
+            "time_source": "page",
+            "is_daily_frame": True,
+            "value_basis": {"kind": "ondemand_frame", "note": "按需补出的单日帧"},
+            "valid_count": 363201,
+            "mean": 0.16531404,
+            "min": 0.02,
+            "max": 0.8076871,
+            "std": 0.11518533,
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    def test_typical_statistics_survive_untouched(self) -> None:
+        """典型统计返回（约 2000 字符）不应被截断，数值与时间口径必须都在。"""
+        from app.services.agent.orchestrator import _shrink_tool_text
+
+        text = self._stat_payload()
+        assert len(text) > 1500, "样本要接近真实长度才有意义"
+        out = _shrink_tool_text(text)
+        assert out == text, "典型统计返回被截断了"
+        for key in ("mean", "min", "max", "std", "valid_count", "value_basis", "period_start"):
+            assert f'"{key}"' in out, f"丢了关键字段 {key}"
+
+    def test_numbers_are_still_parseable(self) -> None:
+        """压缩后仍应是可用 JSON（至少要能读到数值），不是切一半的残片。"""
+        import json
+
+        from app.services.agent.orchestrator import _shrink_tool_text
+
+        out = _shrink_tool_text(self._stat_payload())
+        parsed = json.loads(out)
+        assert parsed["mean"] == 0.16531404
+        assert parsed["max"] == 0.8076871
+
+    def test_overlong_text_truncated_with_note(self) -> None:
+        from app.services.agent.orchestrator import (
+            _TOOL_RESULT_KEEP_CHARS,
+            _shrink_tool_text,
+        )
+
+        text = "错误：" + "x" * (_TOOL_RESULT_KEEP_CHARS * 2)
+        out = _shrink_tool_text(text)
+        assert out.startswith("错误：")
+        assert "已省略" in out
+        assert len(out) < len(text)
+
+    def test_short_text_untouched(self) -> None:
+        from app.services.agent.orchestrator import _shrink_tool_text
+
+        text = '{"ok": true}'
+        assert _shrink_tool_text(text) == text
+
+
 class TestRoundingTolerance:
     """模型把参考值四舍五入（0.0593→0.059）不是编造。
 
@@ -793,3 +954,14 @@ class TestGuardUnclaimedViewIntent:
             "把这个图层删掉。", {"reply": reply, "ui_intents": []}
         )
         assert out["reply"] == reply
+
+    def test_transitive_done_phrase_is_corrected(self) -> None:
+        """2026-11-08 实测 r57-h1：模型回「已把「…」从图层面板移除」——
+        「已把…移除」是及物完成态变体，不命中旧正则「已移除」，漏网成空口承诺。"""
+        from app.services.agent.orchestrator import _guard_unclaimed_view_intent
+
+        out = _guard_unclaimed_view_intent(
+            "把这个图层删掉。",
+            {"reply": "已把「SMAP 动态散射约束产品 · 土壤水分」从图层面板移除。", "ui_intents": []},
+        )
+        assert "没能把操作下发" in out["reply"]

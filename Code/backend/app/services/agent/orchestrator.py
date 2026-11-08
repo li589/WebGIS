@@ -1196,6 +1196,11 @@ def _build_system(
         "（传 catalog_id + 可选 time），不要用 sample_layer_point 的点值冒充全图均值。"
         "这句话里带统计动词（平均/均值/统计/像元数/最大/最小）时，必须以统计结果或"
         "明确失败原因结尾，不能只列图层、也不能只说“打算怎么算”。\n"
+        "- **同一层同一时间只统计一次，绝不复述两遍**：`method-*` 产品族 id 与它本次"
+        "解析出的 `imported-*` 是**同一层**，不许当两层各调一次统计、更不许把同一组数"
+        "在正文里列两遍（2026-11-08 实测：一次问两个变量，模型把 method 与 imported "
+        "各算一遍，四条项目里两两重复）。一次问 N 个变量 ⇒ 第一轮就并行发起 N 个统计，"
+        "别一跳一跳串行（串行到第 4 跳时早期结果已压缩，容易答“数字没回传”）。\n"
         "- 统计对象：**只要用户说出“算/统计/取数/均值 + 某个产品名/变量名”，那个名字"
         "就是点名，优先级高于页面选中层，永远不许拿 selected=true 那层顶替**——"
         "哪怕用户同时说“页面别动 / 仍选中另一层”也一样，后台算的对象是点名的层，"
@@ -1208,8 +1213,14 @@ def _build_system(
         "先 search_layers 拿到 id，再显式传给 get_layer_statistics。\n"
         "- `is_product_group=true`（`layer_kind=product_group`）是**产品族**，不是栅格层、"
         "不能统计。**严禁**说“这一层是等效散射 ω”——族名里的“散射”只是产品名用词，"
-        "`variable` 会是 unknown。念 `group_hint`，把 `group_members` 里的变量层列给用户挑，"
-        "选定再统计。\n"
+        "`variable` 会是 unknown。念 `group_hint`：\n"
+        "  · **用户已经点名变量**（例：“土壤水分和植被光学厚度分别是多少”）⇒ 直接从 "
+        "`group_members` 里取 `variable_label` 对得上的那个 `overlay_layer_id` 调 "
+        "get_layer_statistics，有几个变量就取几次、逐个给数；**这些成员层就算没挂在"
+        "页面上也能统计**，严禁因为“页面只挂了一层”就回答“本机只有这一层”、"
+        "或叫用户去数据管理页确认是否已生成。**本机有没有这一支产物，唯一判据是 "
+        "`group_members` 里列没列**。\n"
+        "  · 用户**没点名变量** ⇒ 才把 `group_members` 里的变量层列给他挑，选定再统计。\n"
         "- `mixed`＝层内混装单日帧与多日块，引用“某一天”必须说明命中哪一片；"
         "`hybrid`＝time_list 只有多日块但已按需补出单日帧（`ondemand_frame_count`>0），"
         "此时“只能取块合成值”是错的，别拿 time_list 的形状否定单日取值。\n"
@@ -1685,7 +1696,25 @@ def _compress_history_user(message: str) -> str:
 
 
 # 多轮工具返回里，除最近一轮外都只保留前 N 字符。
-_TOOL_RESULT_KEEP_CHARS = 700
+#
+# 阈值 2000 的来由（2026-11-08 r59-d2 实测）：一份完整统计返回约 1994 字符，
+# 而数值（min/max/std）与时间口径（value_basis）排在 1075~1641 位。阈值曾为 700，
+# 会把这些字段按位置切掉，模型跳到第 4 跳只能回「数字没回传上来」。
+# 这里就用「阈值够大」解决：常见统计/检索返回整份保留，只有真正冗长的才截。
+# 不做按字段挑拣重排的花活——那套逻辑自己又会引入新 bug（列表被丢光、切出半截 JSON）。
+_TOOL_RESULT_KEEP_CHARS = 2000
+
+_SHRINK_NOTE = "…（内容过长，后续已省略）"
+
+
+def _shrink_tool_text(text: str, limit: int = _TOOL_RESULT_KEEP_CHARS) -> str:
+    """把一份超长工具返回截断：够短就原样返回，超了才按位置切并注明已省略。
+
+    故意做得很笨：不重排字段、不挑拣 JSON、不动列表结构。
+    """
+    if not isinstance(text, str) or len(text) <= limit:
+        return text
+    return text[:limit] + _SHRINK_NOTE
 
 
 def _shrink_old_tool_results(messages: list[dict[str, Any]]) -> None:
@@ -1700,7 +1729,6 @@ def _shrink_old_tool_results(messages: list[dict[str, Any]]) -> None:
     兼容两种协议：OpenAI 的 ``role=tool`` 消息、Anthropic 的 ``tool_result`` block。
     """
     limit = _TOOL_RESULT_KEEP_CHARS
-    note = "…（早期轮次的工具返回已压缩，关键字段在开头）"
     for m in messages:
         if not isinstance(m, dict):
             continue
@@ -1708,7 +1736,7 @@ def _shrink_old_tool_results(messages: list[dict[str, Any]]) -> None:
         content = m.get("content")
         # OpenAI 协议：role=tool，content 是 JSON 字符串
         if role == "tool" and isinstance(content, str) and len(content) > limit:
-            m["content"] = content[:limit] + note
+            m["content"] = _shrink_tool_text(content, limit)
             continue
         # Anthropic 协议：user 消息里嵌 tool_result block
         if role == "user" and isinstance(content, list):
@@ -1717,7 +1745,7 @@ def _shrink_old_tool_results(messages: list[dict[str, Any]]) -> None:
                     continue
                 inner = block.get("content")
                 if isinstance(inner, str) and len(inner) > limit:
-                    block["content"] = inner[:limit] + note
+                    block["content"] = _shrink_tool_text(inner, limit)
 
 
 def _anthropic_tool_uses(content: Any) -> list[dict[str, Any]]:
@@ -3667,8 +3695,11 @@ _VIEW_WRITE_VERBS = re.compile(
     r"换个色|渐变色|符号化"
 )
 #: 正文里的「完成态」措辞——只有真正下发过意图才许出现。
+#: 2026-11-08 补：模型还写过「已把「…」从图层面板移除」「已从…移除」，是「已+动词+宾语」
+#: 的变体，不命中「已移除」固定词 → 补「已把/已从/已将」这类及物完成态开头。
 _VIEW_DONE_WORDS = re.compile(
-    r"已下发|已移除|已删除|已切换|已隐藏|已显示|已完成|已设置|已定位|已缩放|已暂停|已播放"
+    r"已下发|已移除|已删除|已切换|已隐藏|已显示|已完成|已设置|已定位|已缩放|已暂停|已播放|"
+    r"已把|已从|已将|已为|已关掉|已收起"
 )
 
 

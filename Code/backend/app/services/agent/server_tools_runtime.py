@@ -2474,7 +2474,16 @@ def _search_layers(
         e.pop("_match", None)
     # 页面上出现过的图层（任一别名）都不再作为「目录层」重复列出，
     # 否则同一产品会以 imported-* 和 method-* 两个身份各说一遍。
-    seen = set(page.keys())
+    #
+    # 但**产品族 id（method-*）不能算「已经在页面上」**：页面层的 catalog_id 就是
+    # 族 id，把它计入 seen 会连带把整条族记录过滤掉 ⇒ 模型看不到该族的
+    # group_members，也就看不到「同族还有 VOD / ω 且盘上有产物」。
+    # 2026-11-08 实测：问「SMAP 动态的植被光学厚度是多少」，模型回答
+    # 「本机 SMAP 动态散射约束产品只挂了土壤水分这一层」，还建议用户去数据管理页
+    # 确认是否已生成——而盘上 imported-5427e1020d63(VOD) / imported-94501b455dcd(ω)
+    # 与 imported-a8940443fd6d(SM) 同 run 同 12 片，都好好躺着。
+    # ⇒ 只把真实图层 id 计入 seen，族 id 留给 ② 的 catalog_hits 去讲清成员构成。
+    seen = {k for k in page.keys() if not str(k).startswith("method-")}
 
     # ② 目录里的图层（catalog_seeds）：去掉已经在页面上的重复项
     catalog = get_layer_catalog()
@@ -2525,8 +2534,16 @@ def _search_layers(
         if _identity.get("is_product_group"):
             _members = _identity.get("group_members") or []
             entry["layer_kind"] = "product_group"
+            # 族本身**不可能**「挂在页面上并被选中」：`page` 索引会把成员层的
+            # catalog_id 一并登记，照抄 info 就会输出 on_page/selected=true，
+            # 模型会以为「这一族已经在图上」。成员到底在不在页面上，看
+            # group_members 里每一条自己的 on_page。
+            entry["on_page"] = False
+            entry["visible"] = False
+            entry["selected"] = False
             entry["group_hint"] = "这是一个产品族，本身不是可直接统计的栅格层。" + (
-                f"本机已有 {len(_members)} 个变量产物，请指定其中一个再统计。"
+                f"本机已有 {len(_members)} 个变量产物（见 group_members），"
+                "指定其中一个再统计；成员层即便没挂在页面上也能直接统计。"
                 if _members
                 else "本条产品族在本机还没有任何产物，需要先跑工作流。"
             )
