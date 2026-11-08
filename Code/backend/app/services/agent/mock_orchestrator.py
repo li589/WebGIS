@@ -594,6 +594,76 @@ def _parse_region_arg(message: str) -> str | None:
     return None
 
 
+#: 县/市辖区级地名。工具侧明确只支持到地级市，并会回一句「这属于县/区一级」，
+#: 但兜底路径认不出区域就直接**丢掉**、按整幅算（2026-11-08 r73 实测：
+#: 问「天河区的土壤水分平均值」，答的是整层 0.1534，正文里连"天河"两个字都没有，
+#: 用户会把它当成天河区的值——这比答不出来糟得多）。
+_COUNTY_NAME_RE = re.compile(r"([\u4e00-\u9fa5]{2,4})(区|县|旗)(?![域划分])")
+#: 泛指词：「这个区域」「山区」「城区」不是地名，别拿去当行政区查。
+_AREA_GENERIC_WORDS = (
+    "区域",
+    "地区",
+    "山区",
+    "郊区",
+    "城区",
+    "辖区",
+    "园区",
+    "景区",
+    "库区",
+    "灾区",
+    "市区",
+    "县区",
+    "社区",
+    "小区",
+    "校区",
+    "矿区",
+    "牧区",
+    "林区",
+    "片区",
+    "湾区",
+    "省区",
+    "市区",
+)
+_AREA_GENERIC_PREFIX = "这那该本各某全其两三几"
+
+
+def _county_like_region_name(message: str) -> str | None:
+    """这句话里有没有「X区 / X县 / X旗」这类县区级地名（只作提示用，不做统计）。
+
+    认得出就返回地名（如「天河区」），交给调用方回一句「这一级算不了」；
+    认不出返回 None。凡是能被 ``resolve_region`` 认出来的（省/地级市）都不算，
+    泛称词（区域/城区/山区…）也不算——宁可漏提示，也不能把正常提问判成地名。
+    """
+    text = str(message or "")
+    if not text:
+        return None
+    try:
+        from app.services.agent.region import resolve_region
+    except Exception:  # noqa: BLE001 - 区域库缺失时不做这个判断
+        return None
+    for m in _COUNTY_NAME_RE.finditer(text):
+        frag = m.group(1) + m.group(2)
+        # 「广州市天河区」这种写法：按省市州盟切开，只留最后一段
+        if any(ch in frag[:-1] for ch in "省市州盟"):
+            frag = re.split(r"[省市州盟]", frag)[-1] or frag
+        if len(frag) < 3:
+            continue
+        if frag[0] in _AREA_GENERIC_PREFIX:
+            continue
+        if any(
+            word.startswith(frag) or frag.startswith(word)
+            for word in _AREA_GENERIC_WORDS
+        ):
+            continue
+        try:
+            if resolve_region(frag) is not None:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        return frag
+    return None
+
+
 #: 追问标志：出现这些说法，说明用户是在**改上一轮那个对象**，不是另起一句。
 #: 这是「只改日期，其余不变」能成立的前提——没提到的项必须原样带过去。
 _FOLLOWUP_RE = re.compile(
@@ -1682,6 +1752,25 @@ def _statistics_reply(
     # 「广州市」「四川省」这类行政区名必须进 region，否则算出来的是全球均值，
     # 用户会当成该市的值（外部测试 2026-11-04 就是这么错答的）。
     region = entities.get("region")
+
+    # 县 / 市辖区一级算不了（只支持到地级市），但**绝不能静默按整幅算**：
+    # 2026-11-08 r73 实测「天河区的土壤水分平均值」被答成整层 0.1534，正文里
+    # 连"天河"都没出现，用户当成天河区的值拿去用。这里明确回一句并给两条出路。
+    if not region:
+        _county = _county_like_region_name(text)
+        if _county:
+            return {
+                "session_id": sid,
+                "reply": (
+                    f"「{_county}」这一级按行政边界算不了：现在只支持到**省 / 地级市**，"
+                    "市辖区和县不在支持范围内。硬按整幅算出来的数不是你要的范围，"
+                    "我不会拿它顶替。\n\n两条路：\n"
+                    f"① 换成它所属的地级市（例如直接说「广州市」），我按市界掩膜算；\n"
+                    "② 给我一个矩形范围（西、南、东、北四个经纬度），我按这个框统计。"
+                ),
+                "ui_intents": intents,
+                "topic_state": {},
+            }
 
     # 日期区间（「11 月 9 日到 16 日」「9 日至 16 日」）走单独一条路：一片栅格只能
     # 代表一个时间块，拿区间里第一天算完再写成「整层的只读统计」，数字是真的、

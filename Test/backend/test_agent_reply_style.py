@@ -1303,3 +1303,56 @@ class TestAllVariablesRequest:
         ]
         reply = "植被光学厚度在广州市范围内没有有效观测，同日整幅是有值的。"
         assert _claims_unavailable_but_has_stats(reply, stats) is False
+
+
+class TestCountyLevelRegion:
+    """2026-11-08 r73：问「天河区的土壤水分平均值」，答的是整层 0.1534。
+
+    兜底路径认不出区县级区域就**丢掉区域**按整幅算，正文里连「天河」两个字都
+    没有 —— 用户会把它当成天河区的值拿去用，比答不出来糟得多。
+    """
+
+    def test_county_name_is_recognised(self) -> None:
+        from app.services.agent.mock_orchestrator import _county_like_region_name
+
+        assert _county_like_region_name("天河区的土壤水分平均值") == "天河区"
+        assert _county_like_region_name("广州市天河区的土壤水分") == "天河区"
+        assert _county_like_region_name("大方县的均值") == "大方县"
+
+    def test_generic_area_words_are_not_place_names(self) -> None:
+        from app.services.agent.mock_orchestrator import _county_like_region_name
+
+        for text in (
+            "这个区域的平均值",
+            "城区那块的平均",
+            "这一层的均值",
+            "河南省的均值",
+            "广州市的均值",
+        ):
+            assert _county_like_region_name(text) is None, text
+
+    def test_county_question_does_not_return_a_whole_raster_mean(self) -> None:
+        """必须明确说「算不了」，且不能带任何整幅均值。"""
+        from app.services.agent.mock_orchestrator import forced_statistics_reply
+
+        ctx = {
+            "active_catalog_ids": ["imported-136c60293bbf"],
+            "active_layers": [
+                {
+                    "catalog_id": "imported-136c60293bbf",
+                    "instance_id": "i-1",
+                    "name": "SMAP 平均散射约束产品 · 土壤水分",
+                    "overlay_layer_id": "imported-136c60293bbf",
+                    "visible": True,
+                    "selected": True,
+                }
+            ],
+            "timeline": {"hour": 0, "date": "2025-11-13", "playing": False},
+        }
+        out = forced_statistics_reply(
+            "天河区的土壤水分平均值", client_context=ctx, session_id="t-county", state={}
+        )
+        reply = str(out.get("reply") or "")
+        assert "地级市" in reply
+        assert "天河区" in reply
+        assert "0.15" not in reply
