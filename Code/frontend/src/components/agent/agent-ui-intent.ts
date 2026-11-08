@@ -4,6 +4,7 @@
 import { nextTick } from 'vue'
 import type { AgentUiIntent } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { isDefaultLayerOverlayId } from '../../stores/layers/default-layer-ids'
 import { useOnDemandFrameStore, toCompactDate } from '../../stores/layers/ondemand-frame'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import { safeLog } from '../../stores/log'
@@ -980,8 +981,17 @@ async function executeAgentUiIntentCore(
         message: `「${removeLabel}」还有进行中的任务（${status}），请先取消再移除`,
       }
     }
-    // 只从面板移除，不删后端产物（与侧栏 × 行为一致）
+    // 只从面板移除，不删后端产物（与侧栏 × 行为一致）。
+    // 默认四组的「移除」是否写持久化名单，已统一在 removeLayer 内部按 overlay 判定；
+    // 这里只负责提示语：默认图层刷新后会自动加载回来。
+    const isDefaultMember = isDefaultLayerOverlayId(layer.importedRaster?.overlayLayerId)
     workspace.removeLayer(resolved.instanceId, { deleteBackendFile: false })
+    if (isDefaultMember) {
+      return {
+        ok: true,
+        message: `已从图层面板移除「${removeLabel}」（默认图层，刷新后会随默认四组自动加载回来）`,
+      }
+    }
     return { ok: true, message: `已从图层面板移除「${removeLabel}」（数据文件保留）` }
   }
 

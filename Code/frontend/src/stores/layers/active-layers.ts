@@ -21,6 +21,7 @@ import {
   normalizeDisplayName,
 } from './layer-naming'
 import { isEnglishInversionCatalogId } from './inversion-catalog'
+import { isDefaultLayerOverlayId } from './default-layer-ids'
 import { projectActiveLayersDisplay } from './display-projection'
 import { rememberDismissedLayer } from './workspace-persist'
 import { MERGED_LAYER_GROUPS } from './catalog'
@@ -497,7 +498,12 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
         }),
       )
     }
-    if (opts?.dismiss !== false)
+    // 默认四组（风云/SMAP 的平均+动态，共 12 层）是任何账号打开都该在的常驻底子，
+    // 「移除」对它只是会话内临时操作：不写移除名单、不动快照、不跨设备同步，
+    // 刷新后由 ensureDefaultLayers 按稳定编号重新挂回完整 4 组。
+    // 无论从助手 / 侧栏 × / 右键菜单移除，口径一致。
+    const isDefaultMember = isDefaultLayerOverlayId(overlayId)
+    if (opts?.dismiss !== false && !isDefaultMember)
       rememberDismissedLayer({
         overlayLayerId: overlayId,
         catalogId: isLocalImport(layer) ? undefined : layer.catalogId,

@@ -309,6 +309,10 @@ export function defaultPrimaryOverlayId(): string | null {
   return primary?.overlayId ?? null
 }
 
+// 判断「是否默认图层成员」的真源在 default-layer-ids.ts（避免与 active-layers 循环 import），
+// 这里 re-export 供旧调用方沿用。
+export { isDefaultLayerOverlayId } from './default-layer-ids'
+
 /**
  * 已退役的默认图层（2026-10-09 起不再自动加载）。
  *
@@ -418,8 +422,33 @@ function ensureDefaultGroup(
     )
     .filter((layer): layer is ActiveLayer => Boolean(layer))
   if (!memberLayers.length) return
-  // 官方恢复路径已经建过组（成员带 runGroupId）⇒ 不重复建
-  if (memberLayers.some((layer) => Boolean(layer.runGroupId))) return
+
+  /**
+   * ★ 2026-11-08 修（用户实测：补挂回的 ω 掉在组外当游离层）：
+   * 旧逻辑「任一成员已在组里 ⇒ 整体跳过」，导致逐成员补挂回的图层没人认领。
+   * 现改为：组已存在时，把**还没入组**的成员逐个认领进该组（幂等：已在组里的不动）。
+   */
+  const joinedGroupId = memberLayers.find((layer) => layer.runGroupId)?.runGroupId ?? null
+  if (joinedGroupId) {
+    const group = workflowRun.runLayerGroups.value.find((g) => g.groupId === joinedGroupId)
+    if (group) {
+      let changed = false
+      for (const layer of memberLayers) {
+        if (layer.runGroupId === group.groupId) continue
+        layer.runGroupId = group.groupId
+        layer.runGroupLocked = false
+        layer.runGroupProductTag = entry.members.find(
+          (member) => member.overlayId === layer.importedRaster?.overlayLayerId,
+        )?.role
+        if (!group.memberInstanceIds.includes(layer.instanceId)) {
+          group.memberInstanceIds.push(layer.instanceId)
+        }
+        changed = true
+      }
+      if (changed) workspace.scheduleWorkspacePersist()
+      return
+    }
+  }
 
   const groupId = `run-group-default-${entry.catalogId}`
   if (workflowRun.runLayerGroups.value.some((group) => group.groupId === groupId)) return
@@ -759,6 +788,16 @@ export async function ensureDefaultLayers(): Promise<void> {
             attached = 0
           }
           if (attached <= 0) await attachByStableOverlayIds(workspace, entry)
+        } else {
+          /**
+           * ★ 2026-11-08 修（用户实测：移除风云 ω 一个成员，刷新后只剩 11 层）：
+           * `isEntryPresent` 按**组**判断——组里还有任一成员（SM/VOD）在，整组即视为
+           * 「存在」，恢复逻辑整组跳过 ⇒ 只移除一个成员时它永远回不来。
+           * 用户口径：移除只是会话内临时操作，刷新必须回到完整 4 组 12 层。
+           * 所以组在也要逐成员补挂：attachByStableOverlayIds 本身按成员幂等
+           * （已在的跳过、缺的探测后挂上），直接补跑即可。
+           */
+          await attachByStableOverlayIds(workspace, entry)
         }
         // 分组头：无论图层是刚挂的还是历史快照里已有的，都要保证有数据集名
         ensureDefaultGroup(workspace, workflowRun, entry)
