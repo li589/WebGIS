@@ -1423,6 +1423,27 @@ def _statistics_reply(
             return stop  # type: ignore[return-value]
         target = picked
         entities = {**entities, "layer": picked, "layer_from": "resolved"}
+        # 这一句只点了层/口径（「再换回平均版」），区域和日期没提 ⇒ 沿用上一轮。
+        # 2026-11-08 实测 r69 第 4 句：前三轮都是「广州市 / 2025-11-13」，这句却算成
+        # 「整层 / 2025-12-16」（时间轴当天）——同一次对话里口径突然变了，用户看到的
+        # 数字跟前三句没法比。原因：区域沿用只认 layer_from in ("state","catalog")，
+        # 而这里标的是 "resolved"，于是两样都掉了。
+        # 只在用户这句话带层线索（来源/形态词）时补：问「土壤水分平均值」这种
+        # 没说清是哪一层的，仍按原行为让 _resolve_entities 决定，不擅自扩大沿用范围。
+        if state and _has_layer_hints(text):
+            if not entities.get("region") and state.get("region"):
+                if not _NO_REGION_RE.search(text):
+                    entities = {
+                        **entities,
+                        "region": str(state["region"]),
+                        "region_from": "state",
+                    }
+            if not entities.get("date") and state.get("date"):
+                entities = {
+                    **entities,
+                    "date": str(state["date"]),
+                    "date_from": "state",
+                }
 
     # ★ 通用防线：与选层逻辑解耦。将来谁再改选层、正则或兜底顺序，只要「用户
     # 说的变量」和「实际挑中的层变量」对不上，就在这里被拦住——绝不拿另一个

@@ -377,6 +377,79 @@ def test_named_variable_without_version_still_asks(monkeypatch):
     assert "我不替你挑" in reply["reply"]
 
 
+def test_resolved_layer_carries_region_and_date(monkeypatch):
+    """层是在「候选收窄」这一步定下来的，区域/日期仍要沿用上一轮。
+
+    2026-11-08 实测 r69 第 4 句：前三轮都是「广州市 / 2025-11-13」，
+    「再换回平均版」这句却算成「整层 / 2025-12-16」（时间轴当天）。
+    原因：区域沿用只认 layer_from in ("state","catalog")，这条路径标的是 "resolved"。
+    """
+    from app.services.agent import mock_orchestrator
+    from app.services.agent import server_tools_runtime as rt
+
+    ctx = _ctx([OMEGA_LAYER])
+    cands = [
+        {
+            "catalog_id": "method-smap-season-mean",
+            "overlay_layer_id": "imported-136c60293bbf",
+            "name": "SMAP 平均散射约束产品 · 土壤水分",
+            "source": "smap",
+            "on_page": False,
+            "virtual": True,
+        },
+        {
+            "catalog_id": "method-fy-omega-doy-avg",
+            "overlay_layer_id": "imported-fyavg",
+            "name": "风云卫星 平均散射约束产品 · 土壤水分",
+            "source": "fy",
+            "on_page": False,
+            "virtual": True,
+        },
+    ]
+    monkeypatch.setattr(
+        mock_orchestrator, "_same_variable_candidates", lambda var, ls: cands
+    )
+    monkeypatch.setattr(mock_orchestrator, "_page_sources", lambda ls: {"smap"})
+    # 强制走「层定不下来 ⇒ 由候选收窄定层」那条路径
+    monkeypatch.setattr(
+        mock_orchestrator,
+        "resolve_entities",
+        lambda *a, **kw: {
+            "layer": None,
+            "variable": "sm",
+            "region": None,
+            "date": None,
+            "why": "没定层",
+            "layer_from": "",
+        },
+    )
+    captured: dict = {}
+
+    def fake_stat(args, **kwargs):
+        captured.update(args)
+        return {"ok": False, "error": "stub", "user_facing": "停在这里"}
+
+    monkeypatch.setattr(rt, "_get_layer_statistics", fake_stat)
+    out = mock_orchestrator._statistics_reply(
+        "再换回平均版",
+        ctx["active_layers"],
+        ctx,
+        "sid",
+        [],
+        state={
+            "layer_id": "imported-a8940443fd6d",
+            "layer_name": "SMAP 动态散射约束产品 · 土壤水分",
+            "variable": "sm",
+            "region": "广州市",
+            "date": "2025-11-13",
+        },
+    )
+    assert captured.get("region") == "广州市", "区域必须沿用上一轮"
+    assert captured.get("time") == "2025-11-13", "日期必须沿用上一轮，不能回落到时间轴当天"
+    assert captured.get("catalog_id") == "imported-136c60293bbf"
+    assert out["reply"] == "停在这里"
+
+
 def test_undecided_reply_single_cross_source_candidate_needs_confirm(monkeypatch):
     """只有一种来源、但页面挂的是另一颗卫星 ⇒ 让用户点头，不替他换卫星。"""
     from app.services.agent import mock_orchestrator
