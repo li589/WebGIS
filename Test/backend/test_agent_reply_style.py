@@ -1425,3 +1425,30 @@ class TestDateRangeAlwaysEngine:
             history_state={"region": "广州市"},
         )
         assert out == reply
+
+
+class TestLlmDownReplyBilling:
+    """2026-11-08 r78-G6：模型账号欠费，正文却说「取数服务暂时不可用」。
+
+    实测那一轮日志是 ``HTTP 402 Insufficient Balance``，而正文写的是
+    「取数服务暂时不可用，这次没取到数」——用户会去查 NAS / 网关 / 网络，
+    真正该做的是给模型账号充值。原因：402 带「HTTP 4xx」，被 _friendly_tool_error
+    的取数链路兜底接住了。
+    """
+
+    def test_insufficient_balance_says_billing(self) -> None:
+        from app.services.agent.orchestrator import _llm_down_reply
+
+        out = _llm_down_reply(
+            '模型服务返回 HTTP 402：{"error":{"message":"Insufficient Balance",'
+            '"type":"insufficient_balance_error"}}'
+        )
+        assert "余额" in out
+        assert "取数服务" not in out
+
+    def test_storage_http_error_keeps_data_service_wording(self) -> None:
+        """存储/登录类 5xx 仍按取数链路说，别被上面的分流抢走。"""
+        from app.services.agent.orchestrator import _llm_down_reply
+
+        out = _llm_down_reply("存储端登录接口返回 HTTP 530")
+        assert "取数服务暂时不可用" in out
