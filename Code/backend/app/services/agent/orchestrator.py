@@ -169,15 +169,17 @@ def _llm_down_reply(detail: str) -> str:
     # 每轮工具返回重复发送」——这类问答天然要 3 轮（搜层 → 查覆盖 → 统计），
     # 第 3 轮必撞线。所以只给能真正省掉一轮的建议。
     if "超过单次上限" in detail or "累计输入预估" in detail:
+        # 对外不提 token / 上限 / 步骤数 / 工具名——那是内部机制，用户只需要
+        # 「怎么问才能出数」。旧文案讲了「累计输入超过单次上限」还教用户去左侧点选
+        # 图层省步骤，实测把用户带进系统内部视角，且依然拿不到答案。
         return (
-            "这次没算成，跟数据无关：这一问要连着查几步"
-            "（先定位图层 → 再核对日期 → 再按行政区统计），"
-            "累计输入超过了单次上限，中途停下，没有把整段发给模型。\n\n"
+            "这次没算成，跟数据无关：这一问要逐个区域分别取数，一轮接一轮算下来"
+            "超出了单次能处理的量，中途停下了。\n\n"
             "**地图本身不受影响**：底图、图层、时间轴、点查都能正常用。\n\n"
-            "想马上拿到结果，可以少走一步：\n"
-            "1. 先在左侧把要问的那一层点上（让它成为当前选中的层），"
-            "再问「这一层 2025-12-15 广州市平均是多少」——省掉「找层」那一步；\n"
-            "2. 或者拆成两句问：先问「哪一层是 XX 产品」，拿到层名后再单独问数值。"
+            "把范围收窄一点就能出数：\n"
+            "1. 需要几个区域对比时，**一次点名 2~3 个**，比如"
+            "「河南、山东、河北的土壤水分平均值分别是多少」，我一次算完；\n"
+            "2. 或者先问一个省，拿到数再接着问下一个。"
         )
     hint = _friendly_tool_error(detail) or "模型服务没有响应"
     return (
@@ -980,6 +982,14 @@ def _build_system(
         "- **只说了变量、没另指来源或口径时**（「土壤水分的平均值是多少」「那 VOD 呢」），"
         "就统计『本会话已确认的取数对象』里的那一层，**不要重新挑**：同一变量有风云/SMAP、"
         "平均/动态好几支，重挑必然挑到别的支，数就不是他刚看的那一份了。\n"
+        "- **但用户明确点名口径或来源时必须换**（「改用平均版 / 换动态版 / 切成季均 / "
+        "换成风云那套 / 要 SMAP 的」）：他点名的这一项**优先于「沿用上一轮」，也优先于"
+        "上面那条「不要重新挑」**，立刻切到他点名的那一支重新取数，并在正文写明"
+        "「这次改用 X 版」。判不准是不是点名时，宁可照他字面换——换了会说明，"
+        "不换就是把上一版的数据当成这一版报给他。\n"
+        "- **换版本后必须重新取数**：不许把上一版的数字照着念一遍改成新版的名字，"
+        "也不许因为新版在某天没有有效像元，就悄悄退回旧版出数。新版取不到就如实说"
+        "取不到，并说明这一版的时间口径（单日帧 / 多日块）。\n"
         "- 用户点名了变量（土壤水分 / VOD / 等效散射 ω）时，取数工具的 catalog_id 必须"
         "是**同一变量**的层：页面选中的是别的变量时，改用同变量的层，或用一句话反问"
         "「哪一个（来源+口径）」，**绝不拿页面选中层顶替**——那会答出一个看着很正式、"
@@ -1221,6 +1231,13 @@ def _build_system(
         "或叫用户去数据管理页确认是否已生成。**本机有没有这一支产物，唯一判据是 "
         "`group_members` 里列没列**。\n"
         "  · 用户**没点名变量** ⇒ 才把 `group_members` 里的变量层列给他挑，选定再统计。\n"
+        "- **「哪些省最高/最低」「全国排名」「逐省都比一遍」这类要扫描 30 多个行政区的提问，"
+        "严禁逐省循环调用 get_layer_statistics**：一轮接一轮地算会累积超出单次处理量，"
+        "最后白跑十几轮还给不出数（2026-11-08 实测 34 省排名跑到 51k token 被中止）。"
+        "正确做法：只取用户点名的、或 3~5 个代表性省份给出对比，并明说"
+        "“逐省排名要一个个算、一次问不完，你指定几个省我做对比”。"
+        "**任何情况下都不许把 token、上限、步骤数、内部工具名这类机制讲给用户**，"
+        "也不许教用户“先去左侧点选图层”来省步骤。\n"
         "- `mixed`＝层内混装单日帧与多日块，引用“某一天”必须说明命中哪一片；"
         "`hybrid`＝time_list 只有多日块但已按需补出单日帧（`ondemand_frame_count`>0），"
         "此时“只能取块合成值”是错的，别拿 time_list 的形状否定单日取值。\n"
@@ -2572,6 +2589,40 @@ def _grounded_statistics(text: str) -> bool:
     return any(k in text for k in ("均值", "有效像元", "有效栅格"))
 
 
+#: 明确的「回指上文」措辞。这类词单独出现在**首轮**＝用户在引用不存在的历史。
+#:
+#: 只收毫不含糊的说法：「再说一遍/这个/那个」太宽（可能指当前选中的层），
+#: 一律不收，避免把正常提问误判成回指。
+_BACKREF_RE = re.compile(r"刚才|刚刚|上一条|上一轮|上轮|上次|前面问|前面说|刚说")
+
+_MISSING_HISTORY_REPLY = (
+    "这是一个新对话，我这边没有你之前问过的记录，接不上「刚才那个数」。\n\n"
+    "你把下面三件事告诉我，我立刻算：\n"
+    "1. 哪一层（例如「SMAP 动态散射约束产品 · 土壤水分」）；\n"
+    "2. 哪一天或哪一段时间；\n"
+    "3. 范围（整幅，还是某个省/市）。\n\n"
+    "如果只是想看当前选中这一层的整体情况，直接说「这一层的平均值」就行。"
+)
+
+
+def _refers_to_missing_history(message: str, state: dict[str, str] | None) -> bool:
+    """首轮（没有任何可继承上文）却用「刚才/上一轮」回指 ⇒ 必须澄清，不许出数。
+
+    2026-11-08 实测：新会话第一句问「刚才我问的那个数是多少来着？」，规则引擎
+    按页面选中层重算了一遍，还在正文里写「本轮没有重新指定的部分沿用上一轮」。
+    数值本身是对的（就是当前层的整幅均值），但「沿用上一轮」是不实说法——
+    用户会以为它真记得上一轮，进而以为跨会话记忆存在。宁可澄清，不许编连续性。
+    """
+    if not _BACKREF_RE.search(message or ""):
+        return False
+    if not isinstance(state, dict):
+        return True
+    return not any(
+        str(state.get(key) or "").strip()
+        for key in ("layer_id", "layer_name", "region", "date")
+    )
+
+
 def _statistics_fallback_reply(
     message: str,
     reply: str,
@@ -2580,8 +2631,12 @@ def _statistics_fallback_reply(
     client_context: dict[str, Any] | None,
     *,
     state: dict[str, str] | None = None,
+    history_state: dict[str, str] | None = None,
 ) -> tuple[str, dict[str, str] | None]:
     r"""统计请求的确定性兜底：模型没调过任何取数工具时，正文里的数字一律不可信。
+
+    ``state`` 是本轮合并后的会话状态（供选层用）；``history_state`` 是**进入本轮
+    之前**的状态，只用来回答「有没有上文可继承」（见 _refers_to_missing_history）。
 
     报告第二轮 P1：「统计请求即使包含『当前图层』也不能只列图层或说明计划，
     核对来源、变量与日期后继续调用 get_layer_statistics，直到得到结果或明确报错」。
@@ -2605,6 +2660,18 @@ def _statistics_fallback_reply(
       2. 一次都没调过 ⇒ 规则引擎真算出数就整段替换，算不出来就把正文里
          的数值换成一句如实的「未取到」，绝不让无出处的数字流出去。
     """
+    # 首轮回指（「刚才那个数」）先于统计判定：这类话看着像要数，其实要的是
+    # 上文；硬算一遍会伪造出不存在的跨轮连续性（见 _refers_to_missing_history）。
+    if _refers_to_missing_history(
+        message, history_state if history_state is not None else state
+    ):
+        steps.append(
+            {
+                "type": "thought",
+                "summary": "首轮却引用了上文，已改为澄清而不是重新取数",
+            }
+        )
+        return _MISSING_HISTORY_REPLY, None
     if not _wants_statistics(message) or _statistics_tool_called(list(steps)):
         return reply, None
     try:
@@ -2988,6 +3055,11 @@ def _run_chat_impl(
     if needs_key and not api_key:
         raise ValueError("当前配置档未设置 API Key，请在「设置 → Agent 配置」中填写")
 
+    # 「进这一轮之前」的会话状态快照。下面的 merge 会把**页面选中层**也补成基线
+    # （为了让「其余不变」有东西可继承，详见 _state_patch_from_message），于是
+    # 合并之后的状态**不再能回答「我上一轮到底记过什么」**——首轮新会话也会
+    # 因为页面挂着层而看起来"有上文"。凡是"有没有上文"的判断必须用这个快照。
+    state_before_turn = dict(topic_state)
     # 用户这句话自己点名的对象，先落进会话状态：模型这一轮可能一次工具都不调
     # （复述历史就答了），那条路否则一个字都不会记。
     topic_state = dialogue_state.merge(
@@ -3222,7 +3294,13 @@ def _run_chat_impl(
                 reply = "（模型未返回文本）"
             reply = _ensure_visible_reply(reply, list(steps))
             reply, state_patch = _statistics_fallback_reply(
-                message, reply, steps, sid, client_context, state=topic_state
+                message,
+                reply,
+                steps,
+                sid,
+                client_context,
+                state=topic_state,
+                history_state=state_before_turn,
             )
             if state_patch:
                 topic_state = dialogue_state.merge(topic_state, **state_patch)
@@ -3457,7 +3535,13 @@ def _run_chat_impl(
             reply = "（模型未返回文本）"
         reply = _ensure_visible_reply(reply, list(steps))
         reply, state_patch = _statistics_fallback_reply(
-            message, reply, steps, sid, client_context, state=topic_state
+            message,
+            reply,
+            steps,
+            sid,
+            client_context,
+            state=topic_state,
+            history_state=state_before_turn,
         )
         if state_patch:
             topic_state = dialogue_state.merge(topic_state, **state_patch)

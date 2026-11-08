@@ -1606,6 +1606,11 @@ def _mentions_variable(message: str, variable: str) -> bool:
 _VERSION_MENTION_RE: dict[str, re.Pattern[str]] = {
     "average": re.compile(
         r"平均版|平均产品|平均口径|平均那套|平均那个|多年平均"
+        # 「季均 / 季节平均」也算平均口径：页面上「SMAP卫星反演产品」那组的
+        # catalog 正是 method-smap-season-mean（product_family=average）。
+        # 漏掉它们时，用户说「改用季均版」→ 认不出是点名换口径 → 被产品粘性
+        # 改回上一轮的动态版（2026-11-08 用户复测报的「换版失效」同源风险）。
+        r"|季均|季平均|季节平均|季节均值"
         r"|(?:换成|换个|改用|切到|改成|改为|用)平均(?!值)",
         re.I,
     ),

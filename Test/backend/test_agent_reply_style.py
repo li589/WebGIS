@@ -910,6 +910,190 @@ class TestExtremeHint:
         assert _extreme_hint("m³/m³", {"min": None, "max": None}, "最大值") is None
 
 
+class TestOverBudgetReplyWording:
+    """预算超限的对外文案不许讲内部机制。
+
+    2026-11-08 实测：问「哪些省的土壤水分比较高？给我前三个」，模型逐省循环调统计，
+    累积 51353 token 被中止，旧文案回答「累计输入超过了单次上限，中途停下」还教用户
+    「先在左侧把要问的那一层点上」——把用户带进系统内部视角，且依然拿不到答案。
+    """
+
+    def test_no_internal_mechanism_in_reply(self) -> None:
+        from app.services.agent.orchestrator import _llm_down_reply
+
+        out = _llm_down_reply("工具多轮累计输入预估约 51353 token，超过单次上限 40000 token，已中止。")
+        for banned in ("token", "上限", "工具调用", "左侧", "选中"):
+            assert banned not in out, f"对外文案不该出现内部机制用词：{banned}"
+
+    def test_tells_user_how_to_narrow(self) -> None:
+        from app.services.agent.orchestrator import _llm_down_reply
+
+        out = _llm_down_reply("工具多轮累计输入预估约 51353 token，超过单次上限 40000 token，已中止。")
+        assert "2~3" in out or "2-3" in out, "要告诉用户一次点名几个区域"
+        assert "平均值" in out, "要给出可照抄的问法示例"
+
+
+class TestVersionSwitchBeatsInheritance:
+    """用户明确点名换口径时，产品粘性必须放行，不能让会话继承把它改回去。
+
+    2026-11-08 用户复测报「同一会话换版失效」：先说动态版查广州 11-09~16（0.1482），
+    追问「改用平均版」后答复称已换版、执行记录仍取动态版。本地 8/8 未能复现，
+    但代码里确有两处结构性缺口会让它偶发：
+      ① 提示词「不要重新挑」那条没配例外，模型容易把「改用平均版」也当成
+         「别重挑，沿用上一轮」；
+      ② `_VERSION_MENTION_RE['average']` 没有「季均」，而页面上那一组的
+         catalog 正是 `method-smap-season-mean`（family=average）⇒ 用户说
+         「改用季均版」时认不出是点名换口径，被粘性改回动态版。
+    """
+
+    def test_version_words_are_recognized(self) -> None:
+        from app.services.agent.server_tools_runtime import _mentions_version
+
+        for msg in ("改用平均版", "换成季节平均那套", "改用季均版", "切到季均"):
+            assert _mentions_version(msg, "average") is True, f"没认出点名平均口径：{msg}"
+        assert _mentions_version("切到动态版", "dynamic") is True
+
+    def test_plain_statistics_words_are_not_version_switch(self) -> None:
+        """「平均值是多少」是统计请求，绝不能当成「换平均版」（2026-11-06 同类坑）。"""
+        from app.services.agent.server_tools_runtime import _mentions_version
+
+        for msg in ("平均值是多少", "改用平均值", "这层的平均是多少", "换成广州呢"):
+            assert _mentions_version(msg, "average") is False, f"误判成换口径：{msg}"
+
+    def test_sticky_releases_on_version_switch(self, monkeypatch) -> None:
+        """上一轮是动态版、这轮点名平均版 ⇒ 粘性必须放行到平均版。
+
+        身份解析依赖盘上产物目录，测试环境把数据根指到了临时目录，所以这里
+        注入假的身份解析，只验证「判定逻辑」本身。
+        """
+        from app.services.agent import server_tools_runtime as rt
+
+        def fake_identity(layer_id: str, _ctx) -> tuple[str, dict[str, str]]:
+            family = "dynamic" if "a894" in layer_id else "average"
+            return layer_id, {"variable": "sm", "source": "smap", "product_family": family}
+
+        monkeypatch.setattr(rt, "_identity_of", fake_identity)
+        monkeypatch.setattr(
+            rt, "_baseline_layer_id", lambda _st, _ctx: "imported-a8940443fd6d"
+        )
+        used, note = rt._product_sticky_layer(
+            "imported-136c60293bbf",
+            topic_state={"layer_id": "imported-a8940443fd6d"},
+            user_message="改用平均版。",
+            client_context={"active_layers": []},
+        )
+        assert note is None, "点名换口径却被粘性改回上一轮"
+        assert used == "imported-136c60293bbf"
+
+    def test_sticky_still_holds_when_nothing_named(self, monkeypatch) -> None:
+        """没点名任何项（只换区域）时必须继续粘住上一轮那层。"""
+        from app.services.agent import server_tools_runtime as rt
+
+        def fake_identity(layer_id: str, _ctx) -> tuple[str, dict[str, str]]:
+            family = "dynamic" if "a894" in layer_id else "average"
+            return layer_id, {"variable": "sm", "source": "smap", "product_family": family}
+
+        monkeypatch.setattr(rt, "_identity_of", fake_identity)
+        monkeypatch.setattr(
+            rt, "_baseline_layer_id", lambda _st, _ctx: "imported-a8940443fd6d"
+        )
+        used, note = rt._product_sticky_layer(
+            "imported-136c60293bbf",
+            topic_state={"layer_id": "imported-a8940443fd6d"},
+            user_message="换成广州呢？",
+            client_context={"active_layers": []},
+        )
+        assert note is not None, "只换区域时不该换产品"
+        assert used == "imported-a8940443fd6d"
+
+
+class TestBackrefWithoutHistory:
+    """首轮就引用「刚才/上一轮」⇒ 必须澄清，不许重算一遍伪造跨轮连续性。
+
+    2026-11-08 实测 r62-h：新会话第一句问「刚才我问的那个数是多少来着？」，
+    规则引擎按页面选中层重算了一遍，正文还写「本轮没有重新指定的部分沿用上一轮」。
+    数值本身没错（就是当前层的整幅均值），但「沿用上一轮」是不实说法 ⇒
+    用户会以为跨会话记得历史。判据：含明确回指词 + state 里无可继承上文。
+    """
+
+    def test_first_turn_backref_is_clarified(self) -> None:
+        from app.services.agent.orchestrator import (
+            _MISSING_HISTORY_REPLY,
+            _statistics_fallback_reply,
+        )
+
+        reply, patch = _statistics_fallback_reply(
+            "刚才我问的那个数是多少来着？",
+            "整层均值 0.1653 m³/m³",
+            [],
+            "t-backref",
+            {"active_layers": []},
+            state=None,
+        )
+        assert reply == _MISSING_HISTORY_REPLY
+        assert "0.1653" not in reply, "不许把重算的数字当「上一轮的数」给出来"
+        assert patch is None
+
+    def test_empty_state_backref_is_clarified(self) -> None:
+        from app.services.agent.orchestrator import _refers_to_missing_history
+
+        assert _refers_to_missing_history("上一轮那个平均值是多少", {}) is True
+        assert _refers_to_missing_history("刚才那个数是多少", {"layer_id": ""}) is True
+
+    def test_with_state_is_not_treated_as_missing(self) -> None:
+        """真有上文（state 记着层）时，回指是正常的，不能拦。"""
+        from app.services.agent.orchestrator import _refers_to_missing_history
+
+        state = {"layer_id": "imported-a8940443fd6d", "layer_name": "SMAP 动态 · 土壤水分"}
+        assert _refers_to_missing_history("刚才那个数是多少", state) is False
+
+    def test_plain_question_untouched(self) -> None:
+        """不带回指词的正常提问一律不碰。"""
+        from app.services.agent.orchestrator import _refers_to_missing_history
+
+        assert _refers_to_missing_history("这一层的平均值是多少", None) is False
+        assert _refers_to_missing_history("河南省的土壤水分平均值", {}) is False
+
+    def test_page_layer_patch_is_not_history(self) -> None:
+        """本轮补进状态的页面层不算「上文」，首轮回指仍须澄清。
+
+        2026-11-08 实测 r65-C：新会话第一句「刚才那个平均值是多少来着？」仍然
+        报出整层均值 0.1653 并写「沿用上一轮」。原因是 ``_state_patch_from_message``
+        在本轮开头就把**页面选中层**补成基线（为了「其余不变」能继承），于是传到
+        兜底的 ``state`` 非空 ⇒ 回指判断误以为真有上文。判据必须用**进本轮之前**
+        的快照 ``history_state``，不能用合并后的 ``state``。
+        """
+        from app.services.agent.orchestrator import (
+            _MISSING_HISTORY_REPLY,
+            _statistics_fallback_reply,
+        )
+
+        state_after_patch = {
+            "layer_id": "imported-a8940443fd6d",
+            "layer_name": "SMAP 动态散射约束产品 · 土壤水分",
+        }
+        reply, patch = _statistics_fallback_reply(
+            "刚才那个平均值是多少来着？",
+            "整层均值 0.1653 m³/m³",
+            [],
+            "t-backref-page",
+            {"active_layers": []},
+            state=state_after_patch,
+            history_state={},
+        )
+        assert reply == _MISSING_HISTORY_REPLY
+        assert "0.1653" not in reply
+        assert "沿用上一轮" not in reply, "首轮没有上一轮，不许这么写"
+        assert patch is None
+
+    def test_real_history_still_allowed(self) -> None:
+        """真有上文时（history_state 非空），回指照旧放行到取数逻辑。"""
+        from app.services.agent.orchestrator import _refers_to_missing_history
+
+        state = {"layer_id": "imported-a8940443fd6d"}
+        assert _refers_to_missing_history("刚才那个数是多少", state) is False
+
+
 class TestGuardUnclaimedViewIntent:
     """写视图请求若一条意图都没下发，正文不许写成「已下发/已移除」完成态。
 
