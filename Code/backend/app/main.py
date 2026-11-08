@@ -269,6 +269,7 @@ def create_app() -> FastAPI:
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
             check_agent_chat_rate_limit,
+            check_agent_guest_daily_quota,
             check_agent_models_refresh_rate_limit,
             check_feedback_upload_rate_limit,
             check_login_rate_limit,
@@ -341,6 +342,37 @@ def create_app() -> FastAPI:
                     return rate_limited_response(
                         result.retry_after_seconds,
                         message="模型列表刷新过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+
+        # 未登录访客的「按天」额度（与上面按环境旁路的分钟级限流分开）：
+        # 线上实际跑的是 BACKEND_ENV=development，把这条放进上面那个 if 里
+        # 等于永不生效，所以这里不受环境开关影响，只由额度值本身控制
+        # （BACKEND_AGENT_GUEST_DAILY_QUOTA<=0 即关闭）。
+        # 判定「不是游客」只看有没有会话 Cookie：伪造 Cookie 会在路由鉴权处
+        # 直接 401，拿不到任何回答，绕不过去。
+        if should_rate_limit_agent_chat(path, method):
+            has_session = bool(
+                request.cookies.get(settings.session_cookie_name)
+                or request.cookies.get(settings.session_cookie_name + "_s")
+            )
+            if not has_session:
+                visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
+                guest = check_agent_guest_daily_quota(
+                    visitor_id or None, client_ip(request)
+                )
+                if not guest.allowed:
+                    logger.info(
+                        "游客日额度用尽 ip=%s visitor=%s",
+                        client_ip(request),
+                        "有" if visitor_id else "无",
+                    )
+                    return rate_limited_response(
+                        guest.retry_after_seconds,
+                        message=(
+                            "未登录状态下 AI 助手今天的额度已用完，"
+                            "北京时间 0 点恢复；登录后可继续使用。"
+                        ),
                         request_id=request_id,
                     )
         return await call_next(request)

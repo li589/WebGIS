@@ -1,6 +1,7 @@
 import { requestJson, resolveApiUrl } from './_http'
 import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
 import { withWriteAuthHeaders } from './backend-auth'
+import { getVisitorId } from './visitor-id'
 
 export type AgentProtocol = 'openai' | 'anthropic' | 'demo'
 export type AgentScope = 'global' | 'personal'
@@ -194,6 +195,8 @@ export async function streamAgentChat(
     {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      // 匿名访客号：SSE 是独立 fetch，同样要带上，否则走流式就绕过了日额度
+      'X-Visitor-Id': getVisitorId(),
     },
     'POST',
   )

@@ -1,0 +1,82 @@
+"""未登录访客的「按天」助手额度（rate_limit.check_agent_guest_daily_quota）。
+
+覆盖点：
+1. 同一访客正好放行 ``limit`` 次，第 ``limit+1`` 次拒绝，且 Retry-After 指向次日零点；
+2. 不同访客互不挤占（同一 IP 下也各自独立）——这是「按人记」的核心；
+3. 前端没上报访客号时退回按 IP 计（旧缓存页面照样限得住）；
+4. 额度 <= 0 时完全关闭（本机探针/自动化用）；
+5. 计数键包含北京日期，跨日自动换桶（不依赖 Redis TTL 也成立）。
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.api import rate_limit as rl
+
+
+@pytest.fixture()
+def isolated(monkeypatch):
+    """强制走进程内计数，避免测试触碰真实 Redis；前后清空降级桶。"""
+    monkeypatch.setattr("app.core.redis_client.get_redis_client", lambda: None)
+    rl._guest_quota_memory.clear()
+    yield
+    rl._guest_quota_memory.clear()
+
+
+def test_limit_blocks_exactly_after_limit(isolated):
+    limit = rl.guest_quota_limit()
+    assert limit > 0, "默认应开启游客额度"
+
+    allowed = [
+        rl.check_agent_guest_daily_quota("visitor-a", "10.0.0.1").allowed
+        for _ in range(limit)
+    ]
+    assert all(allowed)
+
+    blocked = rl.check_agent_guest_daily_quota("visitor-a", "10.0.0.1")
+    assert blocked.allowed is False
+    # Retry-After 应是「距北京次日 0 点」的秒数，落在 (0, 一天] 区间
+    assert 1 <= blocked.retry_after_seconds <= 24 * 3600 + 60
+
+
+def test_visitors_are_independent_even_on_same_ip(isolated):
+    visitor_id1, visitor_id2, ip = "visitor-b1", "visitor-b2", "10.0.0.2"
+    for _ in range(rl.guest_quota_limit()):
+        assert rl.check_agent_guest_daily_quota(visitor_id1, ip).allowed
+
+    assert rl.check_agent_guest_daily_quota(visitor_id1, ip).allowed is False
+    # 同一出口 IP 下的另一个访客不受影响
+    assert rl.check_agent_guest_daily_quota(visitor_id2, ip).allowed is True
+
+
+def test_falls_back_to_ip_when_visitor_id_missing(isolated):
+    ip = "10.0.0.3"
+    for _ in range(rl.guest_quota_limit()):
+        assert rl.check_agent_guest_daily_quota(None, ip).allowed
+    assert rl.check_agent_guest_daily_quota(None, ip).allowed is False
+    # 空串等同于没上报
+    assert rl.check_agent_guest_daily_quota("", ip).allowed is False
+    # 另一个 IP 仍有自己的额度
+    assert rl.check_agent_guest_daily_quota(None, "10.0.0.4").allowed is True
+
+
+def test_zero_limit_disables_quota(isolated, monkeypatch):
+    monkeypatch.setattr(rl, "_GUEST_QUOTA_LIMIT", 0)
+    assert all(
+        rl.check_agent_guest_daily_quota("visitor-d", "10.0.0.5").allowed
+        for _ in range(50)
+    )
+
+
+def test_key_contains_beijing_day(isolated):
+    day, ttl = rl._beijing_day_and_ttl()
+    key = rl._guest_quota_key("visitor-e", "10.0.0.6")
+    assert day in key
+    assert 60 <= ttl <= 24 * 3600 + 60
+
+
+def test_visitor_id_is_hashed_not_stored_raw(isolated):
+    raw = "visitor-should-not-leak"
+    key = rl._guest_quota_key(raw, "10.0.0.7")
+    assert raw not in key

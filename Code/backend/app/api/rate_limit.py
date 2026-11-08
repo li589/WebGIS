@@ -19,6 +19,7 @@ IP 限制），仅 production 生效。阈值经 ``BACKEND_WRITE_RATE_LIMIT_PER_
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
@@ -26,7 +27,7 @@ import threading
 from contextlib import suppress
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, UTC, timezone
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -343,6 +344,89 @@ def check_agent_models_refresh_rate_limit(ip: str) -> RateLimitResult:
             result.retry_after_seconds,
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Agent 游客「按天」额度（未登录访客）
+# ---------------------------------------------------------------------------
+# 背景：本项目所有未登录访客共用同一个 demo 账号，服务端无法按「人」区分，
+# 所以按登录账号做日额度会退化成「全站共享一份额度」。改用**浏览器侧生成的
+# 匿名访客号**（前端 localStorage 里的随机串，随请求头 ``X-Visitor-Id`` 上报）
+# 作为计数键：
+#   - 有访客号   → 按 ``visitor:<hash>`` 计数
+#   - 没上报（旧缓存）→ 退化为按客户端 IP 计数，保证仍然生效
+# 切分口径为**北京时间自然日**，跨日自动清零（Redis TTL 到次日 0 点）。
+# 额度 <= 0 表示关闭（自动化测试/本机探针用）。
+#
+# 注意与「每分钟 30 次」的区别：那是防连点的滑动窗口，这是防一天总量过大
+# 的日累计，两者叠加生效。
+
+_GUEST_QUOTA_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_DAILY_QUOTA", "20"))
+_guest_quota_memory: dict[str, int] = {}
+_guest_quota_memory_lock = Lock()
+
+
+def guest_quota_limit() -> int:
+    """当前生效的游客日额度（0 = 关闭）。"""
+    return _GUEST_QUOTA_LIMIT
+
+
+def _beijing_day_and_ttl() -> tuple[str, int]:
+    """返回 (北京日期 YYYY-MM-DD, 距次日 0 点秒数)。"""
+    now = datetime.now(UTC).astimezone(timezone(timedelta(hours=8)))
+    day = now.strftime("%Y-%m-%d")
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return day, max(60, int((tomorrow - now).total_seconds()))
+
+
+def _guest_quota_key(visitor_id: str | None, ip: str) -> str:
+    day, _ttl = _beijing_day_and_ttl()
+    raw = f"v:{visitor_id}" if visitor_id else f"ip:{ip}"
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    return f"cgda:quota:guest:{digest}:{day}"
+
+
+def check_agent_guest_daily_quota(visitor_id: str | None, ip: str) -> RateLimitResult:
+    """游客当日额度判定：每次调用消耗 1 次。
+
+    超限时 ``retry_after_seconds`` 为距北京次日 0 点的秒数。
+    """
+    if _GUEST_QUOTA_LIMIT <= 0:
+        return RateLimitResult(True, 0)
+
+    day, ttl = _beijing_day_and_ttl()
+    key = _guest_quota_key(visitor_id, ip)
+
+    from app.core.redis_client import get_redis_client
+
+    client = get_redis_client()
+    if client is not None:
+        try:
+            count = int(client.incr(key))
+            if count == 1:
+                # 首次计数：存活到次日 0 点后再留 2 分钟余量
+                client.expire(key, ttl + 120)
+            if count > _GUEST_QUOTA_LIMIT:
+                # 超额不再累加，避免计数无上限增长
+                with suppress(Exception):
+                    client.decr(key)
+                return RateLimitResult(False, ttl)
+            return RateLimitResult(True, 0)
+        except Exception as exc:  # noqa: BLE001 — Redis 异常降级为进程内计数
+            logger.warning("游客日额度计数降级为进程内: %s", exc)
+
+    with _guest_quota_memory_lock:
+        if len(_guest_quota_memory) > 4096:
+            # 只留当天的桶，防降级期间内存无限增长
+            for stale in [k for k in _guest_quota_memory if day not in k]:
+                _guest_quota_memory.pop(stale, None)
+        count = _guest_quota_memory.get(key, 0) + 1
+        if count > _GUEST_QUOTA_LIMIT:
+            return RateLimitResult(False, ttl)
+        _guest_quota_memory[key] = count
+    return RateLimitResult(True, 0)
 
 
 def rate_limited_response(

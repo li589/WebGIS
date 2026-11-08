@@ -25,6 +25,7 @@ import {
   extractRequestId,
 } from './http-errors'
 import { withWriteAuthHeaders } from './backend-auth'
+import { getVisitorId } from './visitor-id'
 import { useLogStore } from '../stores/log'
 import { useUiLoadingStore } from '../stores/ui-loading'
 
@@ -207,6 +208,8 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
   const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
     {
       'Content-Type': 'application/json',
+      // 匿名访客号：未登录时后端据此记 AI 助手日额度（登录态不参与判定）
+      'X-Visitor-Id': getVisitorId(),
       ...(initHeaders as Record<string, string> | undefined),
     },
     method,
