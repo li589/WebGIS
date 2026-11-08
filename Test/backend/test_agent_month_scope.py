@@ -280,3 +280,64 @@ class TestAsksMonthScope:
         assert orch._wants_statistics(msg) is True
         assert orch._asks_date_range(msg, {}, self.CTX) is False
         assert orch._asks_month_scope(msg, {}, self.CTX) is True
+
+    def test_month_block_reply_is_not_rejected_as_unmerged(self, monkeypatch):
+        """引擎走「整月块」分支的答案，不许被当成「没走合并」丢掉。
+
+        2026-11-08 r98 实测（用户重启后连中两次）：闸门原先只认「合并平均」，
+        而那是**逐日合并**分支的专属措辞；整月块分支写的是「整月合成块」。
+        于是引擎算对的 0.3399 被忽略，模型那句「12-15 这天 247 个像元全缺测」
+        被原样放行——数值没错，问的整个月却答成了一天。
+        """
+        from app.services.agent import mock_orchestrator as mo
+        from app.services.agent import orchestrator as orch
+
+        canned = (
+            "「风云卫星 平均散射约束产品 · 土壤水分」按「广州市」行政边界的只读统计：\n"
+            "- 均值：0.3399 m³/m³\n"
+            "- 有效像元：36 / 247（占 14.6%）\n"
+            "- 口径：这一层该月本身就是整月合成块（2025-12-01 至 2025-12-31）"
+        )
+        monkeypatch.setattr(mo, "forced_statistics_reply", lambda *a, **k: {"reply": canned})
+        steps = orch._EventSteps()
+        steps.append(
+            {
+                "type": "tool",
+                "summary": 'get_layer_statistics({"time": "2025-12-15", "region": "广州市"})',
+            }
+        )
+        model_reply = "2025-12-15 这一天，边界内 247 个像元全部缺测，所以算不出均值。"
+        out, _ = orch._statistics_fallback_reply(
+            "25年12月广州的平均土壤水分",
+            model_reply,
+            steps,
+            "t-month-block",
+            self.CTX,
+            state={},
+            history_state={},
+        )
+        assert out == canned
+        assert "0.3399" in out
+        assert "缺测" not in out
+
+    def test_engine_without_merge_markers_still_yields_to_model(self, monkeypatch):
+        """反向保险：引擎文案里既没有「合并平均」也没有「整月合成块」时，
+        说明它没走合并分支（认不出层 / 落到县区级说明），仍要尊重模型原文。"""
+        from app.services.agent import mock_orchestrator as mo
+        from app.services.agent import orchestrator as orch
+
+        canned = "「某图层」按「天河区」只能到地级市一级统计，请改到市。均值不适用。"
+        monkeypatch.setattr(mo, "forced_statistics_reply", lambda *a, **k: {"reply": canned})
+        steps = orch._EventSteps()
+        steps.append({"type": "tool", "summary": "get_layer_statistics({})"})
+        model_reply = "广州市 2025 年 12 月均值 0.3399 m³/m³，36 个有效像元。"
+        out, _ = orch._statistics_fallback_reply(
+            "25年12月广州的平均土壤水分",
+            model_reply,
+            steps,
+            "t-month-no-merge",
+            self.CTX,
+            state={},
+            history_state={},
+        )
+        assert out == model_reply

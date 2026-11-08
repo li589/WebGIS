@@ -2674,6 +2674,18 @@ def _grounded_statistics(text: str) -> bool:
     return any(k in text for k in ("均值", "有效像元", "有效栅格"))
 
 
+#: 规则引擎**按整段口径算出了合并值**的证据词（两个分支各有一个专属词）。
+#:
+#: ★ 2026-11-08 r98 实测（用户重启后仍被答成 12-15 单日，两次）：
+#: 原先这里只认「合并平均」，而「合并平均」只出现在**逐日合并**分支
+#: （``X 日到 Y 日``，mock_orchestrator:1865）。用户问的是「25 年 12 月」，
+#: 引擎走的是**整月块**分支（mock_orchestrator:2255），文案里写的是
+#: 「整月合成块」，一个「合并平均」都没有 ⇒ 被判成「引擎没走区间分支」⇒
+#: 模型那句「12-15 这天 247 个像元全缺测」被原样放行，引擎算对的
+#: 0.3399 被丢掉。凡是引擎**真按月份/区间合并过**的文案，这里都得认。
+_PERIOD_MERGED_MARKERS = ("合并平均", "整月合成块")
+
+
 def _asks_date_range(
     message: str, state: dict[str, str] | None, client_context: dict[str, Any] | None
 ) -> bool:
@@ -2873,7 +2885,9 @@ def _statistics_fallback_reply(
         # 区间问题要靠引擎那段「合并平均 / 逐日明细」才作数。引擎若因为认不出层、
         # 或落到县区级说明而没走区间分支，就不拿它顶替模型原文（模型这一轮真调过
         # 工具的话，它的数是 grounding 过的）。
-        if range_question and "合并平均" not in text:
+        # 月份口径同理：整月块分支的文案是「整月合成块」，与逐日合并的
+        # 「合并平均」是两套措辞，见 _PERIOD_MERGED_MARKERS 的实测说明。
+        if range_question and not any(k in text for k in _PERIOD_MERGED_MARKERS):
             if _statistics_tool_called(list(steps)):
                 return reply, None
             return (_UNGROUNDED_REPLY if _looks_numeric(reply) else reply), None
@@ -2881,7 +2895,11 @@ def _statistics_fallback_reply(
             {
                 "type": "tool_result",
                 "summary": (
-                    "服务端重算日期区间合并（口径固定为按有效像元加权）"
+                    (
+                        "服务端按整月块取数（该层时间清单里就有整月块，未拆成单日）"
+                        if "整月合成块" in text
+                        else "服务端重算日期区间合并（口径固定为按有效像元加权）"
+                    )
                     if range_question
                     else "服务端强制取数（模型本轮未调用任何数据工具）"
                 ),
