@@ -219,11 +219,11 @@ def small_limits(isolated, monkeypatch):
 
 def test_layer_blocks_on_visitor_quota(small_limits):
     for _ in range(small_limits["visitor"]):
-        result, scope = rl.check_agent_guest_quota_layers("v1", "10.1.0.1")
+        result, scope = rl.check_agent_guest_quota_layers("v1", "1.1.1.1")
         assert result.allowed is True
         assert scope is None
 
-    result, scope = rl.check_agent_guest_quota_layers("v1", "10.1.0.1")
+    result, scope = rl.check_agent_guest_quota_layers("v1", "1.1.1.1")
     assert result.allowed is False
     assert scope == rl.QUOTA_SCOPE_VISITOR
     assert 1 <= result.retry_after_seconds <= 24 * 3600 + 60
@@ -231,7 +231,7 @@ def test_layer_blocks_on_visitor_quota(small_limits):
 
 def test_same_ip_caps_across_browsers(small_limits):
     """换新访客号（＝清 localStorage）也突破不了同 IP 上限。"""
-    ip = "10.1.0.2"
+    ip = "1.1.1.2"
     for i in range(small_limits["visitor"]):
         assert rl.check_agent_guest_quota_layers(f"browser-{i}a", ip)[0].allowed
         assert rl.check_agent_guest_quota_layers(f"browser-{i}b", ip)[0].allowed
@@ -250,7 +250,7 @@ def test_global_cap_across_ips(small_limits):
     used = 0
     ip_idx = 0
     while used < small_limits["global"]:
-        ip = f"10.2.0.{ip_idx}"
+        ip = f"9.9.9.{ip_idx}"
         ip_idx += 1
         for i in range(small_limits["visitor"]):
             if used >= small_limits["global"]:
@@ -260,14 +260,14 @@ def test_global_cap_across_ips(small_limits):
             if used % small_limits["visitor"] == 0:
                 break
 
-    result, scope = rl.check_agent_guest_quota_layers("g-overflow", "10.2.9.9")
+    result, scope = rl.check_agent_guest_quota_layers("g-overflow", "9.9.9.99")
     assert result.allowed is False
     assert scope == rl.QUOTA_SCOPE_GLOBAL
 
 
 def test_blocked_request_does_not_consume_other_layers(small_limits):
     """被后一道拦下时，前面几道不该白掉一次额度（先预检、后统一计数）。"""
-    ip = "10.3.0.1"
+    ip = "1.1.1.30"
     used = 0
     idx = 0
     while used < small_limits["ip"]:
@@ -289,17 +289,37 @@ def test_blocked_request_does_not_consume_other_layers(small_limits):
 def test_disabled_layer_is_skipped(small_limits, monkeypatch):
     monkeypatch.setattr(rl, "_GUEST_IP_QUOTA_LIMIT", 0)
     monkeypatch.setattr(rl, "_GUEST_GLOBAL_QUOTA_LIMIT", 0)
-    peeked = rl.peek_agent_guest_quota_layers("v-solo", "10.4.0.1")
+    peeked = rl.peek_agent_guest_quota_layers("v-solo", "9.9.9.50")
     assert set(peeked) == {rl.QUOTA_SCOPE_VISITOR}
     # 只剩访客号一道时，同一 IP 上的另一个访客不受影响
     for _ in range(small_limits["visitor"]):
-        assert rl.check_agent_guest_quota_layers("v-solo", "10.4.0.1")[0].allowed
-    assert rl.check_agent_guest_quota_layers("v-solo", "10.4.0.1")[0].allowed is False
-    assert rl.check_agent_guest_quota_layers("v-other", "10.4.0.1")[0].allowed is True
+        assert rl.check_agent_guest_quota_layers("v-solo", "9.9.9.50")[0].allowed
+    assert rl.check_agent_guest_quota_layers("v-solo", "9.9.9.50")[0].allowed is False
+    assert rl.check_agent_guest_quota_layers("v-other", "9.9.9.50")[0].allowed is True
+
+
+def test_internal_ip_skips_ip_layer(small_limits):
+    """拿不到真实 IP（内网/回环/解析不出）时不能拿它当桶。
+
+    否则一旦代理链丢头，全站访客会挤进同一个 IP 桶，100 次瞬间耗光、整站变砖。
+    """
+    for weird in ("172.20.0.1", "127.0.0.1", "192.168.1.5", "testclient", ""):
+        peeked = rl.peek_agent_guest_quota_layers("v-int", weird)
+        assert rl.QUOTA_SCOPE_IP not in peeked, weird
+
+    # 访客号那道照样生效
+    for _ in range(small_limits["visitor"]):
+        assert rl.check_agent_guest_quota_layers("v-int", "172.20.0.1")[0].allowed
+    assert rl.check_agent_guest_quota_layers("v-int", "172.20.0.1")[0].allowed is False
+
+
+def test_public_ip_keeps_ip_layer(small_limits):
+    peeked = rl.peek_agent_guest_quota_layers("v-pub", "1.1.1.77")
+    assert peeked[rl.QUOTA_SCOPE_IP] == (0, small_limits["ip"])
 
 
 def test_ip_key_is_hashed_and_dated(isolated):
-    ip = "203.0.113.77"
+    ip = "1.1.1.77"
     key = rl._guest_ip_quota_key(ip)
     day, _ttl = rl._beijing_day_and_ttl()
     assert ip not in key, "IP 不应明文进 Redis 键"

@@ -507,13 +507,34 @@ QUOTA_SCOPE_IP = "ip"
 QUOTA_SCOPE_GLOBAL = "global"
 
 
+def _is_internal_ip(ip: str) -> bool:
+    """内网 / 回环 / 解析不出来的地址不能拿来区分访客。
+
+    真实 IP 靠网关的 ``real_ip_header CF-Connecting-IP`` 还原；万一哪天那条链路
+    变了（换域名直连、隧道改配置、Cloudflare 关掉），这个头会消失，``$remote_addr``
+    退回 Docker 网关地址 ⇒ **所有公网访客挤进同一个桶**，「每 IP 100 次」会瞬间
+    耗光，网站看起来像坏了。这类地址一律跳过该道，让访客号与全站两道兜住：
+    宁可少一层保护，也不能误伤所有人。
+    """
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address((ip or "").strip())
+    except ValueError:
+        return True
+    return addr.is_private or addr.is_loopback or addr.is_link_local
+
+
 def _guest_quota_layers(visitor_id: str | None, ip: str) -> list[tuple[str, str, int]]:
-    """三道闸的 (作用域, 计数键, 上限)，上限 <=0 的道视为关闭、直接剔除。"""
+    """三道闸的 (作用域, 计数键, 上限)，上限 <=0 或不可用的道直接剔除。"""
     layers = [
         (QUOTA_SCOPE_VISITOR, _guest_quota_key(visitor_id, ip), _GUEST_QUOTA_LIMIT),
-        (QUOTA_SCOPE_IP, _guest_ip_quota_key(ip), _GUEST_IP_QUOTA_LIMIT),
         (QUOTA_SCOPE_GLOBAL, _guest_global_quota_key(), _GUEST_GLOBAL_QUOTA_LIMIT),
     ]
+    if not _is_internal_ip(ip):
+        layers.insert(
+            1, (QUOTA_SCOPE_IP, _guest_ip_quota_key(ip), _GUEST_IP_QUOTA_LIMIT)
+        )
     return [item for item in layers if item[2] > 0]
 
 
