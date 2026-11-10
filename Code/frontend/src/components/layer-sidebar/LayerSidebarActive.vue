@@ -47,6 +47,9 @@ function isComputingRunMember(layer: ActiveLayerDisplay): boolean {
   if (!layer.runGroupId) return false
   return props.runGroupOf(layer.runGroupId)?.status === 'computing'
 }
+// 保留给「本地导入」分类胶囊恢复时使用；显式引用一次，避免 vue-tsc
+// 的 noUnusedLocals 把它当死代码报错（TS 不读 eslint-disable 注释）。
+void isComputingRunMember
 
 /**
  * 名称后的变量短码（2026-10-19）：对齐「土壤水分 SM / 植被光学厚度 VOD / ω」的读法。

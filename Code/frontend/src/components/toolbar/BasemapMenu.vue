@@ -41,6 +41,8 @@ const apiKeys = toRef(settingsStore, 'apiKeys')
 
 function sourceUsable(source: TileSourceConfig): boolean {
   void apiKeys.value
+  // 游客/未进设置页时 apiKeys 为空，可用性来自只含布尔的 availability
+  void settingsStore.basemapAvailability
   return isTileSourceUsable(source, (key) => settingsStore.isBasemapApiKeyAvailable(key))
 }
 
@@ -65,11 +67,16 @@ const currentSourceLabel = computed(() => {
 const PROVIDER_ORDER = ['gaode', 'bing', 'esri', 'osm', 'tianditu', 'baidu', 'opentopo', 'carto']
 
 /**
- * 2026-11-10：暂时停用的底图提供方（选项从菜单隐藏，配置本身未删）。
- * 天地图没接 API Key，选了也加载不出，先注释掉避免用户点了失败。
- * 要恢复：把数组清空即可。
+ * 暂时停用的底图提供方（选项从菜单隐藏，配置本身未删）。空数组 = 全部启用。
+ *
+ * 2026-11-10 曾把 'tianditu' 放进来，理由是「没接 API Key，选了必然失败」。
+ * 2026-11-10 复核：这个判断是错的 —— `.env` 里天地图 Key 是有效的，服务端
+ * 无头请求返回 200 图片，后端代理 `/unified-tiles/tianditu-img/1/0/1` 也是
+ * 200 image/jpeg。真正的原因是前端把「拿不到 /config/api-keys」当成了
+ * 「没有 Key」（游客恒 403、未进设置页也是空列表），于是把能用的底图判成
+ * 不可用。现已改为从 `/config/basemap-availability` 取布尔，天地图恢复。
  */
-const DISABLED_PROVIDERS: string[] = ['tianditu']
+const DISABLED_PROVIDERS: string[] = []
 
 function isProviderDisabled(source: TileSourceConfig): boolean {
   return DISABLED_PROVIDERS.includes(providerKeyOf(source))

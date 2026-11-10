@@ -407,3 +407,43 @@ def test_api_key_delete_via_thread(client: TestClient):
     assert resp.json() == {"deleted": True, "key_name": name}
     listed = client.get("/config/api-keys").json()
     assert not any(k["key_name"] == name for k in listed)
+
+
+# ── 底图可用性探测（2026-11-10）──────────────────────────────────────────────
+# 背景：前端原本靠 /config/api-keys 判断底图能不能点。游客（demo）读该接口是
+# 403、未进设置页时列表也是空 ⇒ 天地图这类「后端已配 key、瓦片代理能出图」的
+# 底图被一律判成「需配置密钥」，界面上根本切不过去。故新增只回布尔的探测接口。
+
+
+def test_basemap_availability_is_anonymous_and_boolean(anon_client: TestClient):
+    """匿名可读，且只回布尔——不泄露任何密钥内容。"""
+    resp = anon_client.get("/config/basemap-availability")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert set(payload) == {"providers"}
+    providers = payload["providers"]
+    assert providers, "至少要列出已知底图源"
+    for name, value in providers.items():
+        assert isinstance(name, str)
+        assert isinstance(value, bool), f"{name} 必须是布尔，实际 {value!r}"
+    # 不允许夹带任何密钥痕迹
+    body = resp.text
+    for marker in ("masked", "tk=", "key_value", "secret", "token"):
+        assert marker not in body
+
+
+def test_basemap_availability_reflects_effective_key(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """返回值必须跟着「后端生效 key」走，而不是 DB 有没有行。"""
+    from app.services import config_api_keys
+
+    monkeypatch.setattr(
+        config_api_keys,
+        "is_basemap_key_available",
+        lambda name: name == "tianditu",
+    )
+    providers = client.get("/config/basemap-availability").json()["providers"]
+    assert providers["tianditu"] is True
+    assert providers["baidu"] is False
+    assert providers["gaode"] is False

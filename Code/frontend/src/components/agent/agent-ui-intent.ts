@@ -117,6 +117,15 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   ])
 }
 
+/** 游客回执只说业务结果，不暴露接口、存储服务、文件名或 HTTP 细节。 */
+function friendlyFrameFailure(message?: string): string {
+  const raw = String(message ?? '')
+  if (/不覆盖|没有.*(?:成果|数据|文件)|无可用/.test(raw)) {
+    return '该日没有可用的单日数据'
+  }
+  return '单日数据暂时无法取得，具体原因已记录到系统日志'
+}
+
 function resolveInstanceId(
   catalogId: string | undefined,
   instanceId: string | undefined,
@@ -439,7 +448,13 @@ function describeSettledTimeline(catalogId: string, moved: boolean): string {
    * 判块之前先问补帧登记表：这一层这天到底有没有单日帧。
    */
   const ondemand = useOnDemandFrameStore()
-  const ondemandKey = layer?.importedRasterOverlayLayerId || catalogId
+  // 补帧登记表的键是 overlayLayerId（imported-xxx），不是 catalogId。
+  // 2026-11-10 修：这里原先读 `layer?.importedRasterOverlayLayerId`，而
+  // ActiveLayerDisplay 上没有这个字段 ⇒ 恒为 undefined ⇒ 永远退到 catalogId
+  // ⇒ 单日补帧的回执仍会多补一句「该日落在时间块 … 内」（自相矛盾）。
+  // 取法与 useTimelineSync.ondemandKeyOf 保持一致。
+  const overlayId = layer?.importedRaster?.overlayLayerId
+  const ondemandKey = overlayId && ondemand.isOnDemandLayer(overlayId) ? overlayId : catalogId
   const dayTag = ondemand.displayedDayTag(ondemandKey, toCompactDate(ui.currentDate))
   if (dayTag) return `${head}，显示的是这一天的单日图`
   const eff = resolveEffectiveFrame(list, ui.currentDate, ui.currentHour)
@@ -917,30 +932,30 @@ async function executeAgentUiIntentCore(
             return {
               ok: true,
               message: `${shownName}已切到 ${requested}（${
-                fetched.cached ? '本地已有' : '刚从 NAS 取回'
+                fetched.cached ? '本地已有' : '刚从取数服务取得'
               }）。${basisNote}`,
             }
           }
           return {
             ok: true,
             message: `${shownName}已切到 ${requested}，显示的是这一天的单日图（${
-              fetched.cached ? '本地已有' : '刚从 NAS 取回'
+              fetched.cached ? '本地已有' : '刚从取数服务取得'
             }）`,
           }
         }
         if (fetched && !fetched.ok) {
-          // 时间轴确实跳了，但画面没换 —— 两件事分开说，别用「已切到」把没做到的也包进去
+          // 日期控件变化但数据没换，整体按失败回报；底层错误只进日志，不给游客看。
           return {
-            ok: true,
-            message: `时间轴已跳到 ${requested}，但${shownName}这一天的单日图没取到：${
-              fetched.message || '原因未知'
-            }。${fallback}`,
+            ok: false,
+            message: `日期控件已调整到 ${requested}，但${shownName}的数据没有切换成功：${friendlyFrameFailure(
+              fetched.message,
+            )}。${fallback}`,
           }
         }
-        // 超过 20s 还没回来：别装作已经切好，说清正在取
+        // 超时不能报成功；只说明尚未确认完成，不暴露内部取数位置。
         return {
-          ok: true,
-          message: `${shownName}已切到 ${requested}，正在从 NAS 取这一天的单日图（约 4~6 秒），取回后地图会换成单日`,
+          ok: false,
+          message: `日期控件已调整到 ${requested}，但${shownName}的单日数据尚未取得，地图是否切换成功暂时无法确认`,
         }
       }
       /**

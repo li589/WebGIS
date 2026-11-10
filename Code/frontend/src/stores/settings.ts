@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import {
   fetchGeneralConfig,
   fetchApiKeys,
+  fetchBasemapAvailability,
   updateApiKey,
   deleteApiKey,
   testApiKey,
@@ -102,6 +103,7 @@ function isAuthDenied(err: unknown): boolean {
 type LoaderName =
   | 'general'
   | 'api-keys'
+  | 'basemap-availability'
   | 'gee-accounts'
   | 'gee-runtime'
   | 'weather'
@@ -117,6 +119,7 @@ type LoaderName =
 const LOADER_LABELS: Record<LoaderName, string> = {
   general: '常规设置',
   'api-keys': 'API Key',
+  'basemap-availability': '底图可用性',
   'gee-accounts': 'GEE 账户',
   'gee-runtime': 'GEE 运行时',
   weather: '天气引擎',
@@ -151,6 +154,16 @@ async function settled<T>(name: LoaderName, fn: () => Promise<T>): Promise<Settl
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKeys = ref<ApiKeyItem[]>([])
+  /**
+   * 各底图源 key 是否生效（只含布尔，来自 `/config/basemap-availability`）。
+   *
+   * 与 `apiKeys` 的分工：
+   * · `apiKeys` —— 设置页用的完整列表，只对 admin/standard 开放；
+   * · `basemapAvailability` —— 底图菜单判断能不能点用的降级信息源，
+   *   游客也拿得到（游客读 `/config/api-keys` 是 403，列表恒为空，
+   *   于是天地图等底图以前全被误判成「需配置密钥」）。
+   */
+  const basemapAvailability = ref<Record<string, boolean>>({})
   const apiKeyHistory = ref<Record<string, ApiKeyHistoryItem[]>>({})
   const geeAccounts = ref<GeeAccountItem[]>([])
   const geeRuntimeConfig = ref<GeeRuntimeConfig | null>(null)
@@ -197,10 +210,16 @@ export const useSettingsStore = defineStore('settings', () => {
     // 数据源扫描等慢接口放第二批，避免拖住整个设置面板。
     const criticalBatch = (): Promise<SettledResult<unknown>[]> =>
       restricted
-        ? Promise.all([settled('about', fetchAboutInfo)])
+        ? Promise.all([
+            settled('about', fetchAboutInfo),
+            // 游客读不到 /config/api-keys，但底图菜单必须知道哪些底图能点，
+            // 否则天地图等会被误判成「需配置密钥」而整片置灰。
+            settled('basemap-availability', fetchBasemapAvailability),
+          ])
         : Promise.all([
             settled('general', fetchGeneralConfig),
             settled('api-keys', fetchApiKeys),
+            settled('basemap-availability', fetchBasemapAvailability),
             settled('about', fetchAboutInfo),
           ])
 
@@ -240,6 +259,11 @@ export const useSettingsStore = defineStore('settings', () => {
         case 'api-keys':
           apiKeys.value = r.value as ApiKeyItem[]
           break
+        case 'basemap-availability': {
+          const payload = r.value as { providers?: Record<string, boolean> } | null
+          basemapAvailability.value = payload?.providers ?? {}
+          break
+        }
         case 'gee-accounts':
           geeAccounts.value = r.value as GeeAccountItem[]
           break
@@ -287,8 +311,9 @@ export const useSettingsStore = defineStore('settings', () => {
           const loader = {
             general: () => settled('general', fetchGeneralConfig),
             'api-keys': () => settled('api-keys', fetchApiKeys),
+            'basemap-availability': () => settled('basemap-availability', fetchBasemapAvailability),
             about: () => settled('about', fetchAboutInfo),
-          }[item.name as 'general' | 'api-keys' | 'about']
+          }[item.name as 'general' | 'api-keys' | 'basemap-availability' | 'about']
           if (loader) retryMap.set(item.name, await loader())
         }),
       )
@@ -418,12 +443,43 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadApiKeyHistory(keyName)
   }
 
+  /**
+   * 单独拉一次「底图可用性」（幂等、并发去重）。
+   *
+   * 不能只靠 `loadAll()`：它只在打开设置面板时才被调用，而底图菜单在首页
+   * 就要判断能不能点。所以地图挂载时主动拉一次，拉到即止。
+   */
+  let basemapAvailabilityInFlight: Promise<void> | null = null
+  async function ensureBasemapAvailability(): Promise<void> {
+    if (basemapAvailabilityInFlight) return basemapAvailabilityInFlight
+    if (Object.keys(basemapAvailability.value).length > 0) return
+    basemapAvailabilityInFlight = (async () => {
+      try {
+        const payload = await fetchBasemapAvailability()
+        basemapAvailability.value = payload?.providers ?? {}
+      } catch (err) {
+        // 静默失败：菜单按「不可用」保守处理，不打扰用户。
+        console.warn('[settings] 底图可用性加载失败:', err)
+      } finally {
+        basemapAvailabilityInFlight = null
+      }
+    })()
+    return basemapAvailabilityInFlight
+  }
+
   /** Effective basemap key available for tile proxy (enabled + has value). */
   function isBasemapApiKeyAvailable(keyName: string): boolean {
     const item = apiKeys.value.find((k) => k.key_name === keyName)
-    if (!item) return false
-    const hasValue = item.has_value ?? Boolean(item.masked_value)
-    return Boolean(item.enabled && hasValue)
+    if (item) {
+      // 拿到完整列表时以它为准（含「禁用即吊销」语义：DB 有行但 disabled，
+      // 后端 get_effective_api_key 也会返回空，两者一致）。
+      const hasValue = item.has_value ?? Boolean(item.masked_value)
+      return Boolean(item.enabled && hasValue)
+    }
+    // 游客（demo）读不到 /config/api-keys，列表恒为空；未进设置页时同样为空。
+    // 此时退到只含布尔的可用性接口 —— 否则天地图这类「后端已配 key、代理
+    // 能出图」的底图会被一律判成「需配置密钥」，界面上根本切不过去。
+    return Boolean(basemapAvailability.value[keyName])
   }
 
   // ── GEE 账户 ─────────────────────────────────────────────────────────────
@@ -694,6 +750,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     apiKeys,
+    basemapAvailability,
+    ensureBasemapAvailability,
     apiKeyHistory,
     geeAccounts,
     geeRuntimeConfig,

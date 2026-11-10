@@ -54,6 +54,17 @@ class ApiKeyItem(BaseModel):
     last_test_status: str | None = None
 
 
+class BasemapAvailabilityResponse(BaseModel):
+    """底图源可用性（GET /config/basemap-availability）。
+
+    只回答「某张底图的 key 当前是否生效」，**不含任何密钥内容或配置项**，
+    因此允许游客读取 —— 底图菜单靠它判断能不能点，而系统配置读取依旧
+    只对 admin / standard 开放。
+    """
+
+    providers: dict[str, bool] = Field(default_factory=dict)
+
+
 class GeeAccountCreateRequest(BaseModel):
     account_id: str
     service_account_json: dict

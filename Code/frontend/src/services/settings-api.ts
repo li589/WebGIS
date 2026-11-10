@@ -310,6 +310,27 @@ export function fetchApiKeys(): Promise<ApiKeyItem[]> {
   return settingsFetch('/config/api-keys')
 }
 
+/**
+ * 各底图源 key 当前是否生效（`GET /config/basemap-availability`）。
+ *
+ * 为什么需要它：底图菜单要判断「这张底图能不能点」，原先只能看
+ * `/config/api-keys` 里有没有对应的行 —— 但游客（demo）读那个接口是 403，
+ * 列表为空 ⇒ 所有底图被误判成「需配置密钥」⇒ 天地图后端代理明明能出图，
+ * 界面却切不过去。
+ *
+ * 该接口只回答布尔，不含任何密钥内容，因此游客也能读。
+ * ⚠ 形状极简（`{ providers: Record<string, boolean> }`），未走 OpenAPI 生成；
+ *   `openapi.json` 自 2026-09-30 起未再导出，跑 gen:types 会带出无关大 diff。
+ *   下次统一导出时再收敛成生成类型。
+ */
+export type BasemapAvailability = {
+  providers?: Record<string, boolean>
+}
+
+export function fetchBasemapAvailability(): Promise<BasemapAvailability> {
+  return settingsFetch('/config/basemap-availability')
+}
+
 export function updateApiKey(keyName: string, request: ApiKeyUpdateRequest): Promise<ApiKeyItem> {
   return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}`, {
     method: 'PUT',

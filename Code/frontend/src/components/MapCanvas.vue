@@ -835,6 +835,10 @@ onMounted(async () => {
     return
   }
 
+  // 底图菜单要靠它判断「哪些底图能点」。不能等设置面板打开才拉，
+  // 否则首次进站时 apiKeys 为空，天地图等底图会被误判成「需配置密钥」。
+  void settingsStore.ensureBasemapAvailability()
+
   // 超时兜底：初始化卡住时也要给出可见提示，而不是一直"正在加载地图"
   mapInitError.value = null
   mapInitTechDetail.value = null

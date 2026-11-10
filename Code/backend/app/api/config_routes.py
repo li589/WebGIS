@@ -81,6 +81,7 @@ from shared.contracts.config_contracts import (
     ApiKeyItem,
     ApiKeyToggleRequest,
     ApiKeyUpdateRequest,
+    BasemapAvailabilityResponse,
     DataCacheEvictRequest,
     DataCacheEvictResponse,
     DataCacheOverview,
@@ -185,6 +186,33 @@ async def get_general_config():
 async def list_api_keys():
     """列出所有 API Key（脱敏）。"""
     return config_service.list_api_keys()
+
+
+# 底图源可用性：只回布尔，匿名可读。
+# 暴露面与 `/unified-tiles/{layer}/{z}/{x}/{y}` 一致 —— 瓦片代理本身不鉴权，
+# 任何人拉一张瓦片就能推断「这张底图能不能用」，所以这里回布尔没有新增泄露；
+# 反过来若要求登录，游客/未登录时底图菜单会把本来能用的底图全部置灰。
+_BASEMAP_KEY_NAMES = ("tianditu", "baidu", "gaode", "bing")
+
+
+@router.get(
+    "/basemap-availability",
+    response_model=BasemapAvailabilityResponse,
+)
+async def get_basemap_availability():
+    """各底图源的 key 当前是否生效（用于底图菜单置灰判断）。
+
+    前端原先靠 `GET /config/api-keys` 判断，但：① 游客（demo）读该接口是
+    403，列表为空；② 该接口只在打开设置面板时才拉取，未进设置页时列表同样
+    为空。两种情况下天地图等「后端已配 key、代理能正常出图」的底图都会被
+    判成「需配置密钥」，界面上根本切不过去。
+    本接口只回答「能不能用」，不返回任何密钥内容。
+    """
+    from app.services.config_api_keys import is_basemap_key_available
+
+    return BasemapAvailabilityResponse(
+        providers={name: is_basemap_key_available(name) for name in _BASEMAP_KEY_NAMES}
+    )
 
 
 @router.put(
