@@ -21,11 +21,21 @@ TTL 清理与每用户配额，不引入新的文件类别。
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
-#: 只有这五个键会被持久化（其余键一律丢弃，避免把任意内容写进会话文件）。
-KEYS: tuple[str, ...] = ("layer_id", "layer_name", "variable", "region", "date")
+#: 只有这几个键会被持久化（其余键一律丢弃，避免把任意内容写进会话文件）。
+#: ``var_layers`` 是「变量 → 取数产物 id」的跨轮映射（2026-11-09 加）：防
+#: 产品粘性被非三变量层（如 CMFD 降水）覆盖后丢版本。存成 JSON 字符串。
+KEYS: tuple[str, ...] = (
+    "layer_id",
+    "layer_name",
+    "variable",
+    "region",
+    "date",
+    "var_layers",
+)
 
 #: 单字段最大长度（区域名、日期都很短，超长一律截断）
 _MAX_LEN = 64
@@ -107,6 +117,14 @@ def sanitize(raw: Any) -> dict[str, str]:
     variable = out.get("variable")
     if variable and variable not in VARIABLE_LABELS:
         out.pop("variable", None)
+    # var_layers 是 JSON 字符串，不按普通文本截断；解析失败就整条丢弃（不留脏数据）。
+    var_layers_raw = out.get("var_layers")
+    if var_layers_raw:
+        parsed = _parse_var_layers(var_layers_raw)
+        if parsed is None:
+            out.pop("var_layers", None)
+        else:
+            out["var_layers"] = _dump_var_layers(parsed)
     # 层名与变量自相矛盾时**以层名为准**：层名是「这一层到底是什么」的直接证据，
     # variable 是从它推出来的。2026-11-06 实盘见过 {layer_name: 等效散射 ω,
     # variable: sm}——这种状态会让提示词自己打架，模型于是再去挑一个「同变量」
@@ -115,6 +133,35 @@ def sanitize(raw: Any) -> dict[str, str]:
     if name_var and out.get("variable") and name_var != out["variable"]:
         out["variable"] = name_var
     return out
+
+
+def _parse_var_layers(raw: str) -> dict[str, str] | None:
+    """把 var_layers 的 JSON 字符串解析成变量→层映射；非法返回 None。"""
+    try:
+        obj = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    out: dict[str, str] = {}
+    for var, lid in obj.items():
+        if var not in VARIABLE_LABELS:
+            continue
+        lid_text = str(lid).strip()[:_MAX_LEN]
+        if lid_text:
+            out[var] = lid_text
+    return out or None
+
+
+def _dump_var_layers(mapping: dict[str, str]) -> str:
+    """把变量→层映射序列化成 var_layers 的 JSON 字符串。"""
+    return json.dumps(mapping, ensure_ascii=False, sort_keys=True)
+
+
+def var_layers_mapping(state: Any) -> dict[str, str]:
+    """读出会话里「变量 → 层」的跨轮映射（空状态返回空 dict）。"""
+    clean = sanitize(state)
+    return _parse_var_layers(clean.get("var_layers") or "") or {}
 
 
 def merge(previous: Any, **patch: Any) -> dict[str, str]:
@@ -129,13 +176,43 @@ def merge(previous: Any, **patch: Any) -> dict[str, str]:
     if isinstance(clear, (set, frozenset, list, tuple)):
         for key in clear:
             state.pop(str(key), None)
+    # var_layers 是「变量→层」的跨轮累积映射，不能像单值字段那样整条覆盖：
+    # 否则「SM→CMFD→SM」里最后一次 merge 会把之前记的 sm 条目冲掉，产品粘性
+    # 又退回单槽。这里把 patch 里的 var_layers 与旧映射按变量合并。
+    incoming_var_layers = patch.pop("var_layers", None)
     for key, value in patch.items():
         if key not in KEYS or value is None:
             continue
         text = str(value).strip()[:_MAX_LEN]
         if text:
             state[key] = text
+    if incoming_var_layers:
+        mapping = var_layers_mapping(state)
+        parsed = _parse_var_layers(str(incoming_var_layers)) or {}
+        for var, lid in parsed.items():
+            mapping[var] = lid
+        state["var_layers"] = _dump_var_layers(mapping)
     return sanitize(state)
+
+
+def remember_var_layer(state: Any, *, variable: str, layer_id: str) -> dict[str, str]:
+    """在会话状态里追加/更新「变量 → 层」映射，返回新状态。
+
+    2026-11-09 加：产品粘性原来只记单槽 ``layer_id``，被非三变量层（CMFD 降水）
+    覆盖后，三变量层（sm/vod/omega）的版本记忆就丢了——「切回土壤水分」只能靠
+    模型重新自选版本，口径静默漂移（单日帧 ↔ 8 天块）。这里给每个变量单独记
+    一份它最近用过的产物 id，互不覆盖；只收三变量，其余变量（降水等）不写。
+    """
+    if variable not in VARIABLE_LABELS:
+        return sanitize(state)
+    lid = str(layer_id or "").strip()[:_MAX_LEN]
+    if not lid:
+        return sanitize(state)
+    mapping = var_layers_mapping(state)
+    mapping[variable] = lid
+    clean = sanitize(state)
+    clean["var_layers"] = _dump_var_layers(mapping)
+    return clean
 
 
 def describe(state: Any) -> str:

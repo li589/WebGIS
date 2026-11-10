@@ -490,3 +490,61 @@ class TestToolMonthRewrite:
 
         self._patch(monkeypatch, "20251201_20251231")
         assert _month_block_for_message("", "20251215", "imported-x") is None
+
+
+class TestRangeStatisticsNasUnavailable:
+    """区间/整月逐日合并遇到「按需取数服务不可用」要第一次就停，不能逐日空跑。
+
+    2026-11-09（第十八轮）实测：NAS 隧道整个挂掉（HTTP 530）时，问「12月1日
+    到12月31日」会把 31 天逐日各重试 3 次、卡死 3 分多钟。这里锁住：
+    ondemand_fetch.reason 是 nas_unreachable / fetch_failed 时，只取一次就转述
+    「取数服务暂时不可用」；nas_missing（上游该日真没成果）仍逐日继续。
+    """
+
+    def _reply(self, monkeypatch, fetch_reason, call_counter):
+        from app.services.agent import mock_orchestrator as mo
+        from app.services.agent import server_tools_runtime
+
+        def fake_stats(*a, **k):
+            call_counter.append(1)
+            return {
+                "ok": False,
+                "error": "取数服务返回错误，这次没取到",
+                "ondemand_fetch": {"reason": fetch_reason, "ok": False},
+            }
+
+        # _range_statistics_reply 内部是「函数内局部导入」，
+        # 所以要把假实现打到 server_tools_runtime 模块的属性上。
+        monkeypatch.setattr(
+            server_tools_runtime, "_get_layer_statistics", fake_stats, raising=True
+        )
+        return mo._range_statistics_reply(
+            text="统计土壤水分2025年12月1日到12月31日的均值",
+            target={"catalog_id": "imported-x", "overlay_layer_id": "imported-x"},
+            region=None,
+            days=["20251201", "20251202", "20251203", "20251204"],
+            name="SMAP 平均散射约束产品",
+            sid="s",
+            intents=[],
+            client_context=None,
+            state=None,
+            entities={},
+        )
+
+    def test_nas_unreachable_stops_after_first_day(self, monkeypatch):
+        calls = []
+        reply = self._reply(monkeypatch, "nas_unreachable", calls)
+        assert len(calls) == 1  # 只取了一次，没有逐日空跑
+        assert "取数服务暂时不可用" in reply["reply"]
+
+    def test_fetch_failed_also_stops_after_first_day(self, monkeypatch):
+        calls = []
+        reply = self._reply(monkeypatch, "fetch_failed", calls)
+        assert len(calls) == 1
+        assert "取数服务暂时不可用" in reply["reply"]
+
+    def test_nas_missing_keeps_going(self, monkeypatch):
+        """上游该日真没成果（nas_missing）不是服务故障，仍逐日继续。"""
+        calls = []
+        reply = self._reply(monkeypatch, "nas_missing", calls)
+        assert len(calls) == 4  # 四天都取了一遍，没有提前停

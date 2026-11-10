@@ -150,3 +150,96 @@ class TestNoFalsePositive:
         from app.services.agent.mock_orchestrator import _county_like_region_name
 
         assert _county_like_region_name("2025年12月广州市天河区的平均土壤水分") == "天河区"
+
+
+class TestSummaryWordsAreNotPlaces:
+    """2026-11-09 实测（外部反馈「把产品和地区误识别为区县」）。
+
+    原话是「只把统计日期改为 …, **产品和地区**沿用刚刚那次统计」。
+    ``_COUNTY_NAME_RE`` 在「产品和地**区沿**用」处命中（后接「沿」，负向断言
+    挡不住），抓出「产品和地区」；另一套 ``_REGION_TOKEN_RE`` 更宽，把
+    「地区和日期保持广州市」「统计范围改为河南省」也整段吞下来。三句都被当成
+    「认不出的地名」，正文凭空多一段口径说明——而数值本身是对的。
+    """
+
+    _SENTENCES = (
+        "只把统计日期改为 2025 年 11 月 13 日，产品和地区沿用刚刚那次统计。请给出实际取数的产品、日期、均值和有效栅格数。",
+        "只把统计日期改成 2025 年 12 月 16 日，产品和地区沿用上一条查询。",
+        "地区和日期保持广州市、2025 年 12 月 16 日，请改用 SMAP 平均散射约束产品统计。",
+        "只把统计范围改为河南省，其余沿用刚才那次统计。",
+    )
+
+    def test_county_helper_ignores_summary_words(self):
+        from app.services.agent.mock_orchestrator import _county_like_region_name
+
+        for msg in self._SENTENCES:
+            assert _county_like_region_name(msg) is None, msg
+
+    def test_unknown_region_ignores_summary_words(self):
+        for msg in self._SENTENCES:
+            assert orch._unknown_region_token(msg) is None, msg
+
+    def test_no_note_appended_on_those_sentences(self):
+        reply = "按「广州市」行政边界：均值 0.0643 m³/m³，有效栅格 28 个。"
+        steps = [_step({**_SINGLE_DAY, "region": "广州市", "mean": 0.0643})]
+        for msg in self._SENTENCES:
+            assert _append_region_scope_note(msg, reply, steps) == reply, msg
+
+    def test_real_county_survives_the_noise_trim(self):
+        """降噪不能把真区县名一起吃掉：「换成天河区」「拿天河区」仍要认出来。"""
+        from app.services.agent.mock_orchestrator import _county_like_region_name
+
+        for msg in ("换成天河区呢", "拿天河区那个看下", "广州市天河区的平均值"):
+            assert _county_like_region_name(msg) == "天河区", msg
+
+    def test_province_autonomous_region_is_not_a_county(self):
+        """「内蒙古自治区」会被切成「蒙古自治**区**」，这是省级名字被误伤。"""
+        from app.services.agent.mock_orchestrator import _county_like_region_name
+
+        assert _county_like_region_name("内蒙古自治区阿拉善盟的土壤水分") is None
+
+
+class TestMentionsUnresolvableRegion:
+    """规则引擎侧：认不出的「X省/X市」不能沿用上一轮 region、也不能退回整幅。
+
+    2026-11-09（第十八轮）实测：问「甲壳虫省」被顺成上一轮的「山东省」算了数，
+    只补一句「没对应到甲壳虫省」。这里锁住 ``_mentions_unresolvable_region``
+    的判定，确保：认不出的省市级地名要拦、真实地名和整幅/全国口径不误伤。
+    """
+
+    def test_unresolvable_region_is_detected(self):
+        from app.services.agent.mock_orchestrator import _mentions_unresolvable_region
+
+        for msg in (
+            "统计一下甲壳虫省2025年12月16日的土壤水分",
+            "甲壳虫省的平均土壤水分是多少",
+        ):
+            assert _mentions_unresolvable_region(msg) is True, msg
+
+    def test_known_region_is_not_flagged(self):
+        from app.services.agent.mock_orchestrator import _mentions_unresolvable_region
+
+        for msg in (
+            "统计河南省2025年12月16日的均值",
+            "那广东省呢",
+            "统计范围改为河南省",
+            "比较广东省和山东省的土壤水分",
+            "只改区域为广州市",
+        ):
+            assert _mentions_unresolvable_region(msg) is False, msg
+
+    def test_whole_raster_and_no_region_not_flagged(self):
+        from app.services.agent.mock_orchestrator import _mentions_unresolvable_region
+
+        for msg in (
+            "统计土壤水分2025年12月的全国均值",
+            "那全国呢",
+            "统计土壤水分2025年12月16日的全国均值",
+        ):
+            assert _mentions_unresolvable_region(msg) is False, msg
+
+    def test_county_is_not_taken_as_unresolvable_region(self):
+        """「天河区」走县区拦截那条路，不该被这里的「认不出省/市」误拦。"""
+        from app.services.agent.mock_orchestrator import _mentions_unresolvable_region
+
+        assert _mentions_unresolvable_region("天河区的土壤水分平均值") is False

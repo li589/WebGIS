@@ -367,6 +367,50 @@ def _tool_detail(payload: Any) -> str:
     )
 
 
+#: 工具入参里代表「图层」的字段名（不同工具叫法不同）
+_LAYER_ARG_KEYS = ("catalog_id", "layer_id", "dataset_id")
+
+
+def _requested_layer_from_args(args: dict[str, Any]) -> str:
+    for key in _LAYER_ARG_KEYS:
+        val = str((args or {}).get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _tool_step_summary(name: str, args: dict[str, Any], result: Any = None) -> str:
+    """渲染「执行流程」里那一条工具调用记录。
+
+    2026-11-09 实测（外部反馈「传参有误」）：旧写法逐字记 ``模型传进来的 args``，
+    而工具内部会**改写** catalog_id —— 产品粘性把请求改回会话基线那层、目录层 id
+    （``method-*``）映射成 ``imported-*`` 产物。改写结果只写在返回体里，从不回写
+    记录 ⇒ 记录里的层号可以根本不是真正读的那一层。用户看到的「图层编号填成了
+    风云产品」就是这么来的：数值是对的，执行记录在骗人。
+
+    所以有返回体时，把**实际取数层**补在同一行（请求 == 实际就不补，免得刷噪音）。
+    风云动态与 SMAP 动态在广州市的量级几乎一样（0.1506/68 vs 0.1482/69），
+    光看数字根本分不出串没串，只有这一行能让用户当场核对。
+    """
+    base = f"{name}({json.dumps(args or {}, ensure_ascii=False)[:80]})"
+    if not isinstance(result, dict):
+        return base
+    actual = str(
+        result.get("resolved_layer_id") or result.get("catalog_id") or ""
+    ).strip()
+    if not actual:
+        return base
+    requested = _requested_layer_from_args(args)
+    if requested and requested == actual:
+        return base
+    display = str(result.get("display_name") or "").strip()
+    label = f"（{display}）" if display else ""
+    if not requested:
+        return f"{base} → 实际取 {actual}{label}（会话沿用）"
+    reason = "按会话产品" if result.get("layer_source") == "session" else "目录层映射"
+    return f"{base} → 实际取 {actual}{label}（{reason}）"
+
+
 #: 跳到上限时正文短于这个长度，就认定「没给出实质回答」，强制收尾再答一次。
 #: 实测残留：27 字「我按「X」取数。」（开场白后没了）、66 字搜索结果列表。
 _HOP_FINALIZE_MAX_CHARS = 150
@@ -1033,11 +1077,25 @@ def _build_system(
         "他已经说过了。2026-11-08 实测 r73/r74 各一次：「换成动态版，然后算广州市 11 月"
         "13 日的平均」，数据算对了（0.148 / 69 像元），但地图上还是原来那层，用户得再说"
         "一遍。\n"
-        "  区分「改用 / 用 X 算」：那只是换取数口径，画面不动。\n"
+        "- **「切回 / 切到 / 换回 / 显示 + 图层名或变量名」同样算换画面**（「切回土壤水分"
+        "图层」「把土壤水分显示出来」「切到 VOD 那层」）：「土壤水分」「VOD」「ω」这类"
+        "**变量/图层名**出现在切回/切到/显示这类动词后面时，也是要画面跟着切，"
+        "不是只问数值。取数之外同样下发 `set_layer_visibility` 显示该层，正文写"
+        "「已下发显示 X」。2026-11-09 实测：说「切回土壤水分图层」却只后台统计、"
+        "画面仍停在 CMFD 降水，用户以为切换没生效。\n"
+        "  仍区分「改用 / 用 X 算」：那只是换取数口径，画面不动。\n"
         "## 界面意图回执是「已下发」，不是「已执行」\n"
         "- 下发 set_layer_visibility / set_timeline / remove_layer / set_layer_symbology "
         "后，工具回执只表示**已交给浏览器**（executed=false）。此时正文只能写"
         "「已下发 / 已提交」，**不许写「已显示 / 已切换成功 / 已完成」**。\n"
+        "- **也不许写「等待执行 / 稍后执行 / 正在执行」**：界面意图在你回复结束后"
+        "由浏览器**立即**执行，不存在等待状态。要下发就下发，做不了就明说做不了，"
+        "不要用悬置说法把结果挂起来。（2026-11-09 外部实测：正文停在「等待执行」，"
+        "成败只出现在下方回执，用户不知道操作到底做没做。）\n"
+        "- **宣称了就必须下发**：正文里说「已发出切换请求 / 已下发 XX」的**那一轮**，"
+        "ui_intents 里必须有对应的意图。只在正文里说做了、实际没下发意图，"
+        "用户看到的就是操作没生效还找不到原因。（2026-11-09 外部实测：追问里说"
+        "「已发出切换底图请求」，地图仍是街道底图，且没有任何操作回执。）\n"
         "- 真实结果看 `client_context.intent_results`（前端执行完才上报，"
         "每项含意图名、ok 与说明）。"
         "上一轮 ok=false 时，这一轮要先承认「上次那条没有生效」并说明原因，"
@@ -1061,6 +1119,16 @@ def _build_system(
         "也**不得**为了让数值“看起来对”而先切日期再取数。\n"
         "- 只有用户明确要求“切到某天 / 显示出来 / 调透明 / 定位到某地 / 换底图”时，"
         "才下发对应的视图意图。判别标准只有一条：**用户要不要画面跟着变。**\n"
+        "- **打开目录里还没挂上页面的层是允许的**：用户说「打开 CMFD 降水」"
+        "这类**不在** client_context.active_layers 里的层时，先用 search_layers "
+        "拿到 layer_id，再下发 `set_layer_visibility(catalog_id=<layer_id>, visible=true)`，"
+        "浏览器会自动从图层库添加并显示；**不要只回「查到了目录条目」就结束**，"
+        "也不要编造「图层库搜不到」。（2026-11-09 外部实测：开场示例推荐"
+        "「打开 CMFD 降水」，助手却只查条目未添加，用户以为功能坏了。）\n"
+        "- 下发 `set_layer_visibility` 时**尽量带上 `display_name`**（用 search_layers / "
+        "get_layer_meta 返回的图层名，如「CMFD 区域降水」）：前端回执要靠它把"
+        "「已显示『该图层』」写成「已显示『CMFD 区域降水』」。目录参考层尤其要带——"
+        "它刚被添加、前端那一刻还查不到它的显示名，不带就只剩「该图层」。\n"
         "- 用户问的日期与时间轴当前日期不一致时，口头说明“当前时间轴停在 X，"
         "你问的是 Y，我按 Y 取数、没有动你的时间轴”，**不要顺手把时间轴切过去**。\n"
         "## 下发视图意图的那一轮：禁止替界面报日期\n"
@@ -1089,6 +1157,13 @@ def _build_system(
         "- 单位只认 unit_label：土壤水分为 m³/m³，VOD 与等效散射 ω 为“无量纲”。"
         '**不要把 SM / VOD / OMEGA 当单位念出来**；无量纲时 unit 字段是字符 "1"，'
         "回答请说“无量纲”，不要说“单位是 1”。\n"
+        "- **用户问的量纲/属性与变量不符时，先澄清、不许硬算**：三个变量各有各的物理量，"
+        "土壤水分是体积含水率（m³/m³）、植被光学厚度 VOD 是无量纲衰减量、等效散射 ω 是"
+        "无量纲散射系数。用户若问「土壤水分的温度」「光学厚度的湿度」「ω 的单位是多少」"
+        "这类**该变量并不具备的物理量/量纲**，**先说明该变量的正确量纲和单位**，"
+        "再问一句是否要按它本身的含义取值；**严禁当作没看见、直接返回该变量的统计数**"
+        "（2026-11-09 实测：问“土壤水分的温度是多少”，模型直接返回 0.1534 m³/m³，"
+        "答非所问）。\n"
         "## 覆盖口径\n"
         "- 回答“某天有没有数据”必须用 get_layer_coverage 返回的 resolved.status "
         "（available / unavailable / unknown）和 resolved.reason，"
@@ -1232,6 +1307,11 @@ def _build_system(
         "在正文里列两遍（2026-11-08 实测：一次问两个变量，模型把 method 与 imported "
         "各算一遍，四条项目里两两重复）。一次问 N 个变量 ⇒ 第一轮就并行发起 N 个统计，"
         "别一跳一跳串行（串行到第 4 跳时早期结果已压缩，容易答“数字没回传”）。\n"
+        "- **像元分母口径**：`total_pixels` 是读取窗口（analyzed_height×analyzed_width）"
+        "的像元总数，**含行政区边界外**；行政边界内的分母工具没有单独统计。正文只把 "
+        "`valid_pixels` 说成「边界内有效像元数」，**不许**说「边界内共 total_pixels 个"
+        "像元」。返回里带 total_pixels_note 时以它为准。（2026-11-09 外部实测：北京"
+        "统计 195 个有效像元，模型却说「边界内共 437 个像元」——437 是 23×19 的窗口数。）\n"
         "- 统计对象：**只要用户说出“算/统计/取数/均值 + 某个产品名/变量名”，那个名字"
         "就是点名，优先级高于页面选中层，永远不许拿 selected=true 那层顶替**——"
         "哪怕用户同时说“页面别动 / 仍选中另一层”也一样，后台算的对象是点名的层，"
@@ -1618,11 +1698,16 @@ def _state_patch_from_tool_results(
                 local = cid
         if not local:
             continue
-        patch.update(
-            canonical_layer_state(
-                local, display=str(res.get("display_name") or "").strip()
-            )
+        canonical = canonical_layer_state(
+            local, display=str(res.get("display_name") or "").strip()
         )
+        patch.update(canonical)
+        # 2026-11-09：把「变量 → 真读到的产物」单独记进跨轮映射（var_layers），
+        # 防产品粘性单槽被非三变量层（CMFD 降水）覆盖后丢版本。只记三变量。
+        var = str(canonical.get("variable") or "")
+        lid = str(canonical.get("layer_id") or "")
+        if var and var in dialogue_state.VARIABLE_LABELS and lid:
+            patch["var_layers"] = dialogue_state._dump_var_layers({var: lid})
     return patch
 
 
@@ -2737,6 +2822,24 @@ def _unknown_region_token(message: str) -> str | None:
         from app.services.agent.region import resolve_region
     except Exception:  # noqa: BLE001 - 区域库缺失时不做这个判断
         return None
+    # 两个降噪工具（都来自规则引擎那一侧，避免两处口径漂移）：
+    #   1) ``_clean_place_token``：剥掉候选里混进的「产品/日期/统计/范围」等普通名词；
+    #   2) ``_region_from_known_names``：候选里其实包含一个能认出来的行政区名。
+    # 2026-11-09 实测的三句误报全靠这两条挡住：「产品和地区沿用刚刚那次统计」、
+    # 「地区和日期保持广州市」、「统计范围改为河南省」——数值本身是对的，
+    # 只是正文凭空多一句「这个地名我没认出来」。
+    clean_token = None
+    known_region = None
+    try:
+        from app.services.agent.mock_orchestrator import (
+            _clean_place_token,
+            _region_from_known_names,
+        )
+
+        clean_token = _clean_place_token
+        known_region = _region_from_known_names
+    except Exception:  # noqa: BLE001 - 导入失败就只做原来的判断
+        pass
     for match in _REGION_TOKEN_RE.finditer(str(message or "")):
         text = str(message or "")
         start = match.start()
@@ -2751,6 +2854,18 @@ def _unknown_region_token(message: str) -> str | None:
             start += 1
         if len(token) < 3 or token in _NOT_PLACE_WORDS:
             continue
+        # 剥掉粘在名字前后的动词/普通名词：「统计范围改为河南省」→「河南省」，
+        # 「产品和地区」→ 剥完不成名 → 丢掉（不是地名）。
+        if clean_token is not None:
+            token = clean_token(token)
+            if not token:
+                continue
+        if known_region is not None:
+            try:
+                if known_region(token):
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
         try:
             if resolve_region(token) is not None:
                 continue
@@ -2760,9 +2875,14 @@ def _unknown_region_token(message: str) -> str | None:
     return None
 
 
-def _stats_region(steps: list[dict[str, Any]]) -> str | None:
-    """本轮统计实际用的行政区名（取最后一份按区域算的统计）。"""
-    found: str | None = None
+def _stats_region_info(steps: list[dict[str, Any]]) -> tuple[str, str]:
+    """本轮统计实际用的行政区名与级别 ``(region, region_level)``。
+
+    取最后一份按区域算的统计（多区域比较时最后一条就是最后落定的那次）。
+    级别来自工具返回的 ``region_level``（``province`` / ``city``）：省和地级市
+    的说法不一样，写错会让人以为系统把省降成了市。
+    """
+    found: tuple[str, str] = ("", "")
     for step in steps or []:
         if not isinstance(step, dict) or step.get("type") != "tool_result":
             continue
@@ -2777,8 +2897,13 @@ def _stats_region(steps: list[dict[str, Any]]) -> str | None:
             and data.get("scope") == "region"
             and data.get("region")
         ):
-            found = str(data["region"])
+            found = (str(data["region"]), str(data.get("region_level") or ""))
     return found
+
+
+def _stats_region(steps: list[dict[str, Any]]) -> str | None:
+    """本轮统计实际用的行政区名（取最后一份按区域算的统计）。"""
+    return _stats_region_info(steps)[0] or None
 
 
 def _append_region_scope_note(
@@ -2810,13 +2935,27 @@ def _append_region_scope_note(
     except Exception:  # noqa: BLE001 - 区域库缺失时不做这个判断
         county = None
     if county and county not in text:
-        city = None
-        idx = msg.find(county)
-        if idx > 0:
-            head = re.search(r"([\u4e00-\u9fa5]{2,6}市)$", msg[:idx])
-            if head:
-                city = _trim_place_token(head.group(1)) or None
-        scope = f"「{city}」整市" if city else "它所属的地级市"
+        # 范围一律以**统计工具真正用的行政区**为准（`_stats_region` 读的是工具
+        # 返回里的 ``region`` 字段）。原话里找市名只是兜底：模型可能把「天河区」
+        # 顺成别的市、也可能沿用上一轮的区域，照着原话拼出来的「按 X 整市算」
+        # 会和实际取数对不上（2026-11-09 用户复测：「产品和地区」被当区县时报
+        # 「按地级市统计」，而工具实际按广州市边界算）。
+        used_region, used_level = _stats_region_info(steps)
+        city = used_region
+        level = used_level
+        if not city:
+            idx = msg.find(county)
+            if idx > 0:
+                head = re.search(r"([\u4e00-\u9fa5]{2,6}市)$", msg[:idx])
+                if head:
+                    city = _trim_place_token(head.group(1)) or None
+                    level = "city" if city else ""
+        if city and level == "province":
+            scope = f"「{city}」全省"
+        elif city:
+            scope = f"「{city}」整市"
+        else:
+            scope = "它所属的地级市"
         return text + (
             f"\n\n补一句口径：你说的「{county}」是县/区一级，系统只做到**省级和地级市**，"
             f"切不出这一级的边界。上面的数是按{scope}的范围算的，不是「{county}」单独的值；"
@@ -2845,6 +2984,50 @@ def _append_region_scope_note(
                 f"上面的数是按「{used}」算的。如果不是这个区域，请再说一次规范名称。"
             )
     return text
+
+
+#: 用户问了某变量**并不具备**的物理量/量纲，模型却没澄清、直接给数（2026-11-09
+#: 实测「土壤水分的温度是多少」→ 模型凭记忆直接回 0.1534 m³/m³，一次工具都没调，
+#: 工具层/规则引擎都拦不到）。这道守卫在答复**返回前**兜底：提问里同时出现
+#: 「变量词 + 该变量不存在的量纲词」，而答复正文没有澄清时，整段换成澄清话术。
+_DIMENSION_MISMATCH: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (("土壤水分", "土壤湿度", "含水量", "墒情"), ("温度", "气温", "湿度", "降水")),
+    (("植被光学厚度", "光学厚度", "vod"), ("湿度", "降水", "温度")),
+    (("等效散射", "散射", "ω", "omega"), ("温度", "湿度", "降水")),
+)
+#: 答复里出现了这些澄清语，说明模型已经正确处理，不再拦截。
+_DIMENSION_CLARIFY_RE = re.compile(
+    r"没有.{0,6}(这个|该|这个物理)?量|不是.{0,4}(温度|湿度|降水)|无量纲|澄清|不具备"
+)
+
+
+def _guard_dimension_mismatch(message: str, reply: str) -> str:
+    """提问问错了量纲时，把答复换成「先澄清」的话，不许直接给数。"""
+    text = str(reply or "")
+    if not text:
+        return reply
+    msg = str(message or "")
+    low = msg.casefold()
+    if not low:
+        return reply
+    # 模型已经澄清了，就放行原文（不重复打断）
+    if _DIMENSION_CLARIFY_RE.search(text):
+        return reply
+    for var_words, wrong_units in _DIMENSION_MISMATCH:
+        var_hit = next((w for w in var_words if w.casefold() in low), None)
+        if not var_hit:
+            continue
+        unit_hit = next((u for u in wrong_units if u in low), None)
+        if not unit_hit:
+            continue
+        # 命中「变量 + 错误量纲」，且答复没澄清 → 拦截重写
+        return (
+            f"「{var_hit}」这个变量不包含「{unit_hit}」这个物理量，"
+            "这个问题我没法按字面回答。\n\n"
+            f"如果你想看的是「{var_hit}」本身的数值，我可以按某一天/某区域取它的"
+            "均值并告诉你正确的单位；如果是想问别的变量，请说清楚具体是哪个。"
+        )
+    return reply
 
 
 def _looks_numeric(text: str) -> bool:
@@ -3053,6 +3236,26 @@ def _statistics_fallback_reply(
       2. 一次都没调过 ⇒ 规则引擎真算出数就整段替换，算不出来就把正文里
          的数值换成一句如实的「未取到」，绝不让无出处的数字流出去。
     """
+    # 当前指令优先于历史统计状态。模型即使沿用上轮任务发起了统计调用，运行时也会
+    # 拦截；这里同时禁止确定性统计兜底再次绕过运行时直接计算。
+    from app.services.agent.server_tools_runtime import (
+        _tool_blocked_by_current_instruction,
+    )
+
+    if _tool_blocked_by_current_instruction("get_layer_statistics", message):
+        cleared = dialogue_state.merge(
+            state,
+            clear={
+                "layer_id",
+                "layer_name",
+                "variable",
+                "region",
+                "date",
+                "var_layers",
+            },
+        )
+        return reply, cleared
+
     # 首轮回指（「刚才那个数」）先于统计判定：这类话看着像要数，其实要的是
     # 上文；硬算一遍会伪造出不存在的跨轮连续性（见 _refers_to_missing_history）。
     if _refers_to_missing_history(
@@ -3260,6 +3463,46 @@ def _run_chat_impl(
             "confirmations": [],
         }
         _emit_stream_tail(on_event, reply=reply, ui_intents=[])
+        return out
+
+    # 在模型调用前处理已经审核通过的项目知识与拒答边界。这样普通模式、
+    # 本地模型和规则演示模式不会因模型差异而给出不同或未经证实的答案。
+    from app.services.agent.knowledge_guard import project_knowledge_reply
+
+    knowledge_reply = project_knowledge_reply(message)
+    if knowledge_reply is not None:
+        steps.append(
+            {
+                "type": "thought",
+                "summary": "已按项目知识边界回答",
+                "detail": "使用已审核的标准口径，未调用外部搜索或数据工具",
+            }
+        )
+        usage = {
+            "prompt_tokens": estimate_tokens(message),
+            "completion_tokens": estimate_tokens(knowledge_reply),
+            "total_tokens": 0,
+            "estimated": True,
+        }
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        append_turn(
+            user_id=user_id,
+            session_id=sid,
+            user_message=_compress_history_user(message),
+            assistant_message=knowledge_reply,
+            state=topic_state,
+        )
+        out = {
+            "session_id": sid,
+            "reply": knowledge_reply,
+            "ui_intents": [],
+            "provider": f"{provider_kind}-knowledge-guard",
+            "profile_id": profile_id,
+            "usage": usage,
+            "steps": list(steps),
+            "confirmations": [],
+        }
+        _emit_stream_tail(on_event, reply=knowledge_reply, ui_intents=[])
         return out
 
     if protocol == "demo":
@@ -3694,10 +3937,13 @@ def _run_chat_impl(
                             }
                         )
                         continue
+                    step_idx = len(steps)
                     steps.append(
                         {
                             "type": "tool",
-                            "summary": f"{sc['name']}({json.dumps(sc.get('args') or {}, ensure_ascii=False)[:80]})",
+                            "summary": _tool_step_summary(
+                                str(sc["name"]), dict(sc.get("args") or {})
+                            ),
                         }
                     )
                     tres = execute_server_tool(
@@ -3710,6 +3956,10 @@ def _run_chat_impl(
                         # 会话里记着的取数对象：没点名时优先用它，别拿页面选中层顶替。
                         # 传快照而不是 topic_state —— 后者已被本次模型选择覆盖。
                         topic_state=pre_call_state,
+                    )
+                    # 记录补上「实际取数层」：工具可能已把 catalog_id 改写掉
+                    steps[step_idx]["summary"] = _tool_step_summary(
+                        str(sc["name"]), dict(sc.get("args") or {}), tres
                     )
                     steps.append(
                         {
@@ -3812,6 +4062,8 @@ def _run_chat_impl(
                 )
             # 区域口径兜底：县/区一级、或地名没认出来时，必须在正文里点明
             reply = _append_region_scope_note(message, reply, list(steps))
+            # 量纲兜底：问「土壤水分的温度」这类变量不具备的量纲时，先澄清不硬给数
+            reply = _guard_dimension_mismatch(message, reply)
             if not intents:
                 fallback = mock_chat(
                     message,
@@ -3927,10 +4179,13 @@ def _run_chat_impl(
                     )
                     continue
                 tool_calls_done += 1
+                step_idx = len(steps)
                 steps.append(
                     {
                         "type": "tool",
-                        "summary": f"{sc['name']}({json.dumps(sc.get('args') or {}, ensure_ascii=False)[:80]})",
+                        "summary": _tool_step_summary(
+                            str(sc["name"]), dict(sc.get("args") or {})
+                        ),
                     }
                 )
                 tres = execute_server_tool(
@@ -3945,6 +4200,10 @@ def _run_chat_impl(
                     # 会话里记着的取数对象：没点名时优先用它（页面选中层只作兜底）。
                     # 传快照，不能用已被本次选择覆盖的 topic_state。
                     topic_state=pre_call_state,
+                )
+                # 同上：记录里补出工具**实际读的那份产物**（粘性/目录映射会改写 id）
+                steps[step_idx]["summary"] = _tool_step_summary(
+                    str(sc["name"]), dict(sc.get("args") or {}), tres
                 )
                 steps.append(
                     {
@@ -4060,6 +4319,8 @@ def _run_chat_impl(
             )
         # 同 Anthropic 分支：区域口径（县区级 / 地名认不出）必须在正文里点明
         reply = _append_region_scope_note(message, reply, list(steps))
+        # 量纲兜底：问「土壤水分的温度」这类变量不具备的量纲时，先澄清不硬给数
+        reply = _guard_dimension_mismatch(message, reply)
         if not intents:
             fallback = mock_chat(
                 message,

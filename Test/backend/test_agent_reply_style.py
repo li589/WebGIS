@@ -23,6 +23,7 @@ from app.services.agent.naming import (
 )
 from app.services.agent.orchestrator import (
     _build_system,
+    _guard_dimension_mismatch,
     _guard_reply_numbers,
     _stat_percent_values,
     _stat_values,
@@ -952,6 +953,11 @@ class TestVersionSwitchBeatsInheritance:
         for msg in ("改用平均版", "换成季节平均那套", "改用季均版", "切到季均"):
             assert _mentions_version(msg, "average") is True, f"没认出点名平均口径：{msg}"
         assert _mentions_version("切到动态版", "dynamic") is True
+        # 族名式说法（2026-11-09 用户复测换版失效根因）：中间夹着「散射约束」，
+        # 「平均版/平均产品」匹配不上，必须单独认。
+        for msg in ("改用 SMAP 平均散射约束产品", "改用SMAP平均散射约束产品"):
+            assert _mentions_version(msg, "average") is True, f"没认出族名式平均口径：{msg}"
+        assert _mentions_version("改用 SMAP 动态散射约束产品", "dynamic") is True
 
     def test_plain_statistics_words_are_not_version_switch(self) -> None:
         """「平均值是多少」是统计请求，绝不能当成「换平均版」（2026-11-06 同类坑）。"""
@@ -1206,6 +1212,36 @@ class TestRangeStatisticsGate:
         # 测试环境把数据根指到空目录，规则引擎取不到数 ⇒ 只能给一句如实的「没取到」，
         # 但无论如何都不能把编造的数字原样放出去。
         assert out in (_UNGROUNDED_REPLY, _MISSING_HISTORY_REPLY) or "0.1097" not in out
+
+
+class TestDimensionGuard:
+    """问「土壤水分的温度」这类变量不具备的量纲时，答复要先澄清、不许硬给数。
+
+    背景（2026-11-09 实测）：模型一次工具都不调，凭记忆直接回「均值 0.1534 m³/m³」，
+    工具层/规则引擎都拦不到，只能靠答复返回前的守卫兜底。
+    """
+
+    def test_soil_moisture_temperature_is_blocked(self) -> None:
+        out = _guard_dimension_mismatch(
+            "土壤水分的温度是多少", "我按 SMAP 取数，均值 0.1534 m³/m³"
+        )
+        assert out != "我按 SMAP 取数，均值 0.1534 m³/m³"
+        assert "温度" in out and "0.1534" not in out
+
+    def test_vod_humidity_is_blocked(self) -> None:
+        out = _guard_dimension_mismatch(
+            "植被光学厚度的湿度是多少", "VOD 均值 0.347，有效像元 148236"
+        )
+        assert out != "VOD 均值 0.347，有效像元 148236"
+        assert "湿度" in out and "0.347" not in out
+
+    def test_normal_query_is_untouched(self) -> None:
+        reply = "我按 SMAP 取数，均值 0.153 m³/m³"
+        assert _guard_dimension_mismatch("土壤水分的全国均值", reply) == reply
+
+    def test_already_clarified_is_untouched(self) -> None:
+        reply = "土壤水分没有温度这个物理量，它是体积含水率（m³/m³）"
+        assert _guard_dimension_mismatch("土壤水分的温度是多少", reply) == reply
 
 
 class TestDateRangeParsing:

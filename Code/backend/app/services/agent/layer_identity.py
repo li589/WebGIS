@@ -169,7 +169,27 @@ _ORIGIN_CACHE_LIMIT = 512
 
 
 def _imported_origin_layer_id(overlay_id: str) -> str | None:
-    """产物目录 → 生成它的工作流图层 id（认不出就 None）。"""
+    """产物目录 → 生成它的工作流图层 id（认不出就 None）。
+
+    ★ 2026-11-09 修（测试顺序依赖暴露的真缺陷）：失败**不许**记账。
+
+    这一路查询依赖 ``settings.workflow_state_dir`` 下的 ``workflow_state.sqlite3``，
+    文件被锁、路径指向临时目录（测试 fixture 就是这样）、启动早期 settings 还没
+    就绪，都会让查询返回 None。旧写法把这个 None 当成结论缓存下来，而
+    ``_ORIGIN_CACHE`` 是模块级的 ⇒ **一次失败就让这一层在进程余生里永远认不出
+    产品族**：
+
+      · 层名从「SMAP 平均散射约束产品 · 土壤水分」退化成「土壤水分」，页面四族
+        十二层全叫一个名字，执行记录也分不出取了哪族（2026-11-09 用户报的就是
+        这个：「执行记录显示风云 ID，实际取的是 SMAP 动态」）；
+      · ``source`` 退回 unknown，``_product_sticky_layer`` 见来源认不出就放行，
+        于是「只改日期」不再粘回上一轮的产品 —— 串产品原地复发。
+
+    实测证据：``pytest test_agent_chat.py test_agent_page_layer.py`` 时，前者的
+    ``agent_client`` fixture 把状态目录指到空 tmp_path，后者 rule3 两条立刻变红；
+    单跑 page_layer 则 13 条全过。真正的错不在测试，而在这里把临时故障记成了
+    永久事实。认不出就先不记账，下一次调用自然会重查。
+    """
     if overlay_id in _ORIGIN_CACHE:
         return _ORIGIN_CACHE[overlay_id]
     meta = _read_meta(overlay_id)
@@ -177,6 +197,8 @@ def _imported_origin_layer_id(overlay_id: str) -> str | None:
     origin = _lookup_run_layer_id(run_id) if run_id else None
     if origin == overlay_id:
         origin = None
+    if origin is None:
+        return None
     if len(_ORIGIN_CACHE) >= _ORIGIN_CACHE_LIMIT:
         _ORIGIN_CACHE.clear()
     _ORIGIN_CACHE[overlay_id] = origin

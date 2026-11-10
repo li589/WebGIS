@@ -764,3 +764,52 @@ def test_intents_leave_timeline_alone_for_month_block():
         page,
     )
     assert [i["name"] for i in out["ui_intents"]] == ["set_layer_visibility"]
+
+
+def test_remember_var_layer_maps_triple_variables():
+    """按变量分槽：sm/vod 各记一份，互不覆盖；非三变量不写。"""
+    s = dialogue_state.remember_var_layer({}, variable="sm", layer_id="imported-sm-avg")
+    s = dialogue_state.remember_var_layer(s, variable="vod", layer_id="imported-vod-dyn")
+    assert dialogue_state.var_layers_mapping(s) == {
+        "sm": "imported-sm-avg",
+        "vod": "imported-vod-dyn",
+    }
+    # 非三变量（降水）不写进映射
+    s2 = dialogue_state.remember_var_layer(s, variable="precip", layer_id="imported-cmfd")
+    assert dialogue_state.var_layers_mapping(s2) == {
+        "sm": "imported-sm-avg",
+        "vod": "imported-vod-dyn",
+    }
+
+
+def test_var_layers_survives_layer_id_overwrite():
+    """单槽 layer_id 被 CMFD 覆盖后，三变量映射仍保留，产品粘性可找回版本。"""
+    s = dialogue_state.merge(
+        {},
+        layer_id="imported-sm-avg",
+        variable="sm",
+        var_layers='{"sm": "imported-sm-avg"}',
+    )
+    # CMFD 覆盖单槽 layer_id，但不动 var_layers
+    s = dialogue_state.merge(s, layer_id="imported-cmfd", layer_name="CMFD 降水")
+    assert s["layer_id"] == "imported-cmfd"
+    assert dialogue_state.var_layers_mapping(s) == {"sm": "imported-sm-avg"}
+
+
+def test_var_layers_incoming_merges_across_turns():
+    """跨轮累积：新增变量条目合并进旧映射，不整条覆盖。"""
+    s = dialogue_state.merge({}, var_layers='{"sm": "imported-sm-avg"}')
+    s = dialogue_state.merge(s, var_layers='{"vod": "imported-vod-dyn"}')
+    assert dialogue_state.var_layers_mapping(s) == {
+        "sm": "imported-sm-avg",
+        "vod": "imported-vod-dyn",
+    }
+
+
+def test_sanitize_drops_bad_var_layers():
+    """非法 JSON / 非三变量条目在 sanitize 时被清理。"""
+    assert "var_layers" not in dialogue_state.sanitize({"var_layers": "not-json"})
+    s = dialogue_state.sanitize(
+        {"var_layers": '{"sm": "imported-x", "precip": "imported-y"}'}
+    )
+    assert dialogue_state.var_layers_mapping(s) == {"sm": "imported-x"}

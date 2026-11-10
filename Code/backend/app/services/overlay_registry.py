@@ -54,6 +54,16 @@ def split_block_key(key: str | None) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _is_daily_step(step: Any) -> bool:
+    """产品原生粒度是不是「一天一个观测」（``meta.native_step`` 形如 ``1d``）。
+
+    只有逐日产品才允许「点某天只要那天」；8 天窗 / 整月产品一个观测本来就
+    覆盖一整段，按单日取反而取不到。写法容错 ``1d`` / ``day`` / ``daily``。
+    """
+    s = str(step or "").strip().lower()
+    return s in {"1d", "1day", "day", "daily", "d"}
+
+
 def _block_span_days(key: str | None) -> int:
     """时间片键跨越的自然日数，供「同日命中多片时取最细者」排序用。
 
@@ -103,8 +113,31 @@ class OverlaySpec:
     time_list: list[str] = field(default_factory=list)
     """时间序列图层可选的时间标签列表（例如 ['20230101', '20230103', ...]）。"""
 
+    ondemand_times: list[str] = field(default_factory=list)
+    """按需补帧产生、**盘上真实存在**的单日帧（``YYYYMMDD``）。
+
+    这些帧由 ``nas_ondemand`` 直接写进图层目录，按设计**不写 meta.time_list**
+    （写进去会让一进页面的默认落点变成单日帧）。但时间轴只认 ``time_list``，
+    于是同一层出现两种口径：助手按 12-15 单日统计得 0.128，地图拖到 12-15
+    却吸附到 63 天季均块（用户 2026-11-09 反馈「时间轴选 12-15 为什么显示
+    长时间合成的」）。
+
+    故单独记一份，由 :meth:`meta_dict` 并进**对外的** time_list —— 只是把
+    「盘上真有的帧」如实告诉前端，``default_time`` 一个字节不动。
+    """
+
     default_time: str | None = None
     """初始展示的时间标签。"""
+
+    native_step: str = ""
+    """产品原生时间粒度（``meta.native_step``，如 ``1d`` / ``8d`` / ``1M``）。
+
+    用途只有一个：判断「用户点某一天，能不能只给那一天」。逐日产品（``1d``）
+    点某天而那天没有帧时**不许折回长合成块**，得去 NAS 补或如实说没有；
+    8 天 / 整月产品本来就一个观测覆盖一段，折回所在块才是对的。
+    此前没有这个字段，只能靠猜，于是逐日产品也会被折成 63 天季均块
+    （2026-11-09 用户反馈：输入单日变成"这么多日"）。
+    """
 
     palette: str = "viridis"
     """配色方案名称（仅作为元数据传给前端，渲染由 PNG 导出阶段决定）。"""
@@ -207,6 +240,17 @@ class OverlaySpec:
             # 「拖到哪天都是整月」的根因）。
             if self._has_ondemand_frame(t_compact):
                 return t_compact
+            # ★ 逐日产品点名单日、那天却没帧：**不许折回长合成块**。
+            # 2026-11-09 用户要求「输入单日只是单日，不会这么多日」。
+            # 抛错让上层（统计工具）去 NAS 现补一张；补不到就如实回「该日期
+            # 没有栅格时间片」。把 63 天季均块当成 12-18 的值，等于把「数据缺」
+            # 说成「有数」。8 天 / 整月产品不适用——一个观测本就覆盖一整段。
+            # 必须放在下面 prefer_finest 分支**之前**：那条路同样会挑一个跨天块
+            # 返回，放在后面等于统计路径照样被折回。
+            if len(t_compact) == 8 and _is_daily_step(self.native_step):
+                raise OverlayNotFoundError(
+                    f"Time {t} has no single-day frame for overlay {self.layer_id}"
+                )
             # ★ 2026-10-28：同一天命中多个跨天块时，取**跨度最短**的那一片。
             # 背景：逐日产品的目录里会同时存在单日帧、8 天窗块和跨季合成块，
             # 例如 imported-136c60293bbf 同时有 20251211_20251218（8 天）和
@@ -301,6 +345,13 @@ class OverlaySpec:
 
     def meta_dict(self) -> dict[str, Any]:
         """返回图层元数据（用于 /overlay-bounds 响应）。"""
+        # 对外的 time_list 必须含「盘上真实存在的按需单日帧」，否则前端时间轴
+        # 只有 meta.json 里那几个长合成块可选，用户拖到 12-15 只能吸附到 63 天
+        # 季均块（2026-11-09 反馈）。default_time 保持原样 ⇒ 一进页面的默认
+        # 落点不变，只有用户主动拖到某天才会落到单日帧。
+        exposed_times = sorted({*self.time_list, *self.ondemand_times})
+        if not exposed_times:
+            exposed_times = list(self.time_list)
         return {
             "layer_id": self.layer_id,
             "category": self.category,
@@ -311,7 +362,8 @@ class OverlaySpec:
             "label": self.label,
             "opacity": self.opacity,
             "crs": self.crs,
-            "time_list": list(self.time_list),
+            "time_list": exposed_times,
+            "ondemand_times": list(self.ondemand_times),
             "default_time": self.default_time,
             "current_time": self.default_time,
             "source_band": self.source_band,
@@ -876,6 +928,21 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
             for p in dest_dir.glob("preview_*.png")
             if p.stem.startswith("preview_")
         )
+
+    # ── 按需补帧产生的单日帧（2026-11-09）─────────────────────────────────
+    # 上一步只在 time_list **为空**时才扫目录；只要 meta.json 写了清单（哪怕
+    # 只有「7 月块 + 63 天季均块」两条），补出来的单日帧就永远不会出现在
+    # 时间轴上。这里把它们单独收集，交给 meta_dict 并进对外的 time_list。
+    # 只认 8 位纯数字（`20251215`）：区间块自己就在 time_list 里，不必重复。
+    ondemand_times: list[str] = []
+    if category == "time-series":
+        known = set(time_list)
+        for png in dest_dir.glob("preview_*.png"):
+            day = png.stem.removeprefix("preview_")
+            if len(day) == 8 and day.isdigit() and day not in known:
+                ondemand_times.append(day)
+        ondemand_times.sort()
+
     default_time_raw = meta.get("default_time")
     default_time = (
         str(default_time_raw)
@@ -898,7 +965,9 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         bounds_filename="bounds.json",
         category=category,
         time_list=time_list,
+        ondemand_times=ondemand_times,
         default_time=default_time,
+        native_step=str(meta.get("native_step") or ""),
         time_pattern="preview_{time}.png" if category == "time-series" else None,
         bounds_pattern="bounds_{time}.json" if category == "time-series" else None,
         palette=str(meta.get("palette") or "wind-blue"),

@@ -221,6 +221,41 @@ def _side_clauses(text: str) -> str:
     return "，".join(keep)
 
 
+def _catalog_pick(message: str) -> LayerPick | None:
+    """目录兜底：页面没有这一层时，从图层目录里按名字找一次（2026-11-09）。
+
+    外部实测：开场示例推荐「打开 CMFD 降水」，但 ``_resolve_layer`` 只在页面
+    活动层里挑，目录层永远落到反问 ⇒ 示例指令与实际能力不一致，用户以为坏了。
+    前端 ``set_layer_visibility`` 本就支持「显示＝自动从图层库添加」
+    （agent-ui-intent 的 addLayer 分支），所以这里只要把目录层的 catalog_id
+    交给前端即可。只在「名字确实出现在消息里」时才命中，避免把无关层挂上来。
+    """
+    try:
+        from app.services.agent.server_tools_runtime import _search_layers
+
+        q = re.sub(
+            r"打开|显示|开启|图层|图层库|请|帮我|一下|看看|那个|这个", " ", message
+        )
+        q = q.strip()
+        if not q:
+            return None
+        res = _search_layers({"query": q, "limit": 5}, cred=None)
+        items = [x for x in (res or {}).get("layers") or [] if isinstance(x, dict)]
+        lower = message.lower()
+        for it in items:
+            name = str(it.get("display_name") or "").strip()
+            lid = str(it.get("layer_id") or "").strip()
+            if not name or not lid:
+                continue
+            # 名字整体或开头词（如「CMFD」）出现在消息里才算认出
+            tokens = [name] + name.split()[:1]
+            if any(t and t.lower() in lower for t in tokens):
+                return LayerPick(lid, name)
+        return None
+    except Exception:
+        return None
+
+
 def _resolve_layer(
     message: str,
     layers: list[dict[str, Any]],
@@ -465,6 +500,30 @@ def _month_scan(catalog_id: str, year: int, month: int) -> tuple[str | None, boo
         m = re.fullmatch(r"(\d{8})_(\d{8})", text)
         if m and m.group(1).startswith(prefix) and m.group(2).startswith(prefix):
             return f"{m.group(1)}_{m.group(2)}", True
+    # 没有「起止都在本月内」的纯整月块时，退而取**完全覆盖本月**的最短块。
+    #
+    # 2026-11-09：逐日产品点单日不再折回长合成块之后，问「12 月」会落到某一天
+    # 的单日帧上（广州 12-15 得 0.1275/51），和「整月平均」差得远——这是把
+    # 用户问的「一个月」偷偷答成「一天」。这类层只有 `20251201_20260201`
+    # 一片覆盖 12 月，就用它，并由 `_month_block_covers` 在正文里标明是合成块。
+    try:
+        from calendar import monthrange
+
+        month_start = f"{prefix}01"
+        month_end = f"{prefix}{monthrange(year, month)[1]:02d}"
+        covering: list[str] = []
+        for key in keys:
+            mm = re.fullmatch(r"(\d{8})_(\d{8})", str(key))
+            if not mm:
+                continue
+            if mm.group(1) <= month_start and mm.group(2) >= month_end:
+                covering.append(f"{mm.group(1)}_{mm.group(2)}")
+        if covering:
+            from app.services.overlay_registry import _block_span_days
+
+            return min(covering, key=_block_span_days), True
+    except Exception:  # noqa: BLE001 - 算不出月长就维持原判定
+        pass
     return None, present
 
 
@@ -756,6 +815,42 @@ def _parse_region_arg(message: str) -> str | None:
     return None
 
 
+def _mentions_unresolvable_region(message: str) -> bool:
+    """这句话里是不是提到了一个「像行政区、但解析不出来」的名字。
+
+    2026-11-09（第十八轮）实测：问「甲壳虫省」，``_parse_region_arg`` 认不出
+    返回 None，``resolve_entities`` 于是把它当「没提区域」，沿用了上一轮的
+    「山东省」算了个数，只在正文里补一句「没对应到甲壳虫省」——用户问的是
+    一个地方，收到的却是另一个省的数。这里判断「文本里有个带行政区尾词的
+    候选，但已知地名和 resolve_region 都认不出」，说明用户确实点了一个新地名、
+    只是系统不认识，必须拦住「沿用上一轮区域」，交给下游转述「没认出」。
+
+    只认带明确尾词（省/市/自治区/地区/盟…）的候选，避免把「河南省郑州市」
+    里已经能认出的「河南省」误判成「认不出」；候选里**只要有一个**认不出就算，
+    因为用户这句的主语就是那个认不出的地方。
+    """
+    text = str(message or "")
+    if not text:
+        return False
+    try:
+        from app.services.agent.region import resolve_region
+    except Exception:  # noqa: BLE001 - 区域库缺失时不拦，维持原「沿用」行为
+        return False
+    cands = {m for m in _REGION_CANDIDATE_RE.findall(text)}
+    if not cands:
+        return False
+    # 候选里能认出一个，说明用户指的就是那个已知地名，不是「认不出」。
+    for cand in cands:
+        if _region_from_known_names(cand) or _region_from_known_names(text):
+            return False
+        try:
+            if resolve_region(cand) is not None:
+                return False
+        except Exception:  # noqa: BLE001
+            continue
+    return True
+
+
 #: 县/市辖区级地名。工具侧明确只支持到地级市，并会回一句「这属于县/区一级」，
 #: 但兜底路径认不出区域就直接**丢掉**、按整幅算（2026-11-08 r73 实测：
 #: 问「天河区的土壤水分平均值」，答的是整层 0.1534，正文里连"天河"两个字都没有，
@@ -788,6 +883,102 @@ _AREA_GENERIC_WORDS = (
 )
 _AREA_GENERIC_PREFIX = "这那该本各某全其两三几"
 
+#: 候选地名里一旦出现这些词，说明它是被正则顺手吞进来的**普通名词**，不是地名。
+#:
+#: 2026-11-09 实测：「只把统计日期改为 2025 年 11 月 13 日，**产品和地区**沿用刚刚
+#: 那次统计」——``_COUNTY_NAME_RE`` 在「产品和地**区沿**用」处命中（后接「沿」，
+#: 负向断言挡不住），抓出「产品和地区」；``_AREA_GENERIC_WORDS`` 只按整词比
+#: 「地区」，候选前缀是「产品和」也挡不住 ⇒ 正文凭空多一句「你说的『产品和地区』
+#: 是县/区一级」。这一串是产品/表格类提问里最常出现的名词，宁可漏提示，
+#: 也不能编一个地名给用户看。
+_PLACE_NOISE_WORDS = (
+    "产品",
+    "变量",
+    "日期",
+    "时间",
+    "范围",
+    "统计",
+    "数据",
+    "图层",
+    "结果",
+    "均值",
+    "平均",
+    "动态",
+    "散射",
+    "约束",
+    "有效",
+    "栅格",
+    "像元",
+    "口径",
+    "信息",
+    "内容",
+    "条件",
+    "参数",
+    "设置",
+    "保持",
+    "沿用",
+    "不变",
+    "改成",
+    "改为",
+    "换成",
+    "只把",
+    "只改",
+    "数值",
+    "期间",
+    "时段",
+    "序列",
+    "对比",
+)
+
+
+def _strip_generic_area_suffix(token: str) -> str:
+    """剥掉尾巴上的泛称词语：「产品和地区」→「产品和」。"""
+    out = str(token or "")
+    for word in sorted(_AREA_GENERIC_WORDS, key=len, reverse=True):
+        if out.endswith(word):
+            return out[: -len(word)]
+    return out
+
+
+#: 候选地名前面常被正则一起吞进来的动词 / 连词 / 普通名词。
+#: 不做单字「和 / 与 / 及」——「和田地区」这类真地名会遭殃。
+_PLACE_LEAD_NOISE_RE = re.compile(
+    r"^(?:只把|只改|仅把|仅改|改成|改为|换成|换个|换到|保持|沿用|统计|范围|"
+    r"日期|时间|产品|变量|数据|图层|结果|均值|平均|动态|散射|约束|口径|"
+    r"地区|区域|数值|期间|时段|序列|对比|的|在|是|了|把|将|对|按|就|也|都)+"
+)
+
+
+#: 候选名字前面的单字动词/虚词。刻意只收**几乎不可能当地名首字**的字
+#: （「将 / 改 / 和 / 用」之类会撞上「将乐县 / 改则县 / 和田地区」，一律不收）。
+_PLACE_LEAD_NOISE_CHARS = "拿看查算给问请帮也都又再的了在是把对按想要先我你他"
+
+
+def _clean_place_token(token: str) -> str:
+    """把候选地名前后粘着的动词/普通名词剥掉；剥完不像地名就返回空串。
+
+    「换成天河区」「拿天河区」→「天河区」（保留真正的区县名）；
+    「产品和地区」→ 剥掉「产品」、再去掉尾词「地区」，只剩「和」→ 空串（不是地名）。
+    2026-11-09 实测：这两种候选出自同一句「产品和地区沿用刚刚那次统计」，
+    必须一个挡掉、一个留下。
+    """
+    out = str(token or "")
+    while out and out[0] in _PLACE_LEAD_NOISE_CHARS:
+        out = out[1:]
+    out = _PLACE_LEAD_NOISE_RE.sub("", out)
+    while out and out[0] in _PLACE_LEAD_NOISE_CHARS:
+        out = out[1:]
+    out = _strip_generic_area_suffix(out)
+    if len(out) < 2:
+        return ""
+    # 「内蒙古自治区」会被 ``_COUNTY_NAME_RE`` 切成「蒙古自治**区**」——这是省级
+    # 名字被正则误伤，不是区县，别拿去提示。
+    if out.endswith(("自治区", "特别行政区")):
+        return ""
+    if any(word in out for word in _PLACE_NOISE_WORDS):
+        return ""
+    return out
+
 
 def _county_like_region_name(message: str) -> str | None:
     """这句话里有没有「X区 / X县 / X旗」这类县区级地名（只作提示用，不做统计）。
@@ -809,6 +1000,11 @@ def _county_like_region_name(message: str) -> str | None:
         if any(ch in frag[:-1] for ch in "省市州盟"):
             frag = re.split(r"[省市州盟]", frag)[-1] or frag
         if len(frag) < 3:
+            continue
+        # 「产品和地区」这类被顺手吞进来的短语不是地名（2026-11-09 实测误报）；
+        # 「换成天河区」要剥回「天河区」仍然算。
+        frag = _clean_place_token(frag)
+        if not frag:
             continue
         if frag[0] in _AREA_GENERIC_PREFIX:
             continue
@@ -1321,6 +1517,43 @@ def _narrow_by_hints(
     return pool[0] if len(pool) == 1 else None
 
 
+def _asks_page_layer_text(text: str) -> bool:
+    """这一句是不是在要「页面上当前选中的那一层」。
+
+    判定与 ``server_tools_runtime._asks_page_layer`` **同一份正则**：粘性那边认
+    的说法，兜底这边必须认；两边各写一套迟早会分叉（一边取页面层、一边取上一轮，
+    同一个问题两个答案）。
+    """
+    try:
+        from app.services.agent.server_tools_runtime import _asks_page_layer
+    except Exception:  # pragma: no cover
+        return False
+    return bool(_asks_page_layer(text))
+
+
+def _page_layer_entry(
+    layers: list[dict[str, Any]], client_context: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """页面**明确选中**的那一层在 ``layers`` 里的那一条（认不出就 None）。"""
+    try:
+        from app.services.agent.server_tools_runtime import _page_selected_layer_id
+
+        want = _bare_layer_id(_page_selected_layer_id(client_context))
+    except Exception:  # pragma: no cover
+        return None
+    if not want:
+        return None
+    for la in layers:
+        ids = {
+            _bare_layer_id(str(la.get("catalog_id") or "")),
+            _bare_layer_id(str(la.get("overlay_layer_id") or "")),
+            _bare_layer_id(str(la.get("instance_id") or "")),
+        }
+        if want in ids:
+            return la
+    return None
+
+
 def resolve_entities(
     message: str,
     layers: list[dict[str, Any]],
@@ -1363,7 +1596,26 @@ def resolve_entities(
             if dialogue_state.variable_from_name(_display(la)) == variable
         ]
 
-    picked = _resolve_layer(text, layers, allow_demo_fallback=False)
+    # ★ 2026-11-09（用户第三轮复测的兜底路径）：点名「当前图层 / 页面选中的这层」
+    # ⇒ 就查页面选中层，**优先于「沿用上一轮」**。
+    #
+    # 本轮之前的修法只动了 ``_product_sticky_layer``（模型正常调工具那条路）。
+    # 模型偶尔不调工具（本次实测：上一轮问的是土壤水分、页面选着风云 VOD，它选择
+    # 反问「你要哪一个」），就落到 ``_statistics_fallback_reply`` ⇒ 走这里 ⇒
+    # 优先级 ⓪「沿用上一轮」先命中 ⇒ 拿 state 里的 SMAP 土壤水分去算，
+    # 与用户说的「当前图层」恰好相反。同一个问题在两条路径上给两个对象，
+    # 用户只会觉得「时好时坏」。
+    if _asks_page_layer_text(text):
+        page_entry = _page_layer_entry(layers, client_context)
+        if page_entry is not None:
+            target = page_entry
+            layer_from = "page"
+
+    picked = (
+        None
+        if target is not None
+        else _resolve_layer(text, layers, allow_demo_fallback=False)
+    )
     if picked is not None:
         target = next(
             (la for la in layers if la.get("catalog_id") == picked.catalog_id), None
@@ -1507,7 +1759,12 @@ def resolve_entities(
 
     region = _parse_region_arg(text)
     region_from = "message" if region else ""
-    if not region and follow_up and prior.get("region"):
+    if (
+        not region
+        and follow_up
+        and prior.get("region")
+        and not _mentions_unresolvable_region(text)
+    ):
         region = prior["region"]
         region_from = "state"
     # ★ 2026-11-07 补：层是按会话基线定下来的时候（layer_from == "state"），区域也该
@@ -1532,6 +1789,7 @@ def resolve_entities(
             )
         )
         and not _NO_REGION_RE.search(text)
+        and not _mentions_unresolvable_region(text)
     ):
         region = prior["region"]
         region_from = "state"
@@ -1818,6 +2076,19 @@ def _range_statistics_reply(
         if err and _STRUCTURAL_STAT_ERROR_RE.search(err):
             struct_error = err
             break
+        # ★ 2026-11-09（第十八轮）：区间逐日合并遇到「按需取数服务不可用」时，
+        # 也得第一次就停。否则 NAS 隧道整个挂掉（HTTP 530）时，31 天 × 每次 3 次
+        # 重试会把对话卡死 3 分多钟，最后还答错原因。这里只拦「服务不可用/
+        # 取数过程出错」，不拦「上游该日确实没有成果」（nas_missing 仍逐日继续，
+        # 那才是真的「这几天没观测」）。判据取自工具层带回的 ondemand_fetch.reason，
+        # 与 _get_layer_statistics 里的措辞口径同源，避免两处漂移。
+        _od = res.get("ondemand_fetch") if isinstance(res, dict) else None
+        _od_reason = str((_od or {}).get("reason") or "")
+        if _od_reason in ("nas_unreachable", "fetch_failed"):
+            # 直接给用户看的中性说法，对齐 _ensure_ondemand_frame 里
+            # nas_unreachable 分支的 hint：「必须说成取数服务暂时不可用」。
+            struct_error = "取数服务暂时不可用，这一天的数据没法按需补取"
+            break
 
     good = [r for r in rows if r["ok"] and r["pixels"] > 0]
     scope_prefix = f"按「{region}」行政边界" if region else "整层"
@@ -2085,6 +2356,22 @@ def _statistics_reply(
                 "ui_intents": intents,
                 "topic_state": {},
             }
+        # 用户提了一个「带省/市尾词、但系统认不出」的地名（如「甲壳虫省」）——
+        # 绝不能静默退回整幅，也不能沿用上一轮的区域。2026-11-09（第十八轮）实测
+        # 问「甲壳虫省」被顺成上一轮的「山东省」算了数。这里明确转述「没认出」。
+        if _mentions_unresolvable_region(text):
+            return {
+                "session_id": sid,
+                "reply": (
+                    "你提到的这个地名我没能对应到系统里的行政区，所以这次没有取数，"
+                    "也没有拿别的地区或整幅的数值顶替。\n\n"
+                    "请再给一次规范名称（省 / 自治区 / 地级市，例如「河南省」"
+                    "「广州市」）；或者直接给我一个矩形范围（西、南、东、北四个经纬度），"
+                    "我按这个框统计。"
+                ),
+                "ui_intents": intents,
+                "topic_state": {},
+            }
 
     # 日期区间（「11 月 9 日到 16 日」「9 日至 16 日」）走单独一条路：一片栅格只能
     # 代表一个时间块，拿区间里第一天算完再写成「整层的只读统计」，数字是真的、
@@ -2229,7 +2516,7 @@ def _statistics_reply(
                 "session_id": sid,
                 "reply": (
                     f"「{name}」{scope_prefix}在 {block} 这一片**没有任何有效像元**"
-                    f"（整片 NoData，0/{res.get('total_pixels')}），因此无法给出均值。"
+                    f"（整片 NoData，有效像元 0 个），因此无法给出均值。"
                     f"{asked_note}"
                     "本次只读统计，未创建图层、未提交工作流。"
                 ),
@@ -2275,8 +2562,17 @@ def _statistics_reply(
             if res.get("min") is not None and res.get("max") is not None
             else "- 范围：—"
         ),
-        f"- 有效像元：{res.get('valid_pixels')} / {res.get('total_pixels')}"
-        + (f"（占 {float(pct) * 100:.1f}%）" if pct is not None else ""),
+        # 2026-11-09 外部实测：分母 437 其实是读取窗口（23×19）总数、含边界外，
+        # 模型把它说成「边界内共 437 个像元」。正文只把 valid_pixels 说成
+        # 「边界内有效像元数」，不再拿 total_pixels 当行政边界分母。
+        f"- 边界内有效像元：{res.get('valid_pixels')} 个"
+        + (
+            f"（读取窗口 {res.get('analyzed_height')}×{res.get('analyzed_width')}"
+            f" 共 {res.get('total_pixels')} 像元，含边界外）"
+            if res.get("analyzed_width") and res.get("analyzed_height")
+            else ""
+        )
+        + (f"（占窗口 {float(pct) * 100:.1f}%）" if pct is not None else ""),
         f"- 实际数据时间块：{block}",
     ]
     if month_scope:
@@ -2384,6 +2680,13 @@ def mock_chat(
             "reply": "请告诉我你想做什么，例如「打开降水图层」或「有哪些活动图层」。",
             "ui_intents": [],
         }
+
+    # 项目核心术语与拒答边界由程序固定，演示模式与大模型模式使用同一口径。
+    from app.services.agent.knowledge_guard import project_knowledge_reply
+
+    knowledge_reply = project_knowledge_reply(text)
+    if knowledge_reply is not None:
+        return {"session_id": sid, "reply": knowledge_reply, "ui_intents": []}
 
     # 整层只读统计：必须排在「列图层」与「工作流」两个分支之前——
     # ① 「列图层」的 `当前图层` 会误命中「只读计算当前图层全范围均值」；
@@ -2681,6 +2984,11 @@ def mock_chat(
         r"打开|显示|开启|show|enable|可见|切换到|切到|换到|转到|切换到", text, re.I
     ):
         pick = _resolve_layer(text, layers)
+        if not pick:
+            # 2026-11-09：页面没有这一层时，去图层目录里找一次。开场示例
+            # 推荐的「打开 CMFD 降水」不在页面活动层里，原实现永远反问，
+            # 示例指令与实际能力不一致；前端支持显示即自动添加，交出去即可。
+            pick = _catalog_pick(text)
         if not pick:
             if layers:
                 names = "、".join(f"「{_display(item)}」" for item in layers[:5])

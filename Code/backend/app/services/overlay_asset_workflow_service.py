@@ -82,7 +82,10 @@ def _read_asset_state(layer_id: str) -> dict[str, Any]:
         "png_mtime": None,
         "bounds_mtime": None,
         "default_time": spec.default_time,
-        "time_list": list(spec.time_list),
+        # 与 overlay_registry.OverlaySpec.meta_dict 同口径：对外的清单要含
+        # 「盘上真实存在的按需单日帧」，否则数据目录面板与时间轴对同一层给出
+        # 两种可选日期（2026-11-09：时间轴选不到 12-15 单日帧）。
+        "time_list": sorted({*spec.time_list, *spec.ondemand_times}),
         "category": spec.category,
     }
 

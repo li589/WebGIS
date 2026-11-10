@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+#: 三个可统计变量（与 dialogue_state.VARIABLE_LABELS 同源）。跨变量记忆只收这三类，
+#: 降水等其它变量不参与，避免把非栅格参考层写进映射。
+_VARIABLE_LABELS = frozenset({"sm", "vod", "omega"})
 
 # Read tools execute immediately; write tools create confirmation tickets (Phase B/C).
 _READ_TOOLS = frozenset(
@@ -27,6 +32,23 @@ _READ_TOOLS = frozenset(
 _WRITE_TOOLS = frozenset({"run_workflow"})
 _ALLOWED_TOOLS = _READ_TOOLS | _WRITE_TOOLS
 ALLOWED_SERVER_TOOLS = _ALLOWED_TOOLS
+
+
+_EXPLANATION_ONLY_RE = re.compile(
+    r"(?:只|仅)(?:需要|要|做)?(?:解释|说明|介绍)|"
+    r"(?:不要|不用|无需|停止|别)(?:再)?(?:统计|计算|查询数据|取数|运行任务)"
+)
+_DATA_TOOLS = frozenset(
+    {"sample_layer_point", "get_layer_coverage", "get_layer_statistics", "run_workflow"}
+)
+
+
+def _tool_blocked_by_current_instruction(tool: str, user_message: str) -> str | None:
+    """Enforce the current turn's explicit prohibition before model tool calls."""
+    text = str(user_message or "").strip()
+    if tool in _DATA_TOOLS and _EXPLANATION_ONLY_RE.search(text):
+        return "本轮用户明确要求只做解释或不要统计，已禁止数据查询、统计和任务执行。"
+    return None
 
 
 def execute_server_tool(
@@ -51,6 +73,14 @@ def execute_server_tool(
     tool = (name or "").strip()
     if tool not in _ALLOWED_TOOLS:
         return {"ok": False, "error": f"未知或未授权的服务端工具: {tool}"}
+    blocked = _tool_blocked_by_current_instruction(tool, user_message)
+    if blocked:
+        return {
+            "ok": False,
+            "error_code": "blocked_by_current_instruction",
+            "blocked_tool": tool,
+            "error": blocked,
+        }
     if tool == "search_layers":
         # client_context 必传：只有它知道「页面上现在挂着哪些图层」，
         # 运行产物（imported-*）不在 catalog 里，纯目录搜是搜不到的。
@@ -1385,13 +1415,17 @@ def _sample_layer_point(
     if isinstance(parsed, dict):
         return parsed
     lng, lat = parsed
-    time_key = str(args.get("time") or "").strip() or None
+    explicit_time = str(args.get("time") or "").strip() or None
+    time_key = explicit_time
     # 2026-11-06：模型经常不传 time，旧实现于是落到 spec 默认帧（= meta.default_time，
     # 该层时间清单里最早的一整块，实测是 2025-07 整月），而用户当时时间轴停在 12-15。
     # 用户问「地图上我点的这个位置」时，语义就是屏幕上正在看的那一帧，不是整卷第一卷。
     # 缺时间就取页面时间轴日期；页面没给才继续往默认帧退。
     if not time_key:
         time_key = _page_timeline_date(client_context)
+    time_source = (
+        "requested" if explicit_time else ("page" if time_key else "layer_default")
+    )
     # 同整层统计的规矩：给了时间却不是有效日期 ⇒ 报错，不许悄悄用默认帧顶替。
     # 点查尤其不能含糊——用户点的是屏幕上这一帧，答成另一天的值等于骗人。
     if time_key and _parse_date8(time_key) is None:
@@ -1415,7 +1449,12 @@ def _sample_layer_point(
             client_context=client_context,
         )
     else:
-        catalog_id = _baseline_layer_id(topic_state, client_context)
+        # 点查同理：点名「地图上这层 / 当前图层」就取页面选中层，再退会话基线。
+        catalog_id = (
+            _page_selected_layer_id(client_context)
+            if _asks_page_layer(user_message)
+            else ""
+        ) or _baseline_layer_id(topic_state, client_context)
     targets: list[str] = []
     if catalog_id:
         targets = [catalog_id]
@@ -1492,11 +1531,46 @@ def _sample_layer_point(
             )
         )
 
+    requested_key = _parse_date8(time_key) if time_key else None
+    time_warnings: list[str] = []
+    verified_samples = 0
+    for sample in samples:
+        if not sample.get("ok"):
+            continue
+        actual = _parse_date8(sample.get("actual_time"))
+        sample["time_source"] = time_source
+        sample["page_time"] = time_key if time_source == "page" else None
+        sample["time_verified"] = bool(actual)
+        if actual:
+            verified_samples += 1
+        if explicit_time and requested_key and actual and actual != requested_key:
+            sample.pop("value", None)
+            sample["ok"] = False
+            sample["quality"] = "time_mismatch"
+            sample["error_code"] = "actual_time_mismatch"
+            sample["error"] = (
+                f"请求日期 {requested_key} 与实际数据时间 {actual} 不一致，未返回数值。"
+            )
+        elif time_source == "page" and not actual:
+            sample["time_warning"] = (
+                "页面时间轴日期不是数据实际时间；当前数据未提供可核实的实际时段，"
+                "不得把页面日期写成数据日期。"
+            )
+            time_warnings.append(str(sample["time_warning"]))
+
+    successful = [sample for sample in samples if sample.get("ok")]
     return {
-        "ok": True,
+        # 保持旧契约：一次点查请求本身成功送达时 ok=True，各图层成败看 samples；
+        # 只有用户明确指定日期且所有样本都因时间不一致被拒绝时，顶层才失败。
+        "ok": not (explicit_time and samples and not successful),
         "lng": lng,
         "lat": lat,
         "time": time_key,
+        "requested_time": requested_key if explicit_time else None,
+        "page_time": time_key if time_source == "page" else None,
+        "time_source": time_source,
+        "time_verified": bool(successful) and verified_samples == len(successful),
+        "time_warning": time_warnings[0] if time_warnings else None,
         "count": len(samples),
         "samples": samples,
     }
@@ -1640,12 +1714,21 @@ _VERSION_MENTION_RE: dict[str, re.Pattern[str]] = {
         # 漏掉它们时，用户说「改用季均版」→ 认不出是点名换口径 → 被产品粘性
         # 改回上一轮的动态版（2026-11-08 用户复测报的「换版失效」同源风险）。
         r"|季均|季平均|季节平均|季节均值"
-        r"|(?:换成|换个|改用|切到|改成|改为|用)平均(?!值)",
+        r"|(?:换成|换个|改用|切到|改成|改为|用)平均(?!值)"
+        # 族名式说法「平均散射约束产品」：上游 dialogue_state._FAMILY_NOISE 与
+        # mock_orchestrator._FORM_HINTS 都把「平均/动态散射约束产品」当族名认
+        # （因此选层能收到正确的平均版 ID），这里却认不出 ⇒ 被产品粘性改回
+        # 上一轮动态版（2026-11-09 用户复测：改用 SMAP 平均散射约束产品后
+        # 统计工具仍取动态版）。「平均版/平均产品」匹配不到中间夹着「散射约束」
+        # 的写法，夹了来源词时「改用平均」也不连续，故单独补上族名。
+        r"|平均散射约束",
         re.I,
     ),
     "dynamic": re.compile(
         r"动态版|动态产品|动态口径|动态那套|动态那个|逐日"
-        r"|(?:换成|换个|改用|切到|改成|改为|用)动态",
+        r"|(?:换成|换个|改用|切到|改成|改为|用)动态"
+        # 同理补族名式说法，避免「动态散射约束产品」漏判。
+        r"|动态散射约束",
         re.I,
     ),
 }
@@ -1658,6 +1741,76 @@ def _mentions_version(message: str, family: str) -> bool:
     if pattern is None or not message:
         return False
     return bool(pattern.search(message))
+
+
+#: 用户把统计对象指成「页面上正在选中的那一层」的说法。
+#:
+#: 2026-11-09 用户复测（第三轮）：页面选着「风云 VOD」，他问「查当前图层，统计
+#: 河南省同一天」，模型传对了图层编号，粘性却按「没点名换产品」把请求改回上一轮
+#: 的 SMAP 土壤水分，回了 0.2929 / 163 个栅格——层名、数值、像元数全都合法，用户
+#: 从回复里根本看不出取错了层，只能靠人工点名同一层做对照才发现。
+#:
+#: 刻意**不收**「这层 / 那层」：单独说「这层」多半指上一轮讲过的那一层，正是
+#: 粘性要保护的情形。只有带上「当前 / 页面 / 图上 / 选中」这些指代词才认定是在
+#: 指页面选中层。
+_PAGE_LAYER_MENTION_RE = re.compile(
+    r"当前(?:选中|选定|选择|显示|加载|勾选|打开)?的?(?:图层|层)"
+    r"|(?:页面|图上|地图上|界面上)(?:上|里|中)?(?:现在|当前)?"
+    r"(?:选中|选定|勾选|挂着|挂|显示|加载|打开|选)?(?:着|的)?(?:这|那)?(?:一层|个?图层|层)"
+    r"|(?:选中|选定|勾选)的?(?:这|那)?(?:一层|个?图层|层)"
+    # 「现在这层 / 目前这层 / 眼下这层」：带时间指代，说的是屏幕上正看的这一层
+    r"|(?:现在|目前|眼下)(?:的)?(?:这|那)(?:一层|个?图层|层)"
+    r"|(?:this|selected|current)\s+layer",
+    re.I,
+)
+
+
+def _asks_page_layer(message: str) -> bool:
+    """用户这一句是不是在要「页面上当前选中的那一层」。"""
+    if not message:
+        return False
+    return bool(_PAGE_LAYER_MENTION_RE.search(message))
+
+
+def _page_selected_layer_id(client_context: dict[str, Any] | None) -> str:
+    """页面**明确选中**的那一层（只认 selected，不拿 visible 兜底）。
+
+    和 :func:`_page_default_layer` 的区别：那个是「没指代对象时挑一个能统计的」
+    （selected → visible → 无），这里是「用户点名要当前图层」，只能给真选中的那层。
+    没有选中层就返回空串，让调用方决定退到哪，绝不拿「可见层」冒充「选中层」。
+    """
+    if not isinstance(client_context, dict):
+        return ""
+    selected: list[str] = []
+    layers = client_context.get("active_layers")
+    if isinstance(layers, list):
+        for item in layers:
+            if not isinstance(item, dict) or not item.get("selected"):
+                continue
+            lid = ""
+            for key in ("overlay_layer_id", "catalog_id", "instance_id"):
+                val = _normalize_layer_id(str(item.get(key) or "").strip())
+                if val:
+                    lid = val
+                    break
+            if not lid or not lid.startswith(("imported-", "wf-run-")):
+                continue
+            if lid not in selected:
+                selected.append(lid)
+    if len(selected) == 1:
+        return selected[0]
+    # 多个层同时标了 selected（前端状态异常）：只有顶层的 selected_layer_id
+    # 能在这个集合里唯一指认时才用，否则判不出来就不猜。
+    top = _normalize_layer_id(
+        str(client_context.get("selected_layer_id") or "").strip()
+    )
+    if (
+        top
+        and top.startswith(("imported-", "wf-run-"))
+        and (not selected or top in selected)
+    ):
+        return top
+    return ""
 
 
 def _identity_of(
@@ -1684,6 +1837,31 @@ def _identity_of(
     return lid, fields
 
 
+def _remembered_var_layer(topic_state: dict[str, Any] | None, variable: str) -> str:
+    """从会话跨变量记忆里，读出「这个变量上次真用过的那份产物 id」；无则空串。
+
+    2026-11-09 加：产品粘性原来只记单槽 ``layer_id``，被非三变量层（CMFD 降水）
+    覆盖后，三变量层的版本记忆就丢了（「切回土壤水分」模型只能自选版本，口径
+    单日帧 ↔ 8 天块静默漂移）。这里单独按变量查映射，互不覆盖。只认产物 id
+    （``imported-*`` / ``wf-run-*``），目录层 id 拿它取数必然报错，直接拒收。
+    """
+    if not isinstance(topic_state, dict) or variable not in _VARIABLE_LABELS:
+        return ""
+    raw = str(topic_state.get("var_layers") or "").strip()
+    if not raw:
+        return ""
+    try:
+        mapping = json.loads(raw)
+    except (ValueError, TypeError):
+        return ""
+    if not isinstance(mapping, dict):
+        return ""
+    lid = str(mapping.get(variable) or "").strip()
+    if lid.startswith("imported-") or lid.startswith("wf-run-"):
+        return lid
+    return ""
+
+
 def _product_sticky_layer(
     catalog_id: str,
     *,
@@ -1699,28 +1877,57 @@ def _product_sticky_layer(
     两层的身份都能解析、用户原话里既没点名这次的来源/变量/口径。少一条都放行，
     宁可漏改不可误改——「换成风云那套」「那 VOD 呢」「切到平均版」必须照常切换。
     """
+    if not catalog_id:
+        return catalog_id, None
+    # ⓪ 用户点名「当前图层 / 页面选中的这层」⇒ 这次要的就是页面上那一层，
+    #    不是上一轮统计过的产品。**放在基线判断之前**：即便会话里还没记着任何
+    #    取数对象，这句话也该落到页面选中层上。
+    #
+    #    2026-11-09 用户复测：页面选着风云 VOD，他问「查当前图层」，模型传对了
+    #    风云 VOD 的 id，粘性却改回上一轮的 SMAP 土壤水分（0.2929/163）。修法不是
+    #    简单放行模型传的 id——万一模型传错，用户说的「当前图层」就没人兜住了。
+    #    这里直接取页面选中层：模型传对了就是它自己，传错了也会被纠正回页面上
+    #    真正选中的那一层。页面没有明确选中层时放行模型传的（用户只能指它）。
+    if _asks_page_layer(user_message):
+        page_layer = _page_selected_layer_id(client_context)
+        return (page_layer or catalog_id), None
+    req_id, req_fields = _identity_of(catalog_id, client_context)
+    req_var = str(req_fields.get("variable") or "")
+    if req_var == "unknown":
+        req_var = ""
+    # 2026-11-09：跨变量记忆回填。单槽基线被非三变量层（CMFD 降水）覆盖后，
+    # ``_baseline_layer_id`` 读到目录层 id 会直接返回空（只认 imported-/wf-run-），
+    # 下面「没有基线 → 放行」就走到头，模型只能自选版本（单日帧 ↔ 8 天块口径
+    # 静默漂移）。所以这一步要在基线判断之前：查 var_layers 里这个变量上次真
+    # 用过的那份产物，命中且不是同一层、且用户没点名换口径时，把它当成基线。
     base = _baseline_layer_id(topic_state, client_context)
-    if not base or not catalog_id:
+    if not base:
+        remembered = _remembered_var_layer(topic_state, req_var)
+        if (
+            remembered
+            and _normalize_layer_id(remembered) != _normalize_layer_id(req_id)
+            and not _mentions_version(
+                user_message, str(req_fields.get("product_family") or "")
+            )
+        ):
+            base = remembered
+    if not base:
         return catalog_id, None
     # 整族多变量请求（「三个变量分别是多少」「这一族各是多少」）直接放行：
     # 它要的就是同族每一层各取一次，粘回上一轮那层等于少答两个变量。
     if _ASKS_ALL_VARIABLES_RE.search(user_message or ""):
         return catalog_id, None
     base_id, base_fields = _identity_of(base, client_context)
-    req_id, req_fields = _identity_of(catalog_id, client_context)
     if _normalize_layer_id(req_id) == _normalize_layer_id(base_id):
         return catalog_id, None
     base_source = str(base_fields.get("source") or "")
     base_var = str(base_fields.get("variable") or "")
     req_source = str(req_fields.get("source") or "")
-    req_var = str(req_fields.get("variable") or "")
     # 变量解析不出（目录层 id 且页面没映射上）不再当成「无法判断就放行」——
     # 那正好把模型最常用的传法放行了。改成把变量当空值：只比来源与口径，
     # 定不出来源才真放行。
     if base_var == "unknown":
         base_var = ""
-    if req_var == "unknown":
-        req_var = ""
     if not base_source or not req_source:
         return catalog_id, None
     # ① 用户点名了这次这一层（新来源 / 新变量 / 新口径）⇒ 这是合法换产品
@@ -3471,6 +3678,17 @@ def _raster_full_stats(
                     "std": float(data.std()) if count > 1 else None,
                     "valid_pixels": count,
                     "total_pixels": total,
+                    # 2026-11-09 外部实测：模型把 437（=23×19 读取窗口）说成
+                    # 「边界内共 437 个像元」。total_pixels 是**读取窗口**的总像元数
+                    # （含行政区边界外），不是行政边界内的分母；边界内分母没有单独
+                    # 统计，正文引用时只写 valid_pixels（边界内有效像元数）。
+                    "total_pixels_note": (
+                        f"total_pixels={total} 是本次读取窗口 "
+                        f"{int(data.shape[0])}×{int(data.shape[1])} 的像元总数，"
+                        "含行政区边界外的像元；行政边界内的分母未单独统计。"
+                        "正文请只把 valid_pixels 说成「边界内有效像元数」，"
+                        "不要把 total_pixels 说成边界内像元总数。"
+                    ),
                     "valid_ratio": round(count / total, 6) if total else None,
                     "crs": ds.crs.to_string() if ds.crs else None,
                     # 像元大小：问「这层分辨率多少」时唯一的答案来源（2026-11-07 补）
@@ -3702,8 +3920,18 @@ def _get_layer_statistics(
         if pinned_note:
             layer_source = "session"
     else:
-        catalog_id = baseline or _page_default_layer(client_context) or ""
-        if not baseline:
+        # 用户点名「当前图层」时，页面选中层优先于会话基线：他要看的就是屏幕上
+        # 那一层，拿上一轮统计过的产品顶上去等于换了个对象还说是同一层
+        # （2026-11-09 复测的「查当前图层却回了上一轮 SMAP 土壤水分」）。
+        page_layer = (
+            _page_selected_layer_id(client_context)
+            if _asks_page_layer(user_message)
+            else ""
+        )
+        catalog_id = page_layer or baseline or _page_default_layer(client_context) or ""
+        if page_layer:
+            layer_source = "page"
+        elif not baseline:
             layer_source = "page"
         if not catalog_id:
             return {
@@ -3789,6 +4017,10 @@ def _get_layer_statistics(
             return {
                 "ok": False,
                 "catalog_id": catalog_id,
+                "error_code": "region_not_resolved",
+                "requested_region": region_name,
+                "scope_locked": True,
+                "must_not_fallback_to_full_extent": True,
                 "error": f"没有匹配到「{region_name}」这个行政区"
                 "（支持省级：省/自治区/直辖市/港澳台；市级：地级市/自治州/"
                 f"地区/盟）{_tail}",
@@ -3818,12 +4050,24 @@ def _get_layer_statistics(
         logger.debug("overlay spec unavailable for %s", catalog_id, exc_info=True)
         spec = None
     if spec is None:
+        _disp = _qualified_layer_name(catalog_id, _layer_display_name(catalog_id))
         return {
             "ok": False,
-            "error": f"「{catalog_id}」不是本地运行时产物，整层统计只认已物化的栅格"
-            "（imported-*）。页面图层的可用 id 见 client_context.active_layers[]"
-            ".overlay_layer_id；目录层 id 要先用工作流物化后才能统计。",
             "catalog_id": catalog_id,
+            "display_name": _disp,
+            # error 是给模型的操作指令，不直接给用户看。
+            "error": f"「{_disp}」是目录里的参考/未物化层，没有可直接统计的栅格。"
+            "请只回答两件事，不要给任何数字：① 这一层目前取不到数值，因为它还是"
+            "目录参考层、没有物化成可统计的栅格；② 两条出路——换页面上已经出图、"
+            "能统计的图层，或者先跑一次工作流把它物化再统计。正文里不要出现"
+            "imported-*/物化/目录层 id 这类内部说法。",
+            "user_facing": (
+                f"「{_disp}」是目录里的参考图层，还没有可直接统计的栅格数据，"
+                "所以取不到数值——这不是某一天缺数据，是这一层本身还没转成能统计"
+                "的形态。\n\n两条路：\n"
+                "① 换成页面上已经出图、能统计的图层，我马上按你的区域和日期算；\n"
+                "② 先跑一次处理流程把这一层物化成标准栅格，再回来统计。"
+            ),
         }
 
     # 跨来源守卫：拿另一颗卫星的同族产品顶替页面上的变量时，直接不给数
