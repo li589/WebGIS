@@ -10,12 +10,24 @@
 * 不引用本地 ``Z:`` 盘符；所有路径走 HTTPS。
 * 只下载 ``YYYYMMDD.mat``（``assert_mat_filename()`` 强校验后缀）。
 ═══════════════════════════════════════════════════════════════════════════
+
+本地共享盘通道（2026-11-10 追加）
+───────────────────────────────────────────────────────────────────────────
+FileBrowser 依赖 Cloudflare 隧道，隧道一断按需补帧全废。为此增加一条
+「直接读共享盘」的通道，**白名单与文件名校验完全复用**，只在真正列举/落盘
+那一步换成 ``os`` 操作：
+
+* ``assert_nas_path_readable()`` 仍然先跑 —— 本地路径由「远程白名单路径」
+  唯一推导出来，不允许调用方直接传本地路径。
+* ``_local_path()`` 再兜一层 ``normpath`` 越界校验，防止 ``..`` 之类拼出根外。
+* 只读，没有任何写远程的动作。
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import ssl
 import threading
@@ -203,8 +215,14 @@ def _quote(remote_path: str) -> str:
 
 # ── 只读操作：列目录 / 探测 / 下载 ────────────────────────────────────────────
 def list_dir(remote_dir: str) -> list[dict]:
-    """列白名单目录内容。返回 FileBrowser 的 ``items`` 列表。"""
+    """列白名单目录内容。返回与 FileBrowser ``items`` 同形的列表。
+
+    先过白名单校验；能走本地共享盘就走本地，否则走 FileBrowser 隧道。
+    """
     path = assert_nas_path_readable(remote_dir)
+    local_root = _local_root_or_none()
+    if local_root:
+        return _local_list_dir(local_root, path)
     base, _, _ = config._load_nas_config()
     url = f"{base}/api/resources/{_quote(path)}"
     try:
@@ -303,6 +321,10 @@ def _download_once(remote_dir: str, filename: str, dest: Path) -> int:
     assert_nas_path_readable(remote)
     assert_mat_filename(remote)
 
+    local_root = _local_root_or_none()
+    if local_root:
+        return _local_download(local_root, remote_dir, filename, dest)
+
     base, _, _ = config._load_nas_config()
     url = f"{base}/api/raw/{_quote(remote)}"
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -340,3 +362,158 @@ def reset_token_cache() -> None:
         _TOKEN_CACHE["expires_at"] = 0.0
     with _DIR_LOCK:
         _DIR_CACHE.clear()
+    reset_local_probe()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 本地共享盘通道
+# ══════════════════════════════════════════════════════════════════════════════
+_LOCAL_PROBE_LOCK = threading.Lock()
+_LOCAL_PROBE: dict[str, Any] = {"at": 0.0, "root": None}
+
+
+def _probe_local_root(root: str, *, force: bool = False) -> bool:
+    """本地共享盘根是否可达（结果缓存 ``config.LOCAL_ROOT_PROBE_TTL`` 秒）。"""
+    now = time.time()
+    with _LOCAL_PROBE_LOCK:
+        if (
+            not force
+            and _LOCAL_PROBE["root"] == root
+            and (now - float(_LOCAL_PROBE["at"])) < config.LOCAL_ROOT_PROBE_TTL
+        ):
+            return bool(_LOCAL_PROBE.get("ok"))
+    try:
+        ok = os.path.isdir(root)
+    except OSError:  # 共享盘掉线时 isdir 也可能直接抛
+        ok = False
+    with _LOCAL_PROBE_LOCK:
+        _LOCAL_PROBE.update({"at": now, "root": root, "ok": ok})
+    return ok
+
+
+def reset_local_probe() -> None:
+    """测试/排障用：让下一次调用重新探测本地根。"""
+    with _LOCAL_PROBE_LOCK:
+        _LOCAL_PROBE.update({"at": 0.0, "root": None, "ok": False})
+
+
+def _local_root_or_none() -> str | None:
+    """当前该走本地通道时返回根目录，否则 None（交给 HTTP 通道）。
+
+    * ``http`` 模式：永远 None。
+    * ``local`` 模式：根不可达直接抛 ``NasUnavailable``——不悄悄回落，
+      否则排障时会以为「本地直读已生效」其实还在走断掉的隧道。
+    * ``auto`` 模式：能读就走本地，读不到回落 HTTP。
+    """
+    mode = config.nas_access_mode()
+    if mode == config.NAS_ACCESS_HTTP:
+        return None
+    root = config.local_nas_root()
+    if not root:
+        if mode == config.NAS_ACCESS_LOCAL:
+            raise NasUnavailable(
+                f"已设 {config.ACCESS_MODE_ENV}=local，但未配置 "
+                f"{config.LOCAL_ROOT_ENV}（应写成共享盘根目录，"
+                r"如 \\222.200.176.12\group_nas）"
+            )
+        return None
+    if _probe_local_root(root):
+        return root
+    if mode == config.NAS_ACCESS_LOCAL:
+        raise NasUnavailable(
+            f"本地共享盘根不可达：{root}（{config.ACCESS_MODE_ENV}=local，不回落 HTTP）"
+        )
+    logger.warning("本地共享盘根不可达（%s），本次回落到 FileBrowser 通道", root)
+    return None
+
+
+def _local_path(root: str, remote_path: str) -> Path:
+    """远程白名单路径 → 本地绝对路径。
+
+    调用方必须先过 ``assert_nas_path_readable()``；这里再兜一层越界校验，
+    确保 normpath 之后仍落在根目录内（防 ``..`` 拼出根外）。
+    """
+    rel = str(remote_path or "").strip().lstrip("/").replace("/", os.sep)
+    norm_root = os.path.normpath(root)
+    joined = os.path.normpath(os.path.join(norm_root, rel))
+    if joined != norm_root and not joined.startswith(norm_root + os.sep):
+        raise NasPathDenied(f"本地路径越界，已拦截：{remote_path}")
+    return Path(joined)
+
+
+def _local_list_dir(root: str, remote_dir: str) -> list[dict]:
+    """本地列举目录，返回与 FileBrowser ``items`` 同形的列表。
+
+    只保证 ``name`` / ``isDir`` / ``size`` 三个字段——现有调用方
+    （``has_date_file``、``resolve_nas_dir``）只用到 ``name`` 与条目数。
+    """
+    target = _local_path(root, remote_dir)
+    try:
+        if not target.is_dir():
+            return []
+        entries = list(os.scandir(target))
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        raise NasUnavailable(f"读本地共享盘目录失败：{target}｜{exc}") from exc
+
+    items: list[dict] = []
+    for entry in entries:
+        try:
+            is_dir = entry.is_dir()
+        except OSError:
+            is_dir = False
+        size = 0
+        if not is_dir:
+            try:
+                size = entry.stat().st_size
+            except OSError:
+                size = 0
+        items.append({"name": entry.name, "isDir": is_dir, "size": size})
+    return items
+
+
+def _local_download(root: str, remote_dir: str, filename: str, dest: Path) -> int:
+    """从本地共享盘复制 ``.mat`` 到 ``dest``，返回字节数。
+
+    与 HTTP 通道同样先写 ``.part`` 再原子替换，避免中途失败留下半个文件
+    被下游当作完整帧读。
+    """
+    src = _local_path(root, f"{remote_dir.rstrip('/')}/{filename}")
+    try:
+        if not src.is_file():
+            raise NasFileMissing(f"共享盘上不存在 {filename}（{remote_dir}）")
+    except OSError as exc:
+        raise NasUnavailable(f"访问本地共享盘失败：{src}｜{exc}") from exc
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    total = 0
+    try:
+        with open(src, "rb") as fh_in, open(tmp, "wb") as fh_out:
+            while True:
+                chunk = fh_in.read(1 << 20)
+                if not chunk:
+                    break
+                fh_out.write(chunk)
+                total += len(chunk)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        raise NasUnavailable(f"读本地共享盘文件失败：{src}｜{exc}") from exc
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(dest)
+    return total
+
+
+def local_access_status() -> dict[str, Any]:
+    """当前本地通道状态（只读，供健康检查/排障展示）。"""
+    root = config.local_nas_root()
+    return {
+        "mode": config.nas_access_mode(),
+        "local_root": root,
+        "local_root_reachable": bool(root) and _probe_local_root(root),
+        "env_local_root": config.LOCAL_ROOT_ENV,
+        "env_mode": config.ACCESS_MODE_ENV,
+    }

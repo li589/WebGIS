@@ -46,6 +46,48 @@ def _load_nas_config() -> tuple[str, str, str]:
     )
 
 
+# ── 本地共享盘直读（2026-11-10）───────────────────────────────────────────────
+# 背景：FileBrowser 走的是 Cloudflare 隧道（nasfile.personaltunnel.dpdns.org）。
+# 隧道一断，按需补帧就整片失败（表现为「取数服务暂时不可用」），但数据本体在
+# 局域网共享盘上一直好好的。
+#
+# 因此增加「本地直读」通道：直接读 UNC 路径，与 HTTP 通道**共用同一套白名单
+# 校验**（assert_nas_path_readable / assert_mat_filename 一行不少，先校验后读盘），
+# 只是把「发 HTTPS 请求」换成「开本地文件」。
+#
+#   访问模式（CGDA_FY_NAS_ACCESS_MODE）：
+#     auto  —— 默认。本地根可达就走本地，不可达回落到 FileBrowser 隧道。
+#     local —— 只走本地；根不可达直接报错，不悄悄回落（排障用）。
+#     http  —— 只走 FileBrowser（保持旧行为）。
+#
+#   CGDA_FY_NAS_LOCAL_ROOT：与 FileBrowser 的 base_url 等价的本地根目录，
+#   即远程路径 ``/Liuzheng/omega_final/fy_avg_smvod/`` 对应
+#   ``<ROOT>\Liuzheng\omega_final\fy_avg_smvod\``。
+LOCAL_ROOT_ENV = "CGDA_FY_NAS_LOCAL_ROOT"
+ACCESS_MODE_ENV = "CGDA_FY_NAS_ACCESS_MODE"
+
+NAS_ACCESS_AUTO = "auto"
+NAS_ACCESS_LOCAL = "local"
+NAS_ACCESS_HTTP = "http"
+_NAS_ACCESS_MODES = (NAS_ACCESS_AUTO, NAS_ACCESS_LOCAL, NAS_ACCESS_HTTP)
+
+
+def local_nas_root() -> str:
+    """本地共享盘根目录（未配置返回空串）。去掉尾部斜杠，便于安全拼接。"""
+    return os.environ.get(LOCAL_ROOT_ENV, "").strip().rstrip("\\/")
+
+
+def nas_access_mode() -> str:
+    """当前访问模式；非法值按 auto 处理（配置写错不至于把功能打死）。"""
+    raw = (os.environ.get(ACCESS_MODE_ENV, "") or "").strip().lower()
+    return raw if raw in _NAS_ACCESS_MODES else NAS_ACCESS_AUTO
+
+
+# 本地根可达性缓存秒数：共享盘偶发掉线不该让每一帧都卡在网络判定上，
+# 也不该把「刚恢复」的状态缓存太久。
+LOCAL_ROOT_PROBE_TTL = 30.0
+
+
 # ── 红线 1：NAS 上唯一允许触碰的 8 个目录 ────────────────────────────────────
 # 校验方式是 str.startswith()，所以每一项都必须以 "/" 结尾，避免
 # "fy_avg_smvod_xxx" 这类同前缀目录被误判为命中。
