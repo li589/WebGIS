@@ -58,6 +58,22 @@ export interface AgentUiIntentHandlers {
 
 const ACTIVE_JOB = new Set(['queued', 'running', 'retry_pending', 'accepted'])
 
+/**
+ * 单条意图的执行选项（不落进 intent 本身：它是执行上下文，不是模型给的指令）。
+ */
+export interface AgentUiIntentOptions {
+  /**
+   * 暂不报「时间轴停在/切到哪天」。
+   *
+   * 2026-11-09 用户复测：一条回复里同时排了「切图层 + 设日期 + 统计」，切层瞬间
+   * 时间轴会先按图层记忆跳一次（SMAP 动态层的记忆日是 07-31），随后 set_timeline
+   * 才切到 11-13。切层的回执如果在这时候报日期，就会把中途那张临时画面的日期
+   * 留下来，最终页面停在 11-13、提示却写着 07-31。日期交给后面的 set_timeline
+   * 按落定后的真实状态报。
+   */
+  suppressDateHint?: boolean
+}
+
 /** 等 NAS 取单日帧的上限：实测取一帧 4~6s，本地命中毫秒级；超了就如实说「正在取」 */
 const ONDEMAND_AWAIT_MS = 20_000
 
@@ -477,8 +493,9 @@ function parseDateArg(raw: unknown): Date | null {
 export async function executeAgentUiIntent(
   intent: AgentUiIntent,
   handlers: AgentUiIntentHandlers = {},
+  options: AgentUiIntentOptions = {},
 ): Promise<AgentUiIntentResult> {
-  const result = await executeAgentUiIntentCore(intent, handlers)
+  const result = await executeAgentUiIntentCore(intent, handlers, options)
   const commandId = String(intent.command_id ?? '').trim()
   const enriched: AgentUiIntentResult = commandId ? { ...result, commandId } : result
   // R02：命令与其「实际执行结果」用同一个编号串起来，失败也要记
@@ -525,6 +542,7 @@ function describeIntentTarget(intent: AgentUiIntent): string {
 async function executeAgentUiIntentCore(
   intent: AgentUiIntent,
   handlers: AgentUiIntentHandlers = {},
+  options: AgentUiIntentOptions = {},
 ): Promise<AgentUiIntentResult> {
   const workspace = useLayerWorkspace()
   const ui = useUiStore()
@@ -591,7 +609,17 @@ async function executeAgentUiIntentCore(
      * 先等时间轴稳住，再用页面真实日期拼回执。
      */
     await waitForTimelineSettle()
-    const nowHint = describeSettledTimeline(catalogId, ui.currentDate.getTime() !== dateBefore)
+    /**
+     * ★ 2026-11-09 修（用户复测：切层 + 设日期 + 统计，提示残留中途的 7 月 31 日）：
+     * 同一条回复里如果后面还排着 `set_timeline`，这次切层的日期就**不报**。
+     * 切层瞬间时间轴会先按图层记忆跳一次（SMAP 动态层的记忆日是 07-31），随后
+     * `set_timeline` 才把它切到用户要的 11-13；这时候报日期，等于把中途那张
+     * 临时画面的日期写进回执，最终页面明明停在 11-13，提示却留着 07-31。
+     * 日期由后面那条 `set_timeline` 的回执按落定后的真实状态来报。
+     */
+    const nowHint = options.suppressDateHint
+      ? ''
+      : describeSettledTimeline(catalogId, ui.currentDate.getTime() !== dateBefore)
     const label = nameOf(catalogId, args.display_name || layer.name)
     if (!visible) {
       return { ok: true, message: `已隐藏「${label}」${nowHint}` }
@@ -1158,8 +1186,15 @@ export async function executeAgentUiIntents(
   handlers: AgentUiIntentHandlers = {},
 ): Promise<AgentUiIntentResult[]> {
   const results: AgentUiIntentResult[] = []
-  for (const intent of intents) {
-    results.push(await executeAgentUiIntent(intent, handlers))
+  for (let i = 0; i < intents.length; i += 1) {
+    const intent = intents[i]
+    /**
+     * 同一批里后面还排着「切日期」⇒ 这条切层的回执先别报日期（见
+     * AgentUiIntentOptions.suppressDateHint 的说明）。只影响显示文案，
+     * 不改任何页面状态。
+     */
+    const laterSetsDate = intents.slice(i + 1).some((item) => item.name === 'set_timeline')
+    results.push(await executeAgentUiIntent(intent, handlers, { suppressDateHint: laterSetsDate }))
   }
   return results
 }

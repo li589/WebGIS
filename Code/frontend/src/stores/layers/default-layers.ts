@@ -20,6 +20,7 @@
  *   `'imported-' + hashlib.sha1(f'{catalogId}|{role}|{role}'.encode()).hexdigest()[:12]`
  */
 import { nextTick } from 'vue'
+import { timeListToSlices } from '../../utils/temporal-interval'
 import { resolveInversionCatalogId } from './inversion-catalog'
 import { useLayerWorkspace, useWorkflowRun } from './selectors'
 import { useUiStore } from '../ui'
@@ -745,6 +746,40 @@ async function seedDefaultFrameMemory(
 }
 
 /**
+ * 时间清单对账：把「盘上真实存在的按需单日帧」补进已加载图层的时间轴。
+ *
+ * 背景（2026-11-09 用户反馈：时间轴选 12-15 却显示长时间合成块）：
+ * `nas_ondemand` 补出来的单日帧**只落盘、不写 meta.json**（写进去会让一进页面的
+ * 默认落点变成单日帧）。服务端已把这些帧并进 `/overlay-bounds` 的
+ * `meta.time_list`（见 `OverlaySpec.meta_dict`），但工作区里**已经加载**的图层
+ * `timeList` 是添加那一刻的快照，不会再变 ⇒ 时间轴始终只有 meta 里那几个长块。
+ *
+ * 这里对工作区里的 `imported-*` 层各探一次，**只在服务端有本地没有的键时**
+ * 整份替换（本地已有的一律保留，不删不改）；失败静默，不影响页面其它功能。
+ */
+async function syncOverlayTimeLists(workspace: WorkspaceApi): Promise<void> {
+  // 上限只为防止极端工作区把启动拖慢，正常页面上就几层
+  const layers = workspace.activeLayers.value.slice(0, 40)
+  for (const layer of layers) {
+    const raster = layer.importedRaster
+    const overlayId = raster?.overlayLayerId
+    if (!raster || !overlayId || !overlayId.startsWith('imported-')) continue
+    try {
+      const probed = await probeOverlay(overlayId)
+      const probedList = probed?.timeList ?? []
+      if (!probedList.length) continue
+      const localList = raster.timeList ?? []
+      if (!probedList.some((t) => !localList.includes(t))) continue
+      raster.timeList = [...probedList]
+      // slices 必须同步换：时间轴读的是 timeSlices，只改 timeList 不生效
+      raster.timeSlices = timeListToSlices(probedList)
+    } catch (err) {
+      console.warn('[default-layers] 时间清单对账失败', overlayId, err)
+    }
+  }
+}
+
+/**
  * 确保默认图层已挂载（幂等、静默降级）。
  *
  * 单项流程：
@@ -827,6 +862,16 @@ export async function ensureDefaultLayers(): Promise<void> {
       alignDefaultGroupOrder(workspace)
     } catch (err) {
       console.warn('[default-layers] 分组顺序对齐失败', err)
+    }
+
+    /**
+     * 清单对账：必须在落轴**之前**——落轴按 `default_time` 找切片，
+     * 清单里没有单日帧的话，用户拖到某天只能吸附到长合成块（2026-11-09）。
+     */
+    try {
+      await syncOverlayTimeLists(workspace)
+    } catch (err) {
+      console.warn('[default-layers] 时间清单对账失败', err)
     }
 
     /**

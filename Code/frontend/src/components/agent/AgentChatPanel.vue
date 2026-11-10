@@ -59,6 +59,7 @@ const PANEL_MIN_W = 320
 const PANEL_MIN_H = 280
 const PANEL_MAX_W = 720
 const PANEL_DEFAULT_H = 420
+const PANEL_COMPACT_BREAKPOINT = 600
 
 const props = defineProps<{
   open: boolean
@@ -281,6 +282,8 @@ function pushSystemHint(text: string) {
 }
 
 function resetChat() {
+  chatGeneration += 1
+  sessionLoadSequence += 1
   // 2026-10-26：原来在「生成进行中」时只弹一句提示就 return，聊天记录一条都不清，
   // 用户点了以为按钮坏了（提示说清空、实际没清）。现在改为：先中止当前生成，
   // 再无条件清空，并如实报出清掉了几条。
@@ -365,9 +368,12 @@ onBeforeUnmount(() => {
 
 async function loadSession(sid: string) {
   if (sending.value || !sid) return
+  const loadSequence = ++sessionLoadSequence
+  chatGeneration += 1
   sessionMenuOpen.value = false
   try {
     const detail = await getAgentSession(sid)
+    if (loadSequence !== sessionLoadSequence || detail.session_id !== sid) return
     sessionId.value = detail.session_id
     const restored: ChatMessage[] = (detail.messages || [])
       .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -489,6 +495,10 @@ const sizeW = ref(AGENT_CHAT_PANEL_WIDTH_PX)
 const sizeH = ref(PANEL_DEFAULT_H)
 const panelDragging = ref(false)
 const panelResizing = ref(false)
+const viewportWidth = ref(typeof window === 'undefined' ? 1200 : window.innerWidth)
+const viewportHeight = ref(typeof window === 'undefined' ? 800 : window.innerHeight)
+let chatGeneration = 0
+let sessionLoadSequence = 0
 
 let dragPtrId: number | null = null
 let dragStartX = 0
@@ -585,10 +595,12 @@ function placeNearAnchor() {
 }
 
 function clampPanelIntoViewport() {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  absLeft.value = clamp(absLeft.value, 8, Math.max(8, vw - sizeW.value - 8))
-  absTop.value = clamp(absTop.value, 8, Math.max(8, vh - sizeH.value - 8))
+  const vw = viewportWidth.value
+  const vh = viewportHeight.value
+  const renderedW = Math.min(sizeW.value, Math.max(0, vw - 16))
+  const renderedH = Math.min(sizeH.value, Math.max(0, vh - 16))
+  absLeft.value = clamp(absLeft.value, 8, Math.max(8, vw - renderedW - 8))
+  absTop.value = clamp(absTop.value, 8, Math.max(8, vh - renderedH - 8))
 }
 
 const dynamicTransformOrigin = computed(() => {
@@ -606,8 +618,18 @@ const dynamicTransformOrigin = computed(() => {
 })
 
 const panelStyle = computed(() => {
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const vw = viewportWidth.value
+  const vh = viewportHeight.value
+  if (vw <= PANEL_COMPACT_BREAKPOINT) {
+    return {
+      left: '8px',
+      top: '8px',
+      width: `${Math.max(0, vw - 16)}px`,
+      height: `${Math.max(PANEL_MIN_H, vh - 16)}px`,
+      maxHeight: `${Math.max(0, vh - 16)}px`,
+      transformOrigin: 'right bottom',
+    }
+  }
   const maxH = Math.min(AGENT_CHAT_PANEL_MAX_HEIGHT_PX, vh - 72)
   const h = clamp(sizeH.value, PANEL_MIN_H, maxH)
   const w = clamp(sizeW.value, PANEL_MIN_W, Math.min(PANEL_MAX_W, vw - 24))
@@ -619,6 +641,15 @@ const panelStyle = computed(() => {
     transformOrigin: dynamicTransformOrigin.value,
   }
 })
+
+function onViewportResize() {
+  viewportWidth.value = window.innerWidth
+  viewportHeight.value = window.innerHeight
+  clampPanelIntoViewport()
+}
+
+window.addEventListener('resize', onViewportResize)
+onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
 let dragRaf: number | null = null
 let pendingDragLeft = 0
@@ -1020,6 +1051,15 @@ async function applyChatResult(
       ok: r.ok,
       message: r.message || '',
     }))
+    const failedResults = results.filter((r) => !r.ok)
+    if (target && failedResults.length) {
+      // 后端正文生成在前端操作之前，可能先写出“已完成”。真实执行失败时必须以
+      // 前端状态为准，不能把口头成功和失败回执同时留给用户。
+      target.text = failedResults
+        .map((r) => r.message || '操作未执行成功，页面状态没有确认改变。')
+        .join('\n\n')
+      finalizeAssistantHtml(target)
+    }
     const noteBodies = results
       .filter((r) => r.message)
       .map((r) => ({
@@ -1180,6 +1220,7 @@ async function send() {
   startSendTick()
   sendAbort = new AbortController()
   const abortSignal = sendAbort.signal
+  const requestGeneration = chatGeneration
 
   const req = {
     message: text,
@@ -1190,6 +1231,7 @@ async function send() {
   lastIntentResults = []
 
   const onStep = (step: AgentStep) => {
+    if (requestGeneration !== chatGeneration) return
     const msg = messages.value.find((m) => m.id === assistantId)
     if (!msg) return
     if (!msg.steps) msg.steps = []
@@ -1204,6 +1246,7 @@ async function send() {
     scheduleScrollToBottom()
   }
   const onToken = (chunk: string) => {
+    if (requestGeneration !== chatGeneration) return
     streamPhase.value = 'streaming'
     liveStatus.value = '正在生成回复…'
     appendStreamChunk(assistantId, chunk)
@@ -1277,6 +1320,7 @@ async function send() {
       }
       return
     }
+    if (requestGeneration !== chatGeneration) return
     await applyChatResult(res, assistantId, { skipIntents: abortSignal.aborted })
   } catch (err) {
     flushStreamText()
@@ -2868,5 +2912,22 @@ function onKeydown(ev: KeyboardEvent) {
 .agent-chat-resize:hover,
 .agent-chat-panel--interacting .agent-chat-resize {
   opacity: 1;
+}
+
+@media (max-width: 600px) {
+  .agent-chat-panel {
+    min-width: 0;
+    min-height: 0;
+    border-radius: 12px;
+  }
+
+  .agent-chat-header {
+    cursor: default;
+    touch-action: auto;
+  }
+
+  .agent-chat-resize {
+    display: none;
+  }
 }
 </style>

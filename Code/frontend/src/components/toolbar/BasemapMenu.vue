@@ -64,6 +64,17 @@ const currentSourceLabel = computed(() => {
 /** 来源固定展示顺序：常用的在前 */
 const PROVIDER_ORDER = ['gaode', 'bing', 'esri', 'osm', 'tianditu', 'baidu', 'opentopo', 'carto']
 
+/**
+ * 2026-11-10：暂时停用的底图提供方（选项从菜单隐藏，配置本身未删）。
+ * 天地图没接 API Key，选了也加载不出，先注释掉避免用户点了失败。
+ * 要恢复：把数组清空即可。
+ */
+const DISABLED_PROVIDERS: string[] = ['tianditu']
+
+function isProviderDisabled(source: TileSourceConfig): boolean {
+  return DISABLED_PROVIDERS.includes(providerKeyOf(source))
+}
+
 interface ProviderRow {
   key: string
   label: string
@@ -76,6 +87,8 @@ const providerRows = computed<ProviderRow[]>(() => {
   for (const source of TILE_SOURCES) {
     // 'none' 属于「不加载底图」这个风格，不作为来源出现
     if (source.id === 'none') continue
+    // 2026-11-10：停用的提供方（天地图等）不在菜单出现
+    if (isProviderDisabled(source)) continue
     const key = providerKeyOf(source)
     const list = buckets.get(key)
     if (list) list.push(source)
@@ -121,7 +134,10 @@ const STYLE_ORDER: BasemapStyle[] = ['street', 'satellite', 'terrain', 'dark', '
 const styleRows = computed<StyleRow[]>(() => {
   const rows: StyleRow[] = []
   for (const style of STYLE_ORDER) {
-    const sources = (TILE_SOURCES_BY_STYLE.get(style) ?? []).filter((s) => s.isStandard)
+    // 2026-11-10：停用的提供方（天地图等）也不进风格列表
+    const sources = (TILE_SOURCES_BY_STYLE.get(style) ?? []).filter(
+      (s) => s.isStandard && !isProviderDisabled(s),
+    )
     if (!sources.length) continue
     const usableCount = sources.filter((s) => sourceUsable(s)).length
     rows.push({
@@ -176,7 +192,9 @@ watch(
   () => [props.tileSourceId, apiKeys.value] as const,
   () => {
     const cfg = currentTileConfig.value
-    if (cfg && !sourceUsable(cfg)) emit('changeTileSource', getDefaultTileSource())
+    // 2026-11-10：本地残留的停用提供方（天地图等）也强制回默认
+    if (cfg && (isProviderDisabled(cfg) || !sourceUsable(cfg)))
+      emit('changeTileSource', getDefaultTileSource())
   },
 )
 </script>
