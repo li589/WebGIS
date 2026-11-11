@@ -133,6 +133,28 @@ export function useTimelineSync(
     return ''
   }
 
+  /**
+   * 按需补帧图层：把登记表覆盖范围内、但 time_list 没有的日子标成「可在线获取」。
+   *
+   * 2026-11-11 老师复测：同一 SMAP 图层的 11-14 能取到单日数据（69 个有效栅格），
+   * 「当前观测」也显示 11-14，日历却标「无数据」。原因是日格子只按 time_list 判断
+   * ready，而该层其实登记了按需补帧——拖到那天就去 NAS 取单日帧。可补取的日期被
+   * 画成空档，用户以为没数据，反而不去拖。
+   *
+   * 只在图层确实登记了按需补帧、且能读到覆盖范围时才生效；超出覆盖范围的日期仍然
+   * 是空的（不会把 2030 年也标成可获取）。与 `overlayOnlineTemporalFetchable`
+   * 同一套状态语义，只是数据来源从 online_temporal 换成 NAS 登记表。
+   */
+  function overlayOndemandFetchable(
+    map: Record<number, RunAvailabilityState>,
+    gran: Parameters<typeof overlayOnlineTemporalFetchable>[2],
+  ): Record<number, RunAvailabilityState> {
+    if (!ondemandKeyOf(selectedActiveLayer.value)) return map
+    const cap = ondemand.coverage
+    if (!cap?.start || !cap?.end) return map
+    return overlayOnlineTemporalFetchable(map, currentDate.value, gran, cap.start, cap.end)
+  }
+
   // ── 基础 computed ─────────────────────────────────────────────────────
 
   /** 瓦片 API 用的预报偏移 */
@@ -714,6 +736,7 @@ export function useTimelineSync(
             onlineCap.coverage_end,
           )
         }
+        map = overlayOndemandFetchable(map, gran)
         return generateTimelineSegments(currentDate.value, gran, map)
       }
       let map: Record<number, RunAvailabilityState> =
@@ -731,6 +754,7 @@ export function useTimelineSync(
           onlineCap.coverage_end,
         )
       }
+      map = overlayOndemandFetchable(map, gran)
       // 单块跨多天（如 20251201_20260201）时，日格子不能写「每日数据已就绪」——
       // 该块内每一天都不是独立观测（报告第二轮 P2）。
       // 按需补帧图层例外：它的日格子确实能换来单日图（拖到那天就去 NAS 取），

@@ -226,6 +226,95 @@ def _side_clauses(text: str) -> str:
     return "，".join(keep)
 
 
+#: 显隐子句里多个并列目标的分隔符（「隐藏 A 和 B」只有一个方向词、两个目标）
+_TARGET_SPLIT = re.compile(r"和|、|及|与|以及|,|，")
+_HIDE_WORD = re.compile(r"隐藏|关闭显示|关掉|hide", re.I)
+_SHOW_WORD = re.compile(r"显示|打开|开启|添加|show|enable", re.I)
+_VIS_WORD = re.compile(r"隐藏|关闭显示|关掉|hide|显示|打开|开启|添加|show|enable", re.I)
+
+
+def _multi_visibility_actions(
+    text: str, layers: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[str]] | None:
+    """把「隐藏 A 并显示 B」「隐藏 A 和 B」拆成逐条显隐动作。
+
+    2026-11-11 老师复测暴露两个方向性错误，根因都是**全文只认一个方向词**：
+
+    - 「隐藏植被光学厚度并显示 SMAP 土壤水分」：Hide 分支要求全文不含「显示」，
+      于是整句落进 Show 分支，按第一个方向词给所有目标下发 ``visible=True``
+      ——把用户要隐藏的层显示了，回执还说「已显示」。
+    - 「隐藏植被光学厚度和土壤水分」：整句只解析出一个层，另一个静默丢弃，
+      回执不提漏了哪个。
+
+    这里按子句各自取方向词（无方向词的子句继承前一句），目标段再按「和/、/及」
+    拆开逐个定位；定位不到的收进 ``missing``，由回执点名。
+
+    返回 ``None`` 表示「不是多目标场景」，交回原有 Hide / Show 分支处理——
+    单目标显隐是最高频请求，不能因为这次改动改变它的行为。
+    """
+    parts = [p.strip() for p in _CLAUSE_SPLIT.split(text) if p and p.strip()]
+    if not parts:
+        return None
+    actions: list[dict[str, Any]] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    inherited: bool | None = None
+    for part in parts:
+        if _HIDE_WORD.search(part):
+            direction: bool | None = False
+        elif _SHOW_WORD.search(part):
+            direction = True
+        else:
+            direction = inherited
+        if direction is not None:
+            inherited = direction
+        if direction is None:
+            continue
+        body = re.sub(
+            r"(?:把|将|请|帮我|再|然后|同时|并且|的|了)", " ", _VIS_WORD.sub(" ", part)
+        )
+        body = body.strip(" 的了")
+        if not body:
+            continue
+        targets = [
+            t.strip(" 的了") for t in _TARGET_SPLIT.split(body) if t.strip(" 的了")
+        ]
+        # 层名本身含「和/与」时（如「呼和浩特」）整段能直接定位就不用再拆。
+        # 只有**拆分后所有目标都定位不到**才回退整段——只要有一个目标能定位，
+        # 就说明「和」是并列连接词。否则「CMFD 和 VOD」会被整段模糊匹配成 VOD，
+        # CMFD 那一步静默消失（用户要隐藏两层，只隐藏一层且不报漏）。
+        if len(targets) > 1 and all(
+            _resolve_layer(t, layers, allow_demo_fallback=False) is None
+            for t in targets
+        ):
+            if _resolve_layer(body, layers, allow_demo_fallback=False):
+                targets = [body]
+        for target in targets:
+            if not target:
+                continue
+            pick = _resolve_layer(target, layers, allow_demo_fallback=False)
+            if pick is None:
+                missing.append(target)
+                continue
+            if pick.catalog_id in seen:
+                continue
+            seen.add(pick.catalog_id)
+            actions.append(
+                {
+                    "name": "set_layer_visibility",
+                    "args": {
+                        "catalog_id": pick.catalog_id,
+                        "visible": direction,
+                        "display_name": pick.name,
+                    },
+                }
+            )
+    # 只有一个目标时不接管：单层显隐交给原分支，避免行为漂移
+    if len(actions) + len(missing) < 2:
+        return None
+    return actions, missing
+
+
 def _catalog_pick(message: str) -> LayerPick | None:
     """目录兜底：页面没有这一层时，从图层目录里按名字找一次（2026-11-09）。
 
@@ -2940,7 +3029,17 @@ def mock_chat(
         sel = [la for la in layers if la.get("selected")]
         vis = [la for la in layers if la.get("visible")]
         if len(sel) == 1:
-            reply = f"当前选中的是「{_layer_display_with_identity(sel[0])}」。"
+            # 2026-11-11 老师复测：隐藏某层后问「现在选中的是哪个」，只答层名会让
+            # 人以为它还画在图上（"selected" 和 "visible" 是两个概念）。勾选显示和
+            # 选中查看必须分开说清楚，这一条要和提示词里的口径一致。
+            title = _layer_display_with_identity(sel[0])
+            if sel[0].get("visible"):
+                reply = f"当前选中的是「{title}」，它同时也是勾选显示的。"
+            else:
+                reply = (
+                    f"当前选中的是「{title}」——它是当前选中，但已隐藏，"
+                    "画面上看不到。要让它重新显示，说「显示这一层」即可。"
+                )
         elif not sel and len(vis) == 1:
             # 2026-11-11 用户实测：把其余层都隐藏、只剩一层可见，前端没有回传
             # selected（隐藏时仍设选中是前端设计，但可能落空）。旧实现先说
@@ -2971,7 +3070,14 @@ def mock_chat(
         return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
     # List active layers
-    if re.search(r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", text, re.I):
+    #
+    # 2026-11-11 老师复测：「把当前图层切换到 2025年12月25日」日期没切。根因不是
+    # 时间正则不认「切换到」，而是**这句先被这里的「当前图层」截胡**——直接列出
+    # 图层清单就 return，日期压根没走到下面的时间分支。列出图层不会带完整日期，
+    # 带了完整日期说明这句是「切时间」，让给时间分支。
+    if _parse_date_arg(text) is None and re.search(
+        r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", text, re.I
+    ):
         if not layers:
             reply = (
                 "当前地图上还没有图层。可以在左侧「图层目录」里添加，"
@@ -3109,10 +3215,34 @@ def mock_chat(
         if date_str:
             args_tl["date"] = date_str
         if args_tl:
+            # 「添加 CMFD 并切换到 2025-12-01」：时间分支排在显隐分支之前，
+            # 旧实现只下发 set_timeline 就 return，添加那一步**根本没执行**，
+            # 回执却写「已切到」。老师复测（2026-11-11）：「它成功添加了 CMFD，
+            # 但页面把这个图层标记为静态数据」——说明前端拿到了日期意图却没有
+            # 对应的新实例可绑。这里先补添加，日期才能落到新加的实例上。
+            added: list[str] = []
+            if re.search(r"添加|加上|加载|打开|显示|开启", text, re.I):
+                pick_add = _resolve_layer(text, layers)
+                if pick_add is None and not _page_has_named_candidate(text, layers):
+                    pick_add = _catalog_pick(text)
+                if pick_add is not None:
+                    added.append(pick_add.name)
+                    intents.append(
+                        {
+                            "name": "set_layer_visibility",
+                            "args": {
+                                "catalog_id": pick_add.catalog_id,
+                                "visible": True,
+                                "display_name": pick_add.name,
+                            },
+                        }
+                    )
             reply, changeable = _build_timeline_reply(args_tl, client_context)
             # 超出可用范围 ⇒ 不生成意图，避免「前端换了、正文说没数据」自相矛盾
             if changeable:
                 intents.append({"name": "set_timeline", "args": args_tl})
+            if added:
+                reply = f"已把「{added[0]}」添加到地图并显示。\n" + reply
             return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
     # Remove layer
@@ -3176,6 +3306,30 @@ def mock_chat(
                 "reply": f"已将「{pick.name}」移到最下层。",
                 "ui_intents": intents,
             }
+
+    # Multi-target visibility: 「隐藏 A 并显示 B」「隐藏 A 和 B」
+    #
+    # 必须先于下面两个互斥分支：旧实现 Hide 分支要求全文不含「显示」，于是
+    # 「隐藏 A 并显示 B」整句落进 Show 分支并统一下发 visible=True，
+    # 把要隐藏的层显示了；「隐藏 A 和 B」又只做 A 且不报漏。
+    multi_vis = _multi_visibility_actions(text, layers)
+    if multi_vis is not None:
+        acts, missing_targets = multi_vis
+        intents.extend(acts)
+        lines: list[str] = []
+        for act in acts:
+            verb = "显示" if (act.get("args") or {}).get("visible") else "隐藏"
+            lines.append(f"已{verb}「{(act.get('args') or {}).get('display_name')}」。")
+        if missing_targets:
+            shown = "、".join(f"「{m}」" for m in missing_targets[:3])
+            lines.append(f"另有 {shown} 那一步没有执行——图层库里没定位到这个图层名。")
+        if not lines:
+            return {
+                "session_id": sid,
+                "reply": _layer_choices(layers),
+                "ui_intents": intents,
+            }
+        return {"session_id": sid, "reply": "\n".join(lines), "ui_intents": intents}
 
     # Hide
     if re.search(r"隐藏|关闭显示|hide|关掉", text, re.I) and not re.search(

@@ -151,4 +151,19 @@ def test_request_limit_reply_does_not_claim_model_is_down():
     reply = _request_limit_reply()
     assert "模型不可用" not in reply
     assert "token" not in reply.lower()
-    assert "拆成两句话" in reply
+    # 2026-11-11 老师复测：单步请求撞预算时让用户「拆成两句话」等于甩锅——
+    # 它本来就是一句话，也没解释真实原因。这句必须彻底消失。
+    assert "拆成两句话" not in reply
+    assert "内容较多" not in reply
+    # 但要留下可照做的下一步，不能只说「没处理完」就没了
+    assert "再发一次" in reply
+    assert "页面状态没有变化" in reply
+
+
+def test_request_limit_reply_only_suggests_splitting_for_long_paste():
+    """长粘贴才建议分段，且不许把原因说成「你的话有问题」。"""
+    long_text = "\n".join(f"第 {i} 行：这是一段很长的粘贴内容" for i in range(8))
+    reply = _request_limit_reply(message=long_text)
+    assert "分两次发" in reply
+    assert "拆成两句话" not in reply
+    assert "内容比较长" in reply
