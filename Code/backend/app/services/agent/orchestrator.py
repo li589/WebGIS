@@ -146,13 +146,26 @@ def _degraded_result(
     provider: str,
     reason: str = "",
     on_event: EventCallback | None = None,
+    ui_intents: list[dict[str, Any]] | None = None,
+    summary: str = "助手已降级",
 ) -> dict[str, Any]:
-    """构造一条「助手不可用但地图照用」的降级回复（HTTP 仍是 200）。"""
+    """构造一条「助手不可用但地图照用」的降级回复（HTTP 仍是 200）。
+
+    ``ui_intents`` 默认必须为空：未经验证的界面操作绝不能因为降级被顺手下发。
+    唯一的例外是 ``_local_takeover``——那是本地规则**已经定死**的纯展示动作，
+    等同于「没连上模型，但这条指令我们自己能确定」。
+    """
     sid = (session_id or "").strip() or uuid.uuid4().hex
+    verified_intents = [i for i in (ui_intents or []) if isinstance(i, dict)]
+    # 降级路径不经过 _attach_command_ids，这里补上编号，前端日志才能把
+    # 「下发了什么 / 实际执行成没成」串起来（缺编号时前端只能记 cmd-?）。
+    for item in verified_intents:
+        if not item.get("command_id"):
+            item["command_id"] = f"cmd-{uuid.uuid4().hex[:8]}"
     steps: list[dict[str, Any]] = [
         {
             "type": "thought",
-            "summary": "助手已降级",
+            "summary": summary,
             "detail": reason or provider,
         }
     ]
@@ -162,11 +175,11 @@ def _degraded_result(
         "total_tokens": estimate_tokens(reply),
         "estimated": True,
     }
-    _emit_stream_tail(on_event, reply=reply, ui_intents=[])
+    _emit_stream_tail(on_event, reply=reply, ui_intents=verified_intents)
     return {
         "session_id": sid,
         "reply": reply,
-        "ui_intents": [],
+        "ui_intents": verified_intents,
         "provider": provider,
         "profile_id": None,
         "usage": usage,
@@ -183,7 +196,78 @@ def _busy_reply() -> str:
     )
 
 
-def _llm_down_reply(detail: str) -> str:
+_PROVINCE_SHORT_NAMES: frozenset[str] | None = None
+
+
+def _province_short_names() -> frozenset[str]:
+    """省级名去掉后缀的简称（河南/北京/内蒙古…），用于数「这句话点了几个区域」。
+
+    数据来源是 ``region.list_provinces()``（边界 geojson 的单一真源），
+    读不到就退化成空集——调用方仍能用「省/市/自治区」后缀正则兜一半。
+    """
+    global _PROVINCE_SHORT_NAMES
+    if _PROVINCE_SHORT_NAMES is not None:
+        return _PROVINCE_SHORT_NAMES
+    names: set[str] = set()
+    try:
+        from app.services.agent.region import list_provinces
+
+        for full in list_provinces():
+            short = re.sub(
+                r"(省|市|自治区|特别行政区|壮族|回族|维吾尔)", "", str(full or "")
+            ).strip()
+            if len(short) >= 2:
+                names.add(short)
+    except Exception:  # pragma: no cover - 数据缺失时退化成后缀正则
+        logger.debug("province name list unavailable", exc_info=True)
+    _PROVINCE_SHORT_NAMES = frozenset(names)
+    return _PROVINCE_SHORT_NAMES
+
+
+#: 「按区域逐个比」的说法：句子里不点具体省名，但意思就是多区域对比。
+#: 不收「前三个」这种裸写法——用户说「前三个图层」时跟区域无关。
+_MULTI_REGION_HINT_RE = re.compile(
+    r"各省|各省份|哪些省|哪个省|几个省|多个区域|各区域|每个省|各行政区|"
+    r"逐省|分省|全省份|各市|哪些市|各城市|前\s*[两三四五六七八九十\d]\s*个省"
+)
+
+
+def _region_mention_count(message: str) -> int:
+    """这句话点到了几个不同的行政区（省/市全称与省级简称都算）。
+
+    只用于选降级文案：**「逐区域取数、收窄到河南山东河北」那段话只有在用户真的
+    在对比多个区域时才成立**。原先它挂在「预算超限」下无条件返回，导致用户只想
+    显示一个图层，也被建议「一次点名 2~3 个省」（2026-11-11 用户复测第 2 项）。
+    """
+    text = message or ""
+    if not text:
+        return 0
+    try:
+        found = {m.strip() for m in _REGION_MENTION_RE.findall(text)}
+        found.update(name for name in _province_short_names() if name in text)
+        count = len(found)
+        # 「哪些省的…给我前三个」不点具体省名，但语义就是多区域对比，同样算多区域。
+        if count < 2 and _MULTI_REGION_HINT_RE.search(text):
+            return 2
+        return count
+    except Exception:  # pragma: no cover - 正则/数据异常不影响降级
+        return 0
+
+
+def _region_scope_reply() -> str:
+    """多区域对比撞预算时才有意义的建议（正文不再假装是「连不上模型」）。"""
+    return (
+        "这次没算成，跟数据无关：这一问要逐个区域分别取数，一轮接一轮算下来"
+        "超出了单次能处理的量，中途停下了。\n\n"
+        "**页面状态没有变化**：底图、图层、时间轴、点查都能正常用。\n\n"
+        "把范围收窄一点就能出数：\n"
+        "1. 需要几个区域对比时，**一次点名 2~3 个**，比如"
+        "「河南、山东、河北的土壤水分平均值分别是多少」，我一次算完；\n"
+        "2. 或者先问一个省，拿到数再接着问下一个。"
+    )
+
+
+def _llm_down_reply(detail: str, *, message: str = "") -> str:
     # 预算超限不是「连不上模型」——以前一律套「没连上模型服务」，用户会去
     # 查网络/换模型，白折腾。这里单独分流，直说「本次任务预算不足」（2026-10-29 用户要求）。
     # 2026-10-29 复盘后修文案：原版建议「新建会话」，但实测会话历史压缩后只占
@@ -194,15 +278,7 @@ def _llm_down_reply(detail: str) -> str:
         # 对外不提 token / 上限 / 步骤数 / 工具名——那是内部机制，用户只需要
         # 「怎么问才能出数」。旧文案讲了「累计输入超过单次上限」还教用户去左侧点选
         # 图层省步骤，实测把用户带进系统内部视角，且依然拿不到答案。
-        return (
-            "这次没算成，跟数据无关：这一问要逐个区域分别取数，一轮接一轮算下来"
-            "超出了单次能处理的量，中途停下了。\n\n"
-            "**地图本身不受影响**：底图、图层、时间轴、点查都能正常用。\n\n"
-            "把范围收窄一点就能出数：\n"
-            "1. 需要几个区域对比时，**一次点名 2~3 个**，比如"
-            "「河南、山东、河北的土壤水分平均值分别是多少」，我一次算完；\n"
-            "2. 或者先问一个省，拿到数再接着问下一个。"
-        )
+        return _request_limit_reply(message=message)
     # 余额不足（402）必须单独分流：它的报错里带「HTTP 402」，会被下面
     # _friendly_tool_error 的 HTTP 状态码兜底翻成「取数服务暂时不可用」——
     # 2026-11-08 实测就撞到这一条，用户看到「取数服务不可用」会去查存储/网关，
@@ -211,7 +287,7 @@ def _llm_down_reply(detail: str) -> str:
         return (
             "地图助手这次没答，跟数据无关：**模型服务的账号余额用完了**——"
             "服务端回的是「余额不足」，所以连问题都没送到模型那里。\n\n"
-            "**地图本身不受影响**：底图、图层、时间轴、点查都能正常用；"
+            "**页面状态没有变化**：底图、图层、时间轴、点查都能正常用；"
             "已算过的数也不会变。\n\n"
             "恢复办法只有一个：到模型服务商控制台把余额补上，不用改任何配置，"
             "充完下一条提问就能正常答。"
@@ -219,13 +295,153 @@ def _llm_down_reply(detail: str) -> str:
     hint = _friendly_tool_error(detail) or "模型服务没有响应"
     return (
         f"地图助手这次没连上模型服务：{hint}。\n\n"
-        "**地图不受影响**：底图、图层、时间轴、点查都能正常用。\n\n"
+        "**页面状态没有变化**：底图、图层、时间轴、点查都能正常用。\n\n"
         "可以稍后重试，或在「设置 → Agent 配置」里换一个模型 / 换成「演示（无网）」。"
     )
 
 
-def _request_limit_reply() -> str:
-    return "这次请求内容较多，没能完整处理。请把操作拆成两句话后再试。"
+def _request_limit_reply(*, message: str = "") -> str:
+    """超出单次处理量时的答复。
+
+    只在用户真的在对比多个区域时才给「收窄到 2~3 个省」的建议；其余情况一律
+    通用文案——显示图层、切日期、问单位这些请求撞预算时，多区域建议毫无用处。
+    """
+    if _region_mention_count(message) >= 2:
+        return _region_scope_reply()
+    return (
+        "这次请求内容较多，没能完整处理。请把操作拆成两句话后再试。\n\n"
+        "**页面状态没有变化**：没有执行任何图层、时间轴或底图操作。"
+    )
+
+
+#: 模型不可用时，允许本地规则接管的界面动作。全部是**纯展示**：不产出任何数值。
+#: 与 mock_orchestrator 实际会下发的集合一一对应，多一个都不放行。
+_LOCAL_TAKEOVER_INTENTS = frozenset(
+    {
+        "set_layer_visibility",
+        "set_layer_opacity",
+        "remove_layer",
+        "reorder_layer",
+        "switch_basemap",
+        "set_timeline",
+        "set_timeline_playing",
+        "fit_china",
+        "fit_layer",
+        "locate_coordinate",
+    }
+)
+
+#: 本地接管的前置条件一：这句话得像个界面操作。
+_LOCAL_TAKEOVER_ALLOW_RE = re.compile(
+    r"显示|打开|关掉|隐藏|关闭|移除|删除|去掉|置顶|置底|不透明度|透明度|"
+    r"缩放|定位|居中|放大|底图|天地图|高德|影像|时间轴|播放|暂停|勾选",
+    re.I,
+)
+
+#: 本地接管的前置条件二：这句话不能是在要数值。要数据一律不接管——
+#: 本地规则算不出数，硬答就是编造（这是本文件反复踩过的红线）。
+#: 注意**不能把「平均」单独当禁词**：图层分组名就叫「平均散射约束模型组」，
+#: 一拦就把「显示平均散射约束模型组里的植被光学厚度」这类正常显隐请求误伤。
+_LOCAL_TAKEOVER_DENY_RE = re.compile(
+    r"查询|统计|计算|均值|平均值|多少|数值|取数|趋势|分布|面积|占比|单位|"
+    r"最大值|最小值|极值|对比|相关|毫米",
+    re.I,
+)
+
+_LOCAL_TAKEOVER_SUFFIX = (
+    "\n\n> 这条由本地规则直接处理（云端模型暂时不可用）。"
+    "上面列出的页面操作已下发，实际效果以页面为准。"
+)
+
+
+def _local_takeover(
+    message: str,
+    *,
+    client_context: dict[str, Any] | None,
+    session_id: str | None,
+) -> dict[str, Any] | None:
+    """模型不可用时，用本地规则接管「纯界面操作」。
+
+    为什么要有这一条：以前模型一报错就走 ``_llm_down_reply`` 回一段固定文案，
+    ``ui_intents`` 是空的——用户说「显示植被光学厚度」，本地规则明明能确定地
+    下发，却得到一句「抱歉」。这是能力白丢，不是安全。
+
+    边界（两条都必须满足，任一不满足就返回 ``None`` 回落固定文案）：
+
+    1. 句子像界面操作（``_LOCAL_TAKEOVER_ALLOW_RE``）且不像要数值
+       （``_LOCAL_TAKEOVER_DENY_RE``）；
+    2. 规则确实认出了动作，且下发的意图**全部**在 ``_LOCAL_TAKEOVER_INTENTS``
+       白名单内——名单外的一律不接管，宁可什么都不做。
+    """
+    text = (message or "").strip()
+    if not text:
+        return None
+    if _LOCAL_TAKEOVER_DENY_RE.search(text):
+        return None
+    if not _LOCAL_TAKEOVER_ALLOW_RE.search(text):
+        return None
+    try:
+        local = mock_chat(
+            text,
+            session_id=session_id,
+            client_context=client_context,
+            state=None,
+        )
+    except Exception:  # pragma: no cover - 规则引擎自身异常不该放大成 500
+        logger.debug("local takeover failed", exc_info=True)
+        return None
+    intents = [i for i in (local.get("ui_intents") or []) if isinstance(i, dict)]
+    if not intents:
+        return None
+    if not {str(i.get("name") or "") for i in intents} <= _LOCAL_TAKEOVER_INTENTS:
+        return None
+    reply = str(local.get("reply") or "").strip()
+    if not reply:
+        return None
+    return {"reply": reply + _LOCAL_TAKEOVER_SUFFIX, "ui_intents": intents}
+
+
+def _degraded_or_local(
+    *,
+    message: str,
+    client_context: dict[str, Any] | None,
+    session_id: str | None,
+    detail: str,
+    reason: str,
+    on_event: EventCallback | None,
+) -> dict[str, Any]:
+    """模型不可用时的统一出口：先让本地规则接管，接不住才说「做不到」。
+
+    两种情况都保证：``ui_intents`` 里只有本地规则**已经确定**的动作（没接住就是空），
+    正文明确说页面有没有变化，不暴露接口/服务器异常细节。
+    """
+    takeover = _local_takeover(
+        message,
+        client_context=client_context,
+        session_id=session_id,
+    )
+    if takeover is not None:
+        # 「不要打开 X」这类否定句即使规则给出了意图，也必须清空（同正常路径）。
+        takeover = _guard_read_only_ui_intents(message, takeover)
+        if takeover.get("ui_intents"):
+            return _degraded_result(
+                session_id=session_id,
+                reply=str(takeover.get("reply") or ""),
+                provider="degraded",
+                reason=f"本地规则接管：{reason}",
+                on_event=on_event,
+                ui_intents=[
+                    i for i in takeover.get("ui_intents") or [] if isinstance(i, dict)
+                ],
+                summary="模型不可用，已由本地规则接管这条界面操作",
+            )
+    return _degraded_result(
+        session_id=session_id,
+        reply=_llm_down_reply(detail, message=message),
+        provider="degraded",
+        reason=reason,
+        on_event=on_event,
+    )
 
 
 def _prompt_token_budget() -> int:
@@ -4145,7 +4361,24 @@ def _run_chat_impl(
         tools=budget_tools,
     )
     if budget and est_in > budget:
-        reply = _request_limit_reply()
+        # 超预算也不该「一刀切什么都不做」：本地规则能确定的纯界面操作照常下发，
+        # 接不住才回「没能处理完」。
+        _takeover = _local_takeover(
+            message, client_context=client_context, session_id=sid
+        )
+        if _takeover is not None:
+            _takeover = _guard_read_only_ui_intents(message, _takeover)
+            _takeover_intents = [
+                i for i in _takeover.get("ui_intents") or [] if isinstance(i, dict)
+            ]
+            if _takeover_intents:
+                return finish_direct(
+                    str(_takeover.get("reply") or ""),
+                    provider_suffix="budget-local",
+                    summary="超出输入预算，已由本地规则接管这条界面操作",
+                    intents=_takeover_intents,
+                )
+        reply = _request_limit_reply(message=message)
         steps.append(
             {
                 "type": "thought",
@@ -5494,28 +5727,34 @@ def run_chat(
         raise
     except AgentRequestLimitError as exc:
         logger.info("agent request limited: %s", exc)
-        return _degraded_result(
+        # 撞预算不等于「做不到」：像「显示植被光学厚度」这种本地规则完全能确定
+        # 的动作仍然照做，其余才回「没能处理完」。原先这里无条件返回固定文案，
+        # 用户点个图层也收到「请求内容较多」（2026-11-11 用户复测）。
+        return _degraded_or_local(
+            message=message,
+            client_context=client_context,
             session_id=session_id,
-            reply=_request_limit_reply(),
-            provider="limited",
+            detail=str(exc),
             reason=str(exc),
             on_event=on_event,
         )
     except LlmClientError as exc:
         logger.warning("agent degraded: LLM error: %s", exc)
-        return _degraded_result(
+        return _degraded_or_local(
+            message=message,
+            client_context=client_context,
             session_id=session_id,
-            reply=_llm_down_reply(str(exc)),
-            provider="degraded",
+            detail=str(exc),
             reason=str(exc),
             on_event=on_event,
         )
     except Exception as exc:
         logger.exception("agent degraded: unexpected failure")
-        return _degraded_result(
+        return _degraded_or_local(
+            message=message,
+            client_context=client_context,
             session_id=session_id,
-            reply=_llm_down_reply(str(exc)),
-            provider="degraded",
+            detail=str(exc),
             reason=f"{type(exc).__name__}: {exc}",
             on_event=on_event,
         )

@@ -929,9 +929,26 @@ class TestOverBudgetReplyWording:
     def test_tells_user_how_to_narrow(self) -> None:
         from app.services.agent.orchestrator import _llm_down_reply
 
-        out = _llm_down_reply("工具多轮累计输入预估约 51353 token，超过单次上限 40000 token，已中止。")
+        # 2026-11-11：这段建议改成只对「多区域对比」的请求生效——原先无条件返回，
+        # 用户只想显示一个图层也会被建议「一次点名 2~3 个省」。断言本身不变，
+        # 但必须把原话带进来，文案才该出现（docstring 里描述的正是这一问）。
+        out = _llm_down_reply(
+            "工具多轮累计输入预估约 51353 token，超过单次上限 40000 token，已中止。",
+            message="哪些省的土壤水分比较高？给我前三个",
+        )
         assert "2~3" in out or "2-3" in out, "要告诉用户一次点名几个区域"
         assert "平均值" in out, "要给出可照抄的问法示例"
+
+    def test_single_layer_op_gets_no_region_advice(self) -> None:
+        """显示图层撞预算时，不该收到「收窄到 2~3 个省」这种毫不相干的建议。"""
+        from app.services.agent.orchestrator import _llm_down_reply
+
+        out = _llm_down_reply(
+            "工具多轮累计输入预估约 51353 token，超过单次上限 40000 token，已中止。",
+            message="显示植被光学厚度",
+        )
+        assert "2~3" not in out and "2-3" not in out
+        assert "页面状态没有变化" in out
 
 
 class TestVersionSwitchBeatsInheritance:
