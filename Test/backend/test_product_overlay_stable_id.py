@@ -83,6 +83,36 @@ def test_stable_overlay_id_with_layer_id(raster_product, tmp_path, monkeypatch):
     assert assets["overlay_layer_id"] == "imported-aridity-cn-00"
 
 
+def test_stable_overlay_id_is_scoped_to_run_owner(
+    raster_product, tmp_path, monkeypatch
+):
+    imports_root = tmp_path / "imports"
+    from app.data_io.services import paths as import_paths
+    from app.data_io.services import raster_commit as commit_mod
+    from app.data_io.services import raster_register as register_mod
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    for mod in (import_paths, register_mod, commit_mod):
+        if hasattr(mod, "imports_dir"):
+            monkeypatch.setattr(mod, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(import_paths, "imports_dir", lambda: imports_root)
+    monkeypatch.setattr(SQLiteWorkflowRepository, "get_run_user_id", lambda *_: 17)
+    import_paths.ensure_imports_root()
+
+    from app.services.python_provider_result_builder import PythonProviderResultBuilder
+
+    refs = PythonProviderResultBuilder().build_product_map_layer_refs(
+        run_id="run-owner-aaa11101",
+        requested_at=datetime.now(timezone.utc),
+        payload=_payload("aridity-cn"),
+        result_dto={"products": [raster_product]},
+    )
+
+    assert refs
+    assets = refs[0].inline_data["layer_assets"]
+    assert assets["overlay_layer_id"] == "imported-aridity-cn-u17-00"
+
+
 def test_stable_id_sanitizes_illegal_chars(raster_product, tmp_path, monkeypatch):
     r"""layer_id 含 :/\ 等非法字符时 sanitize 为 _（safe_import_child 防护）。
 

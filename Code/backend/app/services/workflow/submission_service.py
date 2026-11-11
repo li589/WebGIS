@@ -172,7 +172,7 @@ class WorkflowSubmissionService:
         # Upgrade standard → heavy when seed meta or heavy modules are present
         apply_resource_profile_to_payload(payload)
         # Same layer+tool analysis: cancel prior non-terminal run before accept.
-        cancelled_prior = self._cancel_exclusive_analysis_runs(payload)
+        cancelled_prior = self._cancel_exclusive_analysis_runs(payload, user_id=user_id)
         now = datetime.now(UTC)
         run_id = f"run-{uuid4().hex[:12]}"
         status_url = self._transitions.workflow_status_url(run_id)
@@ -301,7 +301,12 @@ class WorkflowSubmissionService:
         key = str(params.get("analysis_exclusivity_key") or "").strip()
         return key or None
 
-    def _cancel_exclusive_analysis_runs(self, payload: WorkflowSubmitRequest) -> int:
+    def _cancel_exclusive_analysis_runs(
+        self,
+        payload: WorkflowSubmitRequest,
+        *,
+        user_id: int | None = None,
+    ) -> int:
         """Cancel non-terminal runs sharing ``analysis_exclusivity_key``.
 
         Returns the number of runs cancelled (best-effort; race-safe via lifecycle CAS).
@@ -317,6 +322,8 @@ class WorkflowSubmissionService:
         cancelled = 0
         for run in self._repository.list_runs():
             if run.status in terminal:
+                continue
+            if self._repository.get_run_user_id(run.run_id) != user_id:
                 continue
             meta = dict(run.executor_metadata or {})
             if str(meta.get("analysis_exclusivity_key") or "").strip() == key:

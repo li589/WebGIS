@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import (
     check_resource_access,
+    check_resource_mutation_access,
     get_request_user,
     require_admin,
     require_data_transfer_access,
@@ -829,7 +830,7 @@ async def vector_feature_patch(
     body: FeaturePatchBody,
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
-    check_resource_access(cred, "layer", layer_id)
+    check_resource_mutation_access(cred, "layer", layer_id)
     try:
         return patch_feature_attribute(layer_id, feature_index, body.field, body.value)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -845,7 +846,7 @@ async def vector_feature_batch(
     body: FeatureBatchBody,
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
-    check_resource_access(cred, "layer", layer_id)
+    check_resource_mutation_access(cred, "layer", layer_id)
     try:
         return batch_set_feature_attribute(
             layer_id, body.indexes, body.field, body.value
@@ -863,7 +864,7 @@ async def vector_field_add(
     body: FieldAddBody,
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
-    check_resource_access(cred, "layer", layer_id)
+    check_resource_mutation_access(cred, "layer", layer_id)
     try:
         return add_vector_field(layer_id, body.name, body.default)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -879,7 +880,7 @@ async def vector_field_delete(
     name: str,
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
-    check_resource_access(cred, "layer", layer_id)
+    check_resource_mutation_access(cred, "layer", layer_id)
     try:
         return delete_vector_field(layer_id, name)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -895,7 +896,7 @@ async def vector_rename_field(
     body: VectorRenameBody,
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
-    check_resource_access(cred, "layer", layer_id)
+    check_resource_mutation_access(cred, "layer", layer_id)
     try:
         return rename_vector_field(layer_id, body.old_name, body.new_name)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -912,7 +913,7 @@ async def patch_imported_layer_display_name(
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     """更新导入图层显示名（meta.display_name / label），不影响物理文件名。"""
-    check_resource_access(cred, "layer", layer_id)
+    check_resource_mutation_access(cred, "layer", layer_id)
     try:
         return import_paths.update_imported_layer_display_name(
             layer_id, body.display_name
@@ -930,7 +931,7 @@ async def delete_imported_layer(
 ) -> dict[str, Any]:
     """删除已导入矢量/栅格落盘目录（仅允许 imported-* 前缀）。"""
     safe = Path(layer_id).name
-    check_resource_access(cred, "layer", safe)
+    check_resource_mutation_access(cred, "layer", safe)
     if safe != layer_id or ".." in layer_id or "/" in layer_id or "\\" in layer_id:
         raise HTTPException(status_code=400, detail="非法 layer_id")
     if not (safe.startswith("imported-") or safe.startswith("imported_")):

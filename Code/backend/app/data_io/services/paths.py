@@ -270,6 +270,15 @@ def stable_import_layer_id(*parts: str) -> str:
     return f"imported-{digest}"
 
 
+def owner_scoped_layer_id(layer_id: str, owner_user_id: int | None) -> str:
+    """Namespace authenticated-user assets while preserving legacy ownerless ids."""
+    if owner_user_id is None:
+        return layer_id
+    raw = str(layer_id or "").strip()
+    suffix = f"-u{int(owner_user_id)}"
+    return raw if raw.endswith(suffix) else f"{raw}{suffix}"
+
+
 def _mtime(path: Path) -> float:
     try:
         return float(path.stat().st_mtime)

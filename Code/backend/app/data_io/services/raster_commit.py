@@ -45,6 +45,7 @@ def find_existing_science_layer(
     variable_id: str,
     grid_preset: str | None,
     time_index: int,
+    owner_user_id: int | None = None,
 ) -> str | None:
     """按源文件名+变量+网格+时相查找已有 imported 图层（兼容旧随机 id）。"""
     import_paths.ensure_imports_root()
@@ -54,8 +55,11 @@ def find_existing_science_layer(
     want_grid = str(grid_preset or "")
     want_time = int(time_index)
 
-    stable = import_paths.stable_import_layer_id(
-        want_src, want_var, want_grid, str(want_time)
+    stable = import_paths.owner_scoped_layer_id(
+        import_paths.stable_import_layer_id(
+            want_src, want_var, want_grid, str(want_time)
+        ),
+        owner_user_id,
     )
     if (import_paths.imports_dir() / stable).exists():
         return stable
@@ -67,6 +71,13 @@ def find_existing_science_layer(
             continue
         meta = _read_layer_fingerprint(child)
         if not meta:
+            continue
+        meta_owner = meta.get("owner_user_id")
+        try:
+            meta_owner = int(meta_owner) if meta_owner is not None else None
+        except (TypeError, ValueError):
+            meta_owner = None
+        if meta_owner != owner_user_id:
             continue
         science_source = str(meta.get("science_source") or "")
         source_filename = str(meta.get("source_filename") or "")
@@ -100,19 +111,24 @@ def _resolve_science_layer_id(
     grid_preset: str | None,
     time_index: int,
     conflict_policy: ConflictPolicy,
+    owner_user_id: int | None = None,
 ) -> tuple[str, bool]:
     """返回 (layer_id, replace_existing)。"""
-    base_id = import_paths.stable_import_layer_id(
-        Path(source_name).name,
-        variable_id,
-        str(grid_preset or ""),
-        str(int(time_index)),
+    base_id = import_paths.owner_scoped_layer_id(
+        import_paths.stable_import_layer_id(
+            Path(source_name).name,
+            variable_id,
+            str(grid_preset or ""),
+            str(int(time_index)),
+        ),
+        owner_user_id,
     )
     existing = find_existing_science_layer(
         source_name=source_name,
         variable_id=variable_id,
         grid_preset=grid_preset,
         time_index=time_index,
+        owner_user_id=owner_user_id,
     )
     # 覆盖时优先复用已有目录（含旧随机 id），避免配额净增
     target_id = existing or base_id
@@ -180,6 +196,7 @@ def commit_science_raster_variable(
         grid_preset=grid_preset or extract_meta.get("grid_preset"),
         time_index=time_index,
         conflict_policy=conflict_policy,
+        owner_user_id=owner_user_id,
     )
     extra_meta = {
         "science_source": path.name,
@@ -367,7 +384,10 @@ def commit_raster_upload(
     )
     ext = path.suffix.lower()
     if ext in {".tif", ".tiff"}:
-        layer_id = import_paths.stable_import_layer_id(Path(name).name, "geotiff")
+        layer_id = import_paths.owner_scoped_layer_id(
+            import_paths.stable_import_layer_id(Path(name).name, "geotiff"),
+            owner_user_id,
+        )
         dest = import_paths.imports_dir() / layer_id
         replace = conflict_policy == "overwrite" and dest.exists()
         if conflict_policy == "error" and dest.exists():

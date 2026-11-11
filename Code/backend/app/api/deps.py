@@ -364,3 +364,31 @@ def check_resource_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Resource access denied. Contact an administrator.",
         )
+
+
+def check_resource_mutation_access(
+    ctx: CredentialContext | None,
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Allow mutations only to admins, infrastructure, or the declared owner."""
+    if ctx is None:
+        if config.settings.user_auth_enabled:
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+        return
+    if ctx.role == "admin" or ctx.source in {"service_key", "dev_bypass"}:
+        return
+    if ctx.user_id is not None and resource_type == "layer":
+        from app.services.overlay_registry import is_overlay_owner
+
+        if is_overlay_owner(resource_id, ctx.user_id):
+            return
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only the resource owner or an admin can modify it.",
+    )

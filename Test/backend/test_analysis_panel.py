@@ -153,6 +153,7 @@ def test_exclusivity_cancel_then_accept(monkeypatch: pytest.MonkeyPatch):
     )
     repo.list_runs.return_value = [prior]
     repo.get_run_request_json.return_value = None
+    repo.get_run_user_id.return_value = None
 
     lifecycle = MagicMock()
     svc = WorkflowSubmissionService(repository=repo)
@@ -167,6 +168,44 @@ def test_exclusivity_cancel_then_accept(monkeypatch: pytest.MonkeyPatch):
     n = svc._cancel_exclusive_analysis_runs(payload)
     assert n == 1
     lifecycle.cancel_workflow_run.assert_called_once_with("run-old")
+
+
+def test_exclusivity_does_not_cancel_another_users_run():
+    from app.services.workflow.submission_service import WorkflowSubmissionService
+    from shared.contracts.api_contracts import (
+        ExecutionStatus,
+        WorkflowCommandType,
+        WorkflowRunStatusResponse,
+        WorkflowSubmitRequest,
+    )
+
+    repo = MagicMock()
+    repo.list_runs.return_value = [
+        WorkflowRunStatusResponse(
+            run_id="run-other-user",
+            status=ExecutionStatus.running,
+            command_type=WorkflowCommandType.analysis,
+            progress=40,
+            message="running",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            status_url="/x",
+            events_url="/y",
+            executor_metadata={"analysis_exclusivity_key": "layer-a:gis.clip"},
+        )
+    ]
+    repo.get_run_user_id.return_value = 2
+    lifecycle = MagicMock()
+    svc = WorkflowSubmissionService(repository=repo)
+    svc.set_lifecycle_service(lifecycle)
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        layer_id="layer-a",
+        parameters={"analysis_exclusivity_key": "layer-a:gis.clip"},
+    )
+
+    assert svc._cancel_exclusive_analysis_runs(payload, user_id=1) == 0
+    lifecycle.cancel_workflow_run.assert_not_called()
 
 
 def test_build_analysis_contour_request_injects_path(tmp_path: Path, monkeypatch):

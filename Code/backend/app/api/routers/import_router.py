@@ -23,7 +23,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import require_data_transfer_access
+from app.api.deps import (
+    check_resource_mutation_access,
+    get_request_user,
+    require_data_transfer_access,
+)
+from app.services.credential_resolver import CredentialContext
 from app.services.crs import crs_detector, crs_transformer
 from app.services.crs.crs_registry import to_api_payload, to_api_payload_expanded
 from app.data_io.services.paths import MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES
@@ -129,7 +134,10 @@ async def list_crs_options_expanded() -> dict[str, Any]:
 
 
 @router.post("/raster", dependencies=[Depends(require_data_transfer_access)])
-async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
+async def import_raster(
+    file: UploadFile = File(...),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """上传栅格文件（TIF），生成预览 PNG + bounds，动态注册为 overlay 图层。
 
     返回 ``{layer_id, bounds, source_crs, suggested_crs, needs_confirm}``。
@@ -248,6 +256,7 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
 
     # 生成 bounds JSON（保留源 CRS 的 bounds，confirm 阶段才转 WGS84）
     bounds: list[float] = [float(west), float(south), float(east), float(north)]
+    owner_user_id = cred.user_id if cred is not None else None
     bounds_data = {
         "bounds": bounds,
         "meta": {
@@ -270,6 +279,8 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
             "source_width": width,
             "source_height": height,
             "source_bands": count,
+            "owner_user_id": owner_user_id,
+            "published": False if owner_user_id is not None else True,
         },
     }
     bounds_path = dest_dir / "bounds.json"
@@ -282,6 +293,8 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
         OverlaySpec(
             layer_id=layer_id,
             overlay_dir=dest_dir,
+            owner_user_id=owner_user_id,
+            published=False if owner_user_id is not None else True,
             png_filename="preview.png",
             bounds_filename="bounds.json",
             category="static",
@@ -306,10 +319,14 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
 @router.delete(
     "/raster/{layer_id}", dependencies=[Depends(require_data_transfer_access)]
 )
-async def delete_imported_raster(layer_id: str) -> dict[str, Any]:
+async def delete_imported_raster(
+    layer_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """删除动态导入的栅格 overlay，并清理磁盘目录。"""
     if not layer_id.startswith("imported-"):
         raise HTTPException(status_code=400, detail="仅允许删除 imported-* 图层")
+    check_resource_mutation_access(cred, "layer", layer_id)
 
     # 安审 2026-08-21 S-1：layer_id 来自 URL（Windows 下 %5C 解码为 \ 可穿越），
     # rmtree 前必须校验（对齐 data_io router delete_imported_layer 的既有校验）。
@@ -332,8 +349,12 @@ async def delete_imported_raster(layer_id: str) -> dict[str, Any]:
 
 
 @router.post("/raster/confirm", dependencies=[Depends(require_data_transfer_access)])
-async def confirm_imported_raster(body: ConfirmRequest) -> dict[str, Any]:
+async def confirm_imported_raster(
+    body: ConfirmRequest,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """用户确认 CRS 后：重投影 PNG、重算 bounds、更新 overlay。"""
+    check_resource_mutation_access(cred, "layer", body.layer_id)
     try:
         return confirm_imported_raster_crs(
             body.layer_id,

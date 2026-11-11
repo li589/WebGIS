@@ -1387,11 +1387,6 @@ class PythonProviderResultBuilder:
         # 其当路径分隔符（Windows 报"目录名称无效"，2026-08-24 实测
         # analysis:test → mkdir imports/imported-analysis:test-00 失败）。
         safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
-        stable_layer_id = (
-            f"imported-{safe_layer_id}-{index:02d}"
-            if safe_layer_id
-            else f"imported-gis-{run_id[-8:]}-{index:02d}"
-        )
         # 产物 palette 对齐静态层（2026-08-24 用户需求）：generic raster 产物
         # 此前写死 viridis——静态层 descriptor 配了 style.palette（如 aridity-cn
         # 的 brg、hfp-cn 的 hfp-ramp，共 35 层）时，同层"静态 overlay→产物
@@ -1405,6 +1400,14 @@ class PythonProviderResultBuilder:
             from app.services.workflow_repository import SQLiteWorkflowRepository
 
             run_owner_user_id = SQLiteWorkflowRepository().get_run_user_id(run_id)
+            owner_segment = (
+                f"-u{int(run_owner_user_id)}" if run_owner_user_id is not None else ""
+            )
+            stable_layer_id = (
+                f"imported-{safe_layer_id}{owner_segment}-{index:02d}"
+                if safe_layer_id
+                else f"imported-gis-{run_id[-8:]}{owner_segment}-{index:02d}"
+            )
             ownership_meta = (
                 {
                     "owner_user_id": int(run_owner_user_id),

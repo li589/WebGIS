@@ -63,6 +63,31 @@ def register_geotiff_as_imported(
             raise ValueError(
                 f"图层已存在: {layer_id}（可改用覆盖策略 conflict_policy=overwrite）"
             )
+        existing_meta: dict[str, Any] = {}
+        for meta_path in (dest_dir / "meta.json", dest_dir / "bounds.json"):
+            try:
+                loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if meta_path.name == "bounds.json" and isinstance(loaded, dict):
+                loaded = loaded.get("meta")
+            if isinstance(loaded, dict):
+                existing_meta = loaded
+                break
+        existing_owner = existing_meta.get("owner_user_id")
+        requested_owner = (extra_meta or {}).get("owner_user_id")
+        try:
+            existing_owner = int(existing_owner) if existing_owner is not None else None
+        except (TypeError, ValueError):
+            existing_owner = None
+        try:
+            requested_owner = (
+                int(requested_owner) if requested_owner is not None else None
+            )
+        except (TypeError, ValueError):
+            requested_owner = None
+        if existing_owner != requested_owner:
+            raise ValueError(f"拒绝覆盖其他用户或公共图层: {layer_id}")
         replace_bytes = dir_size_bytes(dest_dir)
         with contextlib.suppress(Exception):
             unregister_overlay(layer_id)
