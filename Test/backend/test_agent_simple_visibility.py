@@ -6,7 +6,12 @@ search_layers / get_layer_meta 查满 4 跳预算，没轮到下发显示就答�
 显隐没有取数语义、目标层往往就挂在页面上，应由本地规则一步定位一步下发。
 """
 
-from app.services.agent.orchestrator import _resolve_simple_visibility
+from app.services.agent.orchestrator import (
+    _guard_layer_variable_intents,
+    _request_limit_reply,
+    _resolve_deterministic_map_actions,
+    _resolve_simple_visibility,
+)
 
 
 def _ctx(*names: str) -> dict:
@@ -78,3 +83,72 @@ def test_missing_layer_returns_none():
     """目标层不在页面上时返回 None（不瞎回落替代）。"""
     ctx = _ctx("土壤水分")
     assert _resolve_simple_visibility("打开 CMFD 降水图层", ctx) is None
+
+
+def test_show_precip_and_switch_date_is_deterministic():
+    ctx = {
+        "active_layers": [
+            {
+                "catalog_id": "cmfd-precip-cn",
+                "name": "CMFD 区域降水",
+                "visible": False,
+            },
+            {
+                "catalog_id": "imported-sm",
+                "name": "土壤水分",
+                "visible": True,
+            },
+        ]
+    }
+    intents = _resolve_deterministic_map_actions(
+        "显示 CMFD 降水图层，并把日期切到 2025-07-15", ctx
+    )
+    assert intents is not None
+    assert [item["name"] for item in intents] == [
+        "set_layer_visibility",
+        "set_timeline",
+    ]
+    assert intents[0]["args"]["catalog_id"] == "cmfd-precip-cn"
+    assert intents[1]["args"] == {
+        "date": "2025-07-15",
+        "catalog_id": "cmfd-precip-cn",
+    }
+
+
+def test_hide_two_layers_emits_two_intents():
+    ctx = _ctx("CMFD 区域降水", "土壤水分")
+    intents = _resolve_deterministic_map_actions(
+        "隐藏 CMFD 区域降水和土壤水分图层", ctx
+    )
+    assert intents is not None
+    hidden = [i for i in intents if i["name"] == "set_layer_visibility"]
+    assert len(hidden) == 2
+    assert all(i["args"]["visible"] is False for i in hidden)
+
+
+def test_precip_request_rejects_soil_moisture_intent():
+    out = _guard_layer_variable_intents(
+        "显示降水图层",
+        {
+            "reply": "已显示。",
+            "ui_intents": [
+                {
+                    "name": "set_layer_visibility",
+                    "args": {
+                        "catalog_id": "imported-sm",
+                        "display_name": "土壤水分",
+                        "visible": True,
+                    },
+                }
+            ],
+        },
+    )
+    assert out["ui_intents"] == []
+    assert "没有执行" in out["reply"]
+
+
+def test_request_limit_reply_does_not_claim_model_is_down():
+    reply = _request_limit_reply()
+    assert "模型不可用" not in reply
+    assert "token" not in reply.lower()
+    assert "拆成两句话" in reply

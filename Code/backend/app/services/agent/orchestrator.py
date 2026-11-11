@@ -75,6 +75,10 @@ _CLIENT_CONTEXT_MAX_LAYERS = 40
 EventCallback = Callable[[str, dict[str, Any]], None]
 
 
+class AgentRequestLimitError(RuntimeError):
+    """The request exceeded an internal per-turn budget; the model is not down."""
+
+
 def _max_tool_hops() -> int:
     """Bounded multi-hop tool rounds (Phase C). Env: BACKEND_AGENT_MAX_TOOL_HOPS."""
     raw = os.getenv("BACKEND_AGENT_MAX_TOOL_HOPS", "4")
@@ -218,6 +222,10 @@ def _llm_down_reply(detail: str) -> str:
         "**地图不受影响**：底图、图层、时间轴、点查都能正常用。\n\n"
         "可以稍后重试，或在「设置 → Agent 配置」里换一个模型 / 换成「演示（无网）」。"
     )
+
+
+def _request_limit_reply() -> str:
+    return "这次请求内容较多，没能完整处理。请把操作拆成两句话后再试。"
 
 
 def _prompt_token_budget() -> int:
@@ -3583,7 +3591,11 @@ def _run_chat_impl(
             "session_id": sid,
             "reply": reply,
             "ui_intents": ui_intents,
-            "provider": f"{provider_kind}-{provider_suffix}",
+            "provider": (
+                provider_kind
+                if not provider_suffix
+                else f"{provider_kind}-{provider_suffix}"
+            ),
             "profile_id": profile_id,
             "usage": usage,
             "steps": list(steps),
@@ -3683,6 +3695,15 @@ def _run_chat_impl(
         }
         _emit_stream_tail(on_event, reply=knowledge_reply, ui_intents=[])
         return out
+
+    deterministic_actions = _resolve_deterministic_map_actions(message, client_context)
+    if deterministic_actions is not None:
+        return finish_direct(
+            _map_actions_reply(deterministic_actions),
+            provider_suffix="" if protocol == "demo" else "map-actions-rule",
+            summary="多步骤地图操作已拆解并按顺序下发，未调用模型",
+            intents=deterministic_actions,
+        )
 
     # 纯时间切换属于确定性的界面操作，不需要携带完整目录与工具集询问模型。
     # 含“查询/统计/多少”等取数意图的复合请求仍走正常工具链。
@@ -4099,15 +4120,7 @@ def _run_chat_impl(
         tools=budget_tools,
     )
     if budget and est_in > budget:
-        reply = (
-            f"这次提问预估需要约 {est_in} token，超过单次上限 {budget} token，"
-            "已中止，没有发送给模型。\n\n"
-            "**地图本身不受影响**：底图、图层、时间轴、点查都能正常用。\n\n"
-            "这一问多半要连着查几步（定位图层 → 核对日期 → 统计），可以少走一步：\n"
-            "1. 先在左侧把要问的那一层点上（让它成为当前选中的层），"
-            "再问「这一层 2025-12-15 广州市平均是多少」；\n"
-            "2. 或者拆成两句问：先问「哪一层是 XX 产品」，拿到层名后再单独问数值。"
-        )
+        reply = _request_limit_reply()
         steps.append(
             {
                 "type": "thought",
@@ -4181,10 +4194,26 @@ def _run_chat_impl(
             # （意图里的 catalog_id 是模型的请求参数，可能已被粘性纠正掉）。
             tool_layer_state: dict[str, str] = {}
             max_hops = _max_tool_hops()
+            seen_server_calls: set[str] = set()
             for hop in range(1, max_hops + 1):
                 all_uses = _anthropic_tool_uses(data.get("content"))
                 if not all_uses:
                     break
+                current_signatures = {
+                    f"{c['name']}:{json.dumps(c.get('args') or {}, sort_keys=True, ensure_ascii=False)}"
+                    for c in all_uses
+                    if c["name"] in _SERVER_TOOLS
+                }
+                if current_signatures and current_signatures <= seen_server_calls:
+                    server_calls = []
+                    steps.append(
+                        {
+                            "type": "thought",
+                            "summary": "检测到重复工具请求，已停止重复查询",
+                        }
+                    )
+                    break
+                seen_server_calls.update(current_signatures)
                 # 整轮总超时：到点停止继续取数，跳出后用已有结果收尾，不再外呼。
                 if _deadline is not None and time.monotonic() > _deadline:
                     _timed_out = True
@@ -4287,7 +4316,7 @@ def _run_chat_impl(
                         tools=round_tools_anthropic,
                     )
                     if hop_est > budget:
-                        raise ValueError(
+                        raise AgentRequestLimitError(
                             f"工具多轮累计输入预估约 {hop_est} token，"
                             f"超过单次上限 {budget} token，已中止。"
                         )
@@ -4432,10 +4461,26 @@ def _run_chat_impl(
         tool_layer_state: dict[str, str] = {}
         max_hops = _max_tool_hops()
         oai_key = api_key or ("ollama" if provider_kind == "ollama" else None)
+        seen_server_calls: set[str] = set()
 
         for hop in range(1, max_hops + 1):
             if not calls:
                 break
+            current_signatures = {
+                f"{c['name']}:{json.dumps(c.get('args') or {}, sort_keys=True, ensure_ascii=False)}"
+                for c in calls
+                if c.get("name") in _SERVER_TOOLS
+            }
+            if current_signatures and current_signatures <= seen_server_calls:
+                server_calls = []
+                steps.append(
+                    {
+                        "type": "thought",
+                        "summary": "检测到重复工具请求，已停止重复查询",
+                    }
+                )
+                break
+            seen_server_calls.update(current_signatures)
             hops_used = hop
             # 整轮总超时：到点停止继续取数，跳出后用已有结果收尾，不再外呼。
             if _deadline is not None and time.monotonic() > _deadline:
@@ -4537,7 +4582,7 @@ def _run_chat_impl(
                     tools=round_tools_openai,
                 )
                 if hop_est > budget:
-                    raise ValueError(
+                    raise AgentRequestLimitError(
                         f"工具多轮累计输入预估约 {hop_est} token，"
                         f"超过单次上限 {budget} token，已中止。"
                     )
@@ -4678,7 +4723,7 @@ def _run_chat_impl(
         }
         _emit_stream_tail(on_event, reply=reply, ui_intents=intents)
         return out
-    except LlmClientError:
+    except (LlmClientError, AgentRequestLimitError):
         raise
     except Exception as exc:
         logger.exception("Agent LLM call failed profile=%s", profile_id)
@@ -4995,6 +5040,122 @@ _NEGATION_OR_READONLY_HINT = re.compile(
     re.I,
 )
 
+_MAP_ACTION_SPLIT = re.compile(r"(?:、|，|,|；|;|以及|并且|同时|和|及|再|然后)")
+
+
+def _resolve_deterministic_map_actions(
+    message: str, client_context: dict[str, Any] | None
+) -> list[dict[str, Any]] | None:
+    """Resolve common multi-step layer/date commands without an LLM tool loop."""
+    text = str(message or "").strip()
+    if not text or _NEGATION_OR_READONLY_HINT.search(text):
+        return None
+    if re.search(r"查询|统计|计算|均值|平均值|多少|数值|取数|工作流|运行", text):
+        return None
+    has_visibility = bool(
+        re.search(r"显示|打开|添加|隐藏|关掉|关闭显示|hide|show", text, re.I)
+    )
+    has_date = bool(
+        re.search(r"切到|切至|跳到|日期|时间轴|设到|设为|改到", text)
+        and re.search(r"(?:19|20)\d{2}(?:[-/年]\d{1,2}){2}|(?<!\d)\d{8}(?!\d)", text)
+    )
+    if not has_visibility and not has_date:
+        return None
+    try:
+        from app.services.agent import mock_orchestrator as _mo
+
+        layers = _mo._normalize_layers(client_context)
+        intents: list[dict[str, Any]] = []
+        seen: set[tuple[str, bool]] = set()
+        inherited_visible = not bool(re.search(r"隐藏|关掉|关闭显示|hide", text, re.I))
+        clauses = [p.strip() for p in _MAP_ACTION_SPLIT.split(text) if p.strip()]
+        for clause in clauses:
+            if not re.search(
+                r"图层|降水|土壤水|VOD|植被光学|ω|omega|散射", clause, re.I
+            ):
+                continue
+            pick = _mo._resolve_layer(clause, layers, allow_demo_fallback=False)
+            if pick is None:
+                pick = _mo._catalog_pick(clause)
+            if pick is None:
+                # 第二个并列对象常省略动作词；用整句再解析一次作为最后尝试。
+                pick = _mo._resolve_layer(clause, layers, allow_demo_fallback=True)
+            if pick is None:
+                continue
+            if re.search(r"隐藏|关掉|关闭显示|hide", clause, re.I):
+                visible = False
+            elif re.search(r"显示|打开|添加|show", clause, re.I):
+                visible = True
+            else:
+                visible = inherited_visible
+            key = (pick.catalog_id, visible)
+            if key in seen:
+                continue
+            seen.add(key)
+            intents.append(
+                {
+                    "name": "set_layer_visibility",
+                    "args": {
+                        "catalog_id": pick.catalog_id,
+                        "visible": visible,
+                        "display_name": pick.name,
+                    },
+                }
+            )
+        if has_date:
+            day = _mo._parse_date_arg(text)
+            if day:
+                args: dict[str, Any] = {"date": day}
+                shown = [
+                    i
+                    for i in intents
+                    if i["name"] == "set_layer_visibility"
+                    and i["args"].get("visible") is True
+                ]
+                if shown:
+                    args["catalog_id"] = shown[-1]["args"]["catalog_id"]
+                intents.append({"name": "set_timeline", "args": args})
+        if not intents:
+            return None
+        visibility_count = sum(
+            1 for item in intents if item["name"] == "set_layer_visibility"
+        )
+        # 单一显隐继续走既有捷径/模型路径；这里只接管真正的复合操作。
+        if has_visibility and not has_date and visibility_count < 2:
+            return None
+        # A composite request must not be partially claimed as successful.
+        if has_visibility and not any(
+            i["name"] == "set_layer_visibility" for i in intents
+        ):
+            return None
+        if has_date and not any(i["name"] == "set_timeline" for i in intents):
+            return None
+        return intents
+    except Exception:  # pragma: no cover
+        logger.debug("deterministic map action parsing failed", exc_info=True)
+        return None
+
+
+def _map_actions_reply(intents: list[dict[str, Any]]) -> str:
+    shown: list[str] = []
+    hidden: list[str] = []
+    day = ""
+    for intent in intents:
+        args = intent.get("args") if isinstance(intent.get("args"), dict) else {}
+        if intent.get("name") == "set_layer_visibility":
+            name = str(args.get("display_name") or args.get("catalog_id") or "图层")
+            (shown if args.get("visible") is True else hidden).append(name)
+        elif intent.get("name") == "set_timeline":
+            day = str(args.get("date") or "")
+    parts: list[str] = []
+    if shown:
+        parts.append("已显示" + "、".join(f"「{x}」" for x in shown))
+    if hidden:
+        parts.append("已隐藏" + "、".join(f"「{x}」" for x in hidden))
+    if day:
+        parts.append(f"日期已切换到 {day}")
+    return "；".join(parts) + "。"
+
 
 def _resolve_simple_visibility(
     message: str, client_context: dict[str, Any] | None
@@ -5110,6 +5271,70 @@ def _guard_read_only_ui_intents(message: str, result: dict[str, Any]) -> dict[st
     return result
 
 
+def _explicit_map_variable(text: str) -> str | None:
+    cleaned = str(text or "")
+    hits: set[str] = set()
+    if re.search(r"降水|降雨|precip|rain", cleaned, re.I):
+        hits.add("precip")
+    variable = dialogue_state.variable_from_text(cleaned)
+    if variable:
+        hits.add(variable)
+    return next(iter(hits)) if len(hits) == 1 else None
+
+
+def _intent_layer_variable(intent: dict[str, Any]) -> str | None:
+    args = intent.get("args") if isinstance(intent.get("args"), dict) else {}
+    text = " ".join(
+        str(args.get(key) or "") for key in ("display_name", "catalog_id", "layer_id")
+    )
+    if re.search(r"降水|降雨|precip|rain", text, re.I):
+        return "precip"
+    return dialogue_state.variable_from_name(text)
+
+
+def _guard_layer_variable_intents(
+    message: str, result: dict[str, Any]
+) -> dict[str, Any]:
+    """Never execute a layer action for a different explicit variable."""
+    requested = _explicit_map_variable(message)
+    if requested is None:
+        return result
+    intents = result.get("ui_intents")
+    if not isinstance(intents, list) or not intents:
+        return result
+    kept: list[dict[str, Any]] = []
+    rejected = False
+    for item in intents:
+        if not isinstance(item, dict) or item.get("name") not in {
+            "set_layer_visibility",
+            "remove_layer",
+            "fit_layer",
+        }:
+            kept.append(item)
+            continue
+        actual = _intent_layer_variable(item)
+        if actual is not None and actual != requested:
+            rejected = True
+            continue
+        kept.append(item)
+    if not rejected:
+        return result
+    result = dict(result)
+    result["ui_intents"] = kept
+    labels = {
+        "precip": "降水",
+        "sm": "土壤水分",
+        "vod": "植被光学厚度",
+        "omega": "等效散射 ω",
+    }
+    result["reply"] = (
+        f"没有执行图层操作：识别到的目标不是你要求的“{labels.get(requested, requested)}”图层。"
+        "请明确图层名称后重试。"
+    )
+    logger.warning("agent.intent.variable_mismatch requested=%s", requested)
+    return result
+
+
 def _attach_command_ids(result: dict[str, Any]) -> dict[str, Any]:
     """给每条 UI 指令补一个可追溯的 ``command_id``（R02）。
 
@@ -5167,15 +5392,18 @@ def run_chat(
                 _guard_unclaimed_view_intent(
                     message,
                     _order_ui_intents(
-                        _guard_read_only_ui_intents(
+                        _guard_layer_variable_intents(
                             message,
-                            _run_chat_impl(
+                            _guard_read_only_ui_intents(
                                 message,
-                                session_id=session_id,
-                                client_context=client_context,
-                                user_id=user_id,
-                                cred=cred,
-                                on_event=on_event,
+                                _run_chat_impl(
+                                    message,
+                                    session_id=session_id,
+                                    client_context=client_context,
+                                    user_id=user_id,
+                                    cred=cred,
+                                    on_event=on_event,
+                                ),
                             ),
                         ),
                         client_context,
@@ -5187,6 +5415,15 @@ def run_chat(
         # 参数/配置类错误（消息过长、无配置档）仍交给路由转 422，
         # 不属于「服务不可用」，不该被降级吞掉。
         raise
+    except AgentRequestLimitError as exc:
+        logger.info("agent request limited: %s", exc)
+        return _degraded_result(
+            session_id=session_id,
+            reply=_request_limit_reply(),
+            provider="limited",
+            reason=str(exc),
+            on_event=on_event,
+        )
     except LlmClientError as exc:
         logger.warning("agent degraded: LLM error: %s", exc)
         return _degraded_result(
