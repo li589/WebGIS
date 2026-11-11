@@ -127,10 +127,10 @@ onBeforeUnmount(() => {
 const tileSourceId = toRef(uiStore, 'tileSourceId')
 /**
  * 「海陆底图（无国界）」叠加层开关（顶栏 底图 → 底图叠加 里勾选）。
- * 只影响显示：在底图之上盖一张海陆双色图，挡住地名与国界；默认关。
+ * 只影响显示：在底图之上盖一张海陆双色图，挡住地名与国界；默认开启。
  * 放在视图层而不是 store，避免动到持久化/快照那套（改了要升 schema）。
  */
-const landSeaBasemap = ref(false)
+const landSeaBasemap = ref(true)
 const currentHour = toRef(uiStore, 'currentHour')
 const currentDate = toRef(uiStore, 'currentDate')
 const hourLabel = toRef(uiStore, 'hourLabel')
