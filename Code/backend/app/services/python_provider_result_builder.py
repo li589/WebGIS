@@ -1402,6 +1402,17 @@ class PythonProviderResultBuilder:
             product_palette = aligned
         try:
             from app.data_io.services.raster_commit import commit_algorithm_geotiff
+            from app.services.workflow_repository import SQLiteWorkflowRepository
+
+            run_owner_user_id = SQLiteWorkflowRepository().get_run_user_id(run_id)
+            ownership_meta = (
+                {
+                    "owner_user_id": int(run_owner_user_id),
+                    "published": False,
+                }
+                if run_owner_user_id is not None
+                else {}
+            )
 
             registered = commit_algorithm_geotiff(
                 local_path,
@@ -1414,6 +1425,7 @@ class PythonProviderResultBuilder:
                 # palette 优先取静态层 descriptor.style.palette（见上方对齐注释）
                 palette=product_palette,
                 extra_meta={
+                    **ownership_meta,
                     "analysis_product": True,
                     "variable_id": variable,
                     "science_source": local_path.name,

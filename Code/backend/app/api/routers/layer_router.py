@@ -85,10 +85,24 @@ def _filter_accessible_layer_ids(layer_ids: list[str], cred: Any) -> list[str]:
             return list(layer_ids)
         return []
     from app.services.permission_repository import get_permission_repository
+    from app.services.overlay_registry import can_view_overlay, is_overlay_owner
 
-    return get_permission_repository().batch_filter_accessible(
-        int(_cred.user_id), "layer", layer_ids
+    owned_or_public = [
+        layer_id
+        for layer_id in layer_ids
+        if can_view_overlay(layer_id, role=_cred.role, user_id=_cred.user_id)
+    ]
+    owned = {
+        layer_id
+        for layer_id in owned_or_public
+        if is_overlay_owner(layer_id, _cred.user_id)
+    }
+    acl_visible = set(
+        get_permission_repository().batch_filter_accessible(
+            int(_cred.user_id), "layer", owned_or_public
+        )
     )
+    return [layer_id for layer_id in owned_or_public if layer_id in owned | acl_visible]
 
 
 def _catalog_items_for_environment(items: list[Any]) -> list[Any]:

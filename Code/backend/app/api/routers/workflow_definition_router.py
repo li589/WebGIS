@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import (
     CredentialContext,
+    require_admin,
     require_workflow_create_access,
     check_resource_access,
     get_request_user,
@@ -267,6 +268,7 @@ def list_definitions(
             return {"items": items, "count": len(items)}
         return {"items": [], "count": 0}
     from app.services.permission_repository import get_permission_repository
+    from app.services.workflow_definition_service import can_view_definition
 
     perm_repo = get_permission_repository()
     all_ids = [
@@ -282,7 +284,25 @@ def list_definitions(
         item
         for item in items
         if isinstance(item, dict)
-        and str(item.get("workflow_id") or item.get("id") or "") in accessible
+        and can_view_definition(
+            {
+                "kind": item.get("kind"),
+                "owner_user_id": item.get("owner_user_id"),
+                "published": item.get("published", False),
+            },
+            role=_cred.role,
+            user_id=_cred.user_id,
+        )
+        and (
+            wds.is_definition_owner(
+                {
+                    "kind": item.get("kind"),
+                    "owner_user_id": item.get("owner_user_id"),
+                },
+                _cred.user_id,
+            )
+            or str(item.get("workflow_id") or item.get("id") or "") in accessible
+        )
     ]
     return {"items": items, "count": len(items)}
 
@@ -293,15 +313,50 @@ def get_definition(
     cred=Depends(get_request_user),
 ) -> dict[str, Any]:
     """获取单个工作流定义的完整内容。"""
-    # Phase B: 资源访问控制——非 admin 用户需有 workflow 访问权限
-    check_resource_access(cred, "workflow", workflow_id)
     definition = wds.get_definition(workflow_id)
     if definition is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow definition not found: {workflow_id}",
         )
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
+    if _cred is not None and not wds.can_view_definition(
+        meta, role=_cred.role, user_id=_cred.user_id
+    ):
+        # 不向其他账号泄露私有工作流是否存在。
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workflow definition not found",
+        )
+    if not wds.is_definition_owner(meta, _cred.user_id if _cred else None):
+        check_resource_access(cred, "workflow", workflow_id)
     return definition
+
+
+@router.put("/{workflow_id}/publication", tags=["workflow-definition"])
+def set_definition_publication(
+    workflow_id: str,
+    payload: dict[str, Any],
+    _admin=Depends(require_admin),
+) -> dict[str, Any]:
+    """Publish/unpublish a user workflow. Only administrators may call this."""
+    published = payload.get("published")
+    if not isinstance(published, bool):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="published must be a boolean",
+        )
+    try:
+        return wds.set_definition_published(workflow_id, published)
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 def _deny_if_cannot_mutate_definition(

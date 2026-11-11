@@ -112,6 +112,16 @@ def _create_standard(client: TestClient, username: str) -> None:
     _login(client, username, "user-pass-123")
 
 
+def _create_demo(client: TestClient, username: str) -> None:
+    _admin_login(client)
+    resp = client.post(
+        "/auth/users",
+        json={"username": username, "password": "user-pass-123", "role": "demo"},
+    )
+    assert resp.status_code in (201, 409), resp.text
+    _login(client, username, "user-pass-123")
+
+
 def test_workflow_definition_owner_blocks_peer_mutation(auth_client: TestClient) -> None:
     _create_standard(auth_client, "alice")
     create = auth_client.post(
@@ -129,6 +139,22 @@ def test_workflow_definition_owner_blocks_peer_mutation(auth_client: TestClient)
     assert meta.get("owner_user_id") is not None
 
     _create_standard(auth_client, "bob")
+    listed = auth_client.get("/workflow-definitions")
+    assert listed.status_code == 200, listed.text
+    assert "wf-alice-owned" not in {
+        item.get("workflow_id") for item in listed.json().get("items", [])
+    }
+    read = auth_client.get("/workflow-definitions/wf-alice-owned")
+    assert read.status_code == 404, read.text
+    publish_as_standard = auth_client.put(
+        "/workflow-definitions/wf-alice-owned/publication",
+        json={"published": True},
+    )
+    assert publish_as_standard.status_code == 403, publish_as_standard.text
+
+    _create_demo(auth_client, "visitor")
+    guest_read = auth_client.get("/workflow-definitions/wf-alice-owned")
+    assert guest_read.status_code == 404, guest_read.text
     put = auth_client.put(
         "/workflow-definitions/wf-alice-owned",
         json={"name": "Hijacked"},
@@ -136,6 +162,17 @@ def test_workflow_definition_owner_blocks_peer_mutation(auth_client: TestClient)
     assert put.status_code == 403, put.text
     delete = auth_client.delete("/workflow-definitions/wf-alice-owned")
     assert delete.status_code == 403, delete.text
+
+    _admin_login(auth_client)
+    publish = auth_client.put(
+        "/workflow-definitions/wf-alice-owned/publication",
+        json={"published": True},
+    )
+    assert publish.status_code == 200, publish.text
+
+    _login(auth_client, "bob", "user-pass-123")
+    read_published = auth_client.get("/workflow-definitions/wf-alice-owned")
+    assert read_published.status_code == 200, read_published.text
 
     _admin_login(auth_client)
     put_admin = auth_client.put(

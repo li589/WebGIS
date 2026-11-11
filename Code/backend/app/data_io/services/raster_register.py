@@ -216,6 +216,10 @@ def register_geotiff_as_imported(
         OverlaySpec(
             layer_id=layer_id,
             overlay_dir=dest_dir,
+            owner_user_id=int(extra["owner_user_id"])
+            if extra.get("owner_user_id") is not None
+            else None,
+            published=extra.get("published") is True,
             png_filename="preview.png",
             bounds_filename="bounds.json",
             category="static",

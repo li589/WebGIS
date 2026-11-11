@@ -199,6 +199,10 @@ def _build_meta(
         "readonly": kind == "system",
         "linked_layer_id": linked_layer_id,
     }
+    if kind == "user":
+        # 用户创建的工作流默认私有。公开状态只能由管理员通过专用接口修改，
+        # 不能信任 create/update 请求体中的 _meta。
+        meta["published"] = False
     if tags is not None:
         meta["tags"] = tags
     if category is not None:
@@ -232,6 +236,63 @@ def can_mutate_user_definition(
         return int(owner) == int(user_id)
     except (TypeError, ValueError):
         return False
+
+
+def can_view_definition(
+    meta: dict[str, Any],
+    *,
+    role: str | None,
+    user_id: int | None,
+) -> bool:
+    """Whether a principal may discover/read a workflow definition.
+
+    System definitions keep their existing ACL behaviour. User definitions are
+    private to their owner unless an admin explicitly publishes them. Legacy
+    user files without an owner/published marker fail closed for non-admins.
+    """
+    if role == "admin":
+        return True
+    if meta.get("kind") == "system":
+        return True
+    if meta.get("published") is True:
+        return True
+    owner = meta.get("owner_user_id")
+    if owner is None or user_id is None:
+        return False
+    try:
+        return int(owner) == int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def is_definition_owner(meta: dict[str, Any], user_id: int | None) -> bool:
+    """Return True only when *user_id* is the declared user-definition owner."""
+    if meta.get("kind") == "system" or user_id is None:
+        return False
+    owner = meta.get("owner_user_id")
+    if owner is None:
+        return False
+    try:
+        return int(owner) == int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def set_definition_published(workflow_id: str, published: bool) -> dict[str, Any]:
+    """Set public visibility for a user definition (router enforces admin)."""
+    definition = get_definition(workflow_id)
+    if definition is None:
+        raise WorkflowNotFoundError(f"Workflow definition not found: {workflow_id}")
+    meta = definition.get("_meta")
+    if not isinstance(meta, dict) or meta.get("kind") == "system":
+        raise ValueError("System workflow publication cannot be changed")
+    meta["published"] = bool(published)
+    meta["updated_at"] = _now_iso()
+    path = _resolve_file(workflow_id)
+    if path is None:
+        raise WorkflowNotFoundError(f"Workflow definition not found: {workflow_id}")
+    _write_file(path, definition)
+    return definition
 
 
 def _resolve_file(workflow_id: str) -> Path | None:
@@ -339,6 +400,8 @@ def list_definitions() -> list[dict[str, Any]]:
                         "name": meta.get("name", data.get("workflow_id", path.stem)),
                         "description": meta.get("description"),
                         "readonly": meta.get("readonly", default_kind == "system"),
+                        "owner_user_id": meta.get("owner_user_id"),
+                        "published": meta.get("published", False),
                         "is_template": bool(meta.get("is_template", False)),
                         "linked_layer_id": meta.get("linked_layer_id"),
                         "updated_at": meta.get("updated_at"),

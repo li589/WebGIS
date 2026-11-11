@@ -655,9 +655,15 @@ def import_vector_from_paths(
     paths: list[Path],
     *,
     source_name: str | None = None,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     if not paths:
         raise ValueError("未提供文件")
+    ownership_meta = (
+        {"owner_user_id": int(owner_user_id), "published": False}
+        if owner_user_id is not None
+        else {}
+    )
 
     # 单文件 geojson / zip / rar / shp
     if len(paths) == 1:
@@ -672,17 +678,18 @@ def import_vector_from_paths(
                     dest=dest,
                     geojson=geojson,
                     source_name=source_name or path.name,
+                    extra_meta=ownership_meta,
                 )
             if ext in {".zip", ".rar"}:
                 extracted_dir = dest / "_extract"
                 files = _extract_archive(path, extracted_dir)
                 # prefer shp group, else geojson
                 shp_candidates = [p for p in files if p.suffix.lower() == ".shp"]
-                extra_meta: dict[str, Any] | None = None
+                extra_meta: dict[str, Any] = dict(ownership_meta)
                 if shp_candidates:
                     shp = _collect_shp_group(files)
                     geojson, enc_meta = _shapefile_to_geojson(shp)
-                    extra_meta = enc_meta
+                    extra_meta.update(enc_meta)
                 else:
                     gj = [p for p in files if p.suffix.lower() in {".geojson", ".json"}]
                     if not gj:
@@ -706,7 +713,7 @@ def import_vector_from_paths(
                     dest=dest,
                     geojson=geojson,
                     source_name=source_name or path.name,
-                    extra_meta=enc_meta,
+                    extra_meta={**enc_meta, **ownership_meta},
                 )
             raise ValueError(f"不支持的矢量格式: {ext}")
         except Exception:
@@ -726,7 +733,7 @@ def import_vector_from_paths(
             dest=dest,
             geojson=geojson,
             source_name=source_name or shp.name,
-            extra_meta=enc_meta,
+            extra_meta={**enc_meta, **ownership_meta},
         )
     except Exception:
         shutil.rmtree(dest, ignore_errors=True)

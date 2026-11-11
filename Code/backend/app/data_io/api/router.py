@@ -14,7 +14,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import get_request_user, require_data_transfer_access
+from app.api.deps import (
+    check_resource_access,
+    get_request_user,
+    require_admin,
+    require_data_transfer_access,
+)
 from app.services.credential_resolver import CredentialContext
 from app.data_io.services import paths as import_paths
 from app.data_io.services.paths import QuotaExceededError
@@ -168,6 +173,10 @@ class LayerDisplayNameBody(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=256)
 
 
+class LayerPublicationBody(BaseModel):
+    published: bool
+
+
 class FeaturePatchBody(BaseModel):
     field: str
     value: Any = None
@@ -289,7 +298,9 @@ def _resolve_conflict_policy(raw: str | None) -> str:
     return policy
 
 
-def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
+def _raster_commit_sync(
+    body: RasterCommitBody, owner_user_id: int | None = None
+) -> dict[str, Any]:
     from app.data_io.services.raster_commit import commit_raster_upload
 
     return commit_raster_upload(
@@ -313,6 +324,7 @@ def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
         time_start=body.time_start,
         time_end=body.time_end,
         native_step=body.native_step,
+        owner_user_id=owner_user_id,
     )
 
 
@@ -553,6 +565,22 @@ async def import_job_status(
         raise _http_err(exc) from exc
 
 
+@router.put(
+    "/import/layers/{layer_id}/publication",
+    dependencies=[Depends(require_admin)],
+)
+async def set_imported_layer_publication(
+    layer_id: str, body: LayerPublicationBody
+) -> dict[str, object]:
+    """Publish/unpublish an imported layer. Only administrators may call this."""
+    from app.services.overlay_registry import set_overlay_published
+
+    try:
+        return set_overlay_published(layer_id, body.published)
+    except (FileNotFoundError, ValueError) as exc:
+        raise _http_err(exc) from exc
+
+
 @router.post(
     "/import/jobs/{job_id}/cancel", dependencies=[Depends(require_data_transfer_access)]
 )
@@ -681,7 +709,11 @@ async def import_vector(
 
         def handler(payload: dict[str, Any]) -> dict[str, Any]:
             ps = [Path(p) for p in payload["paths"]]
-            return import_vector_from_paths(ps, source_name=payload.get("source_name"))
+            return import_vector_from_paths(
+                ps,
+                source_name=payload.get("source_name"),
+                owner_user_id=payload.get("_owner_user_id"),
+            )
 
         if force_async:
             job = enqueue_job(
@@ -697,7 +729,9 @@ async def import_vector(
             return {"job_id": job["job_id"], "status": job["status"], "async": True}
 
         result = import_vector_from_paths(
-            paths, source_name=body.source_name or paths[0].name
+            paths,
+            source_name=body.source_name or paths[0].name,
+            owner_user_id=owner,
         )
         return {"async": False, **result}
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -768,7 +802,9 @@ async def vector_features(
     contains: str | None = None,
     sort: str | None = None,
     where: str | None = None,
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
+    check_resource_access(cred, "layer", layer_id)
     try:
         return list_vector_features(
             layer_id,
@@ -788,8 +824,12 @@ async def vector_features(
     dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_feature_patch(
-    layer_id: str, feature_index: int, body: FeaturePatchBody
+    layer_id: str,
+    feature_index: int,
+    body: FeaturePatchBody,
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
+    check_resource_access(cred, "layer", layer_id)
     try:
         return patch_feature_attribute(layer_id, feature_index, body.field, body.value)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -800,7 +840,12 @@ async def vector_feature_patch(
     "/import/layers/{layer_id}/features/batch",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def vector_feature_batch(layer_id: str, body: FeatureBatchBody) -> dict[str, Any]:
+async def vector_feature_batch(
+    layer_id: str,
+    body: FeatureBatchBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    check_resource_access(cred, "layer", layer_id)
     try:
         return batch_set_feature_attribute(
             layer_id, body.indexes, body.field, body.value
@@ -813,7 +858,12 @@ async def vector_feature_batch(layer_id: str, body: FeatureBatchBody) -> dict[st
     "/import/layers/{layer_id}/fields",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def vector_field_add(layer_id: str, body: FieldAddBody) -> dict[str, Any]:
+async def vector_field_add(
+    layer_id: str,
+    body: FieldAddBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    check_resource_access(cred, "layer", layer_id)
     try:
         return add_vector_field(layer_id, body.name, body.default)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -824,7 +874,12 @@ async def vector_field_add(layer_id: str, body: FieldAddBody) -> dict[str, Any]:
     "/import/layers/{layer_id}/fields/{name}",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def vector_field_delete(layer_id: str, name: str) -> dict[str, Any]:
+async def vector_field_delete(
+    layer_id: str,
+    name: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    check_resource_access(cred, "layer", layer_id)
     try:
         return delete_vector_field(layer_id, name)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -835,7 +890,12 @@ async def vector_field_delete(layer_id: str, name: str) -> dict[str, Any]:
     "/import/layers/{layer_id}/rename-field",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def vector_rename_field(layer_id: str, body: VectorRenameBody) -> dict[str, Any]:
+async def vector_rename_field(
+    layer_id: str,
+    body: VectorRenameBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    check_resource_access(cred, "layer", layer_id)
     try:
         return rename_vector_field(layer_id, body.old_name, body.new_name)
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
@@ -847,9 +907,12 @@ async def vector_rename_field(layer_id: str, body: VectorRenameBody) -> dict[str
     dependencies=[Depends(require_data_transfer_access)],
 )
 async def patch_imported_layer_display_name(
-    layer_id: str, body: LayerDisplayNameBody
+    layer_id: str,
+    body: LayerDisplayNameBody,
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     """更新导入图层显示名（meta.display_name / label），不影响物理文件名。"""
+    check_resource_access(cred, "layer", layer_id)
     try:
         return import_paths.update_imported_layer_display_name(
             layer_id, body.display_name
@@ -861,9 +924,13 @@ async def patch_imported_layer_display_name(
 @router.delete(
     "/import/layers/{layer_id}", dependencies=[Depends(require_data_transfer_access)]
 )
-async def delete_imported_layer(layer_id: str) -> dict[str, Any]:
+async def delete_imported_layer(
+    layer_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """删除已导入矢量/栅格落盘目录（仅允许 imported-* 前缀）。"""
     safe = Path(layer_id).name
+    check_resource_access(cred, "layer", safe)
     if safe != layer_id or ".." in layer_id or "/" in layer_id or "\\" in layer_id:
         raise HTTPException(status_code=400, detail="非法 layer_id")
     if not (safe.startswith("imported-") or safe.startswith("imported_")):
@@ -985,7 +1052,7 @@ async def raster_commit(
                 owner_user_id=owner,
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
-        return {"async": False, **_raster_commit_sync(body)}
+        return {"async": False, **_raster_commit_sync(body, owner)}
     except (
         UploadAccessDenied,
         FileNotFoundError,

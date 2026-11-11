@@ -259,6 +259,9 @@ def enqueue_job(
 
     ``handler`` 仅同步路径需要；异步走 Celery ``_dispatch(kind, payload)``。
     """
+    payload = dict(payload)
+    if owner_user_id is not None:
+        payload["_owner_user_id"] = int(owner_user_id)
     job_id = create_job(kind=kind, payload=payload, owner_user_id=owner_user_id)
 
     def _run() -> None:

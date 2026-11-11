@@ -324,6 +324,37 @@ def check_resource_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Resource access denied. Contact an administrator.",
         )
+    if resource_type == "layer":
+        from app.services.overlay_registry import can_view_overlay, is_overlay_owner
+
+        if not can_view_overlay(resource_id, role=ctx.role, user_id=ctx.user_id):
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Resource access denied. Contact an administrator.",
+            )
+        if is_overlay_owner(resource_id, ctx.user_id):
+            return
+    if resource_type == "workflow":
+        from app.services import workflow_definition_service as workflow_defs
+
+        definition = workflow_defs.get_definition(resource_id)
+        if definition is not None:
+            meta = (
+                definition.get("_meta")
+                if isinstance(definition.get("_meta"), dict)
+                else {}
+            )
+            if not workflow_defs.can_view_definition(
+                meta, role=ctx.role, user_id=ctx.user_id
+            ):
+                raise ApiError(
+                    AUTH_ERROR,
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Resource access denied. Contact an administrator.",
+                )
+            if workflow_defs.is_definition_owner(meta, ctx.user_id):
+                return
     from app.services.permission_repository import get_permission_repository
 
     repo = get_permission_repository()

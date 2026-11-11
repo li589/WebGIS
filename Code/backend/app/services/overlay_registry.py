@@ -95,6 +95,12 @@ class OverlaySpec:
     overlay_dir: Path
     """存放 PNG 与 bounds JSON 的目录。"""
 
+    owner_user_id: int | None = None
+    """用户导入图层的属主；None 表示系统/历史公共图层。"""
+
+    published: bool = False
+    """是否由管理员发布给其他账号。"""
+
     category: str = "static"
     """static | time-series。"""
 
@@ -961,6 +967,10 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
     spec = OverlaySpec(
         layer_id=layer_id,
         overlay_dir=dest_dir,
+        owner_user_id=int(meta["owner_user_id"])
+        if meta.get("owner_user_id") is not None
+        else None,
+        published=meta.get("published") is True,
         png_filename="preview.png" if has_static_preview else None,
         bounds_filename="bounds.json",
         category=category,
@@ -1009,6 +1019,77 @@ def get_overlay_spec(layer_id: str) -> OverlaySpec | None:
     if spec is not None:
         return spec
     return _try_load_imported_overlay(layer_id)
+
+
+def can_view_overlay(layer_id: str, *, role: str | None, user_id: int | None) -> bool:
+    """Apply owner isolation to imported overlays without hiding system layers."""
+    if role == "admin":
+        return True
+    spec = get_overlay_spec(layer_id)
+    owner_user_id = spec.owner_user_id if spec is not None else None
+    published = spec.published if spec is not None else False
+    if spec is None and layer_id.startswith("imported"):
+        try:
+            from app.data_io.services.paths import safe_import_child
+
+            meta_path = safe_import_child(layer_id) / "meta.json"
+            data = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                owner_user_id = data.get("owner_user_id")
+                published = data.get("published") is True
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+    if owner_user_id is None:
+        return True
+    if published:
+        return True
+    if user_id is None:
+        return False
+    return int(owner_user_id) == int(user_id)
+
+
+def is_overlay_owner(layer_id: str, user_id: int | None) -> bool:
+    """Return True when an imported layer declares *user_id* as owner."""
+    if user_id is None or not layer_id.startswith("imported"):
+        return False
+    spec = get_overlay_spec(layer_id)
+    owner = spec.owner_user_id if spec is not None else None
+    if owner is None:
+        try:
+            from app.data_io.services.paths import safe_import_child
+
+            data = json.loads(
+                (safe_import_child(layer_id) / "meta.json").read_text(encoding="utf-8")
+            )
+            owner = data.get("owner_user_id") if isinstance(data, dict) else None
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+    try:
+        return int(owner) == int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def set_overlay_published(layer_id: str, published: bool) -> dict[str, object]:
+    """Persist publication state for an imported layer (caller must be admin)."""
+    if not layer_id.startswith("imported"):
+        raise ValueError("Only imported layers have mutable publication state")
+    from app.data_io.services._meta_io import save_json_atomic
+    from app.data_io.services.paths import safe_import_child
+
+    meta_path = safe_import_child(layer_id) / "meta.json"
+    if not meta_path.is_file():
+        raise FileNotFoundError(f"Imported layer not found: {layer_id}")
+    data = json.loads(meta_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Invalid imported layer metadata")
+    data["published"] = bool(published)
+    save_json_atomic(meta_path, data)
+    with _REGISTRY_LOCK:
+        spec = _REGISTRY.get(layer_id)
+        if spec is not None:
+            spec.published = bool(published)
+    return {"layer_id": layer_id, "published": bool(published)}
 
 
 def list_overlay_ids() -> list[str]:

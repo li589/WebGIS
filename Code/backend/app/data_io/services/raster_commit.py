@@ -155,6 +155,7 @@ def commit_science_raster_variable(
     vmin: float | None = None,
     vmax: float | None = None,
     cell_registration: str | None = None,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     tmp_dir = import_paths.imports_dir() / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +193,9 @@ def commit_science_raster_variable(
         "conflict_policy": conflict_policy,
         **(temporal_meta or {}),
     }
+    if owner_user_id is not None:
+        extra_meta["owner_user_id"] = int(owner_user_id)
+        extra_meta["published"] = False
     if cell_registration:
         # 像元配准（P1.5）：bounds 的 Area/Point 语义，供下游导出/校正参考
         extra_meta["cell_registration"] = cell_registration
@@ -347,6 +351,7 @@ def commit_raster_upload(
     time_start: str | None = None,
     time_end: str | None = None,
     native_step: str | None = None,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     from app.data_io.services.time_label import build_temporal_meta
 
@@ -370,12 +375,17 @@ def commit_raster_upload(
         if conflict_policy == "rename" and dest.exists():
             layer_id = f"imported-{uuid.uuid4().hex[:12]}"
             replace = False
+        ownership_meta = (
+            {"owner_user_id": int(owner_user_id), "published": False}
+            if owner_user_id is not None
+            else {}
+        )
         return register_geotiff_as_imported(
             path,
             source_filename=name,
             layer_id=layer_id,
             replace_existing=replace,
-            extra_meta=temporal_meta,
+            extra_meta={**temporal_meta, **ownership_meta},
         )
 
     var_ids = [v for v in (variable_ids or []) if v]
@@ -404,6 +414,7 @@ def commit_raster_upload(
                 axis_order=axis_order,
                 conflict_policy=conflict_policy,
                 temporal_meta=temporal_meta,
+                owner_user_id=owner_user_id,
             )
         )
 

@@ -17,7 +17,11 @@ def _dispatch(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         from app.data_io.services.vector import import_vector_from_paths
 
         paths = [Path(p) for p in payload.get("paths") or []]
-        return import_vector_from_paths(paths, source_name=payload.get("source_name"))
+        return import_vector_from_paths(
+            paths,
+            source_name=payload.get("source_name"),
+            owner_user_id=payload.get("_owner_user_id"),
+        )
     if kind == "document":
         from app.data_io.services.document import create_document_session
 
@@ -65,6 +69,7 @@ def _dispatch(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
             time_start=payload.get("time_start"),
             time_end=payload.get("time_end"),
             native_step=payload.get("native_step"),
+            owner_user_id=payload.get("_owner_user_id"),
         )
     if kind == "export_batch":
         from app.data_io.services.export_layer import export_layers_batch_zip
