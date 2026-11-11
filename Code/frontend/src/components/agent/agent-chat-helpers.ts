@@ -17,6 +17,7 @@ export interface AgentChatExportMessage {
   role: string
   text: string
   usage?: { total_tokens: number; estimated?: boolean } | null
+  steps?: Array<{ type: string; summary?: string; detail?: string | null }>
 }
 
 /** Parse search_layers / similar tool_result JSON from steps into clickable cards. */
@@ -130,6 +131,25 @@ export function exportChatMarkdown(
     if (msg.usage?.total_tokens != null) {
       lines.push('')
       lines.push(`*tokens: ${msg.usage.total_tokens}${msg.usage.estimated ? '（估）' : ''}*`)
+    }
+    if (msg.steps?.length) {
+      lines.push('')
+      lines.push('<details>')
+      lines.push('<summary>执行流程</summary>')
+      lines.push('')
+      for (const step of msg.steps) {
+        const summary = step.summary?.trim()
+        const detail = step.detail?.trim()
+        if (step.type === 'tool') {
+          lines.push(`- \`${summary || step.type}\``)
+        } else if (step.type === 'tool_result') {
+          lines.push(`  - 返回：${summary || detail || '（空）'}`)
+        } else {
+          lines.push(`- ${summary || step.type}`)
+        }
+      }
+      lines.push('')
+      lines.push('</details>')
     }
     lines.push('')
   }

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -81,6 +82,23 @@ def _max_tool_hops() -> int:
         return max(1, min(8, int(raw)))
     except (TypeError, ValueError):
         return 4
+
+
+def _total_timeout_seconds() -> float:
+    """整轮对话总超时（秒）。Env: ``BACKEND_AGENT_TOTAL_TIMEOUT``，0 表示关闭。
+
+    单次模型调用已有 ``BACKEND_AGENT_LLM_TIMEOUT``（默认 30s），但一次对话可能
+    多跳工具（默认 4 跳），每跳各调一次模型，最坏 120s。这道总闸给「整轮」一个
+    上限：超过就停止继续取数、按已有结果收尾，避免用户无限等下去。
+    """
+    raw = os.getenv("BACKEND_AGENT_TOTAL_TIMEOUT", "120")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 120.0
+    if value <= 0:
+        return 0.0
+    return max(15.0, min(600.0, value))
 
 
 # --- 并发闸门 / 降级 -------------------------------------------------------
@@ -757,6 +775,42 @@ def _all_tools_anthropic() -> list[dict[str, Any]]:
     return load_ui_intent_tools_anthropic() + load_server_tools_anthropic()
 
 
+_READ_ONLY_DATA_TOOL_NAMES = frozenset(
+    {
+        "search_layers",
+        "get_layer_meta",
+        "get_layer_coverage",
+        "get_layer_statistics",
+        "sample_layer_point",
+    }
+)
+
+
+def _tools_openai_for_message(message: str) -> list[dict[str, Any]]:
+    """Avoid resending unrelated write/workflow schemas on read-only data turns."""
+
+    tools = _all_tools_openai()
+    if not _wants_statistics(message):
+        return tools
+    return [
+        item
+        for item in tools
+        if str((item.get("function") or {}).get("name") or "")
+        in _READ_ONLY_DATA_TOOL_NAMES
+    ]
+
+
+def _tools_anthropic_for_message(message: str) -> list[dict[str, Any]]:
+    tools = _all_tools_anthropic()
+    if not _wants_statistics(message):
+        return tools
+    return [
+        item
+        for item in tools
+        if str(item.get("name") or "") in _READ_ONLY_DATA_TOOL_NAMES
+    ]
+
+
 def sanitize_client_context(
     client_context: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
@@ -1084,6 +1138,23 @@ def _build_system(
         "「已下发显示 X」。2026-11-09 实测：说「切回土壤水分图层」却只后台统计、"
         "画面仍停在 CMFD 降水，用户以为切换没生效。\n"
         "  仍区分「改用 / 用 X 算」：那只是换取数口径，画面不动。\n"
+        "- **「只显示 / 只留 / 仅显示 / 单独显示 + 图层名或变量名」要传 `solo`**"
+        "（「只显示土壤水分图层」「只留这一层」）：用户说了「只 / 仅 / 单独」，是要"
+        "**清场**，除目标层外全部收起，不是普通加一层。下发 "
+        "`set_layer_visibility(catalog_id=<id>, visible=true, solo=true, display_name=<名>)`，"
+        "正文写「已只显示 X，其余图层已收起」。不带 `solo` 时前端只收起**同变量**的"
+        "其他层，别的产品组照旧，用户看到的不是「只显示」。目标层名/变量名能唯一定位"
+        "时就**直接下发**，不要再反问「要哪一个」——除非真存在多个无法区分的候选。\n"
+        "- **「切换图层到 X 日期 / 把 X 图层切到某天」**（「图层」后面跟日期）："
+        "这是**换画面**，不是只问数值。要同时做两件事：① 若目标图层不在 "
+        "client_context.active_layers 里，先用 search_layers 找到它并下发 "
+        "`set_layer_visibility(catalog_id=<id>, visible=true)` 把它勾选显示出来；"
+        "② 再下发 `set_timeline(date=...)` 把时间轴切过去。**只切时间轴不勾选图层、"
+        "或只回「要显示的话告诉我」都是错的**。若用户没点名哪个图层、"
+        "client_context.active_layers 里也没有可对应的图层，就明确问「要切哪一层到这天」，"
+        "**不许静默拿会话上一轮的取数对象当目标**——那会把别的图层的时间轴切了，"
+        "用户看到的画面跟说的对不上。（2026-11-10 线上实测：「切换图层到 12 月 15 日」"
+        "被静默按上一轮的 SMAP 切了时间轴，且没勾选任何图层。）\n"
         "## 界面意图回执是「已下发」，不是「已执行」\n"
         "- 下发 set_layer_visibility / set_timeline / remove_layer / set_layer_symbology "
         "后，工具回执只表示**已交给浏览器**（executed=false）。此时正文只能写"
@@ -1110,6 +1181,15 @@ def _build_system(
         "**不得描述画面内容、不得假装看得到图层**。\n"
         "- 若 active_layers 里没有 visible=true 的图层，如实说“当前没有勾选显示的图层”，"
         "不要拿已加载图层冒充可见图层。\n"
+        "- **「单位 / 时间范围 / 显示状态」这类复合状态问题，要逐项回答、一项不漏**："
+        "单位照 unit_label（土壤水分 m³/m³，VOD 与 ω 说“无量纲”）；显示状态照 "
+        "visible/selected；**时间范围要分清两层意思**——用户问“这层的时间范围”时，"
+        "若是在问当前画面停在哪，就说 timeline 当前时间块（time_blocks 里包含 "
+        "timeline.date 的那一块，如 2025-07-01 ~ 07-31）；若是在问产品总共覆盖多久，"
+        "才说 temporal_coverage / period_start~period_end。**两者不是一回事，"
+        "禁止把产品总覆盖（如“2025-07 到 12 共 40 帧”）当成当前显示的时间块报给他**。\n"
+        "- 状态问答**只答被问到的项，不要顺带讲算法/反演原理**：用户问“单位是多少”"
+        "就只答单位，不要展开 SM 是怎么反演出来的。\n"
         "## 只读查询不得改视图\n"
         "- 用户只是问“多少 / 有没有 / 是什么 / 哪个 / 怎么样”这类只读问题时，"
         "**只准调用只读工具**，**不得下发任何改变画面的 UI 意图**："
@@ -1164,6 +1244,12 @@ def _build_system(
         "再问一句是否要按它本身的含义取值；**严禁当作没看见、直接返回该变量的统计数**"
         "（2026-11-09 实测：问“土壤水分的温度是多少”，模型直接返回 0.1534 m³/m³，"
         "答非所问）。\n"
+        "- **目录/数据清单查询不许对「服务是否正常」下乐观断言**：用户问「有哪些降水数据」"
+        "这类目录清单时，只陈述目录里真实有的条目；**工具返回里没有明确的健康状态时，"
+        "不许说「检索服务正常 / 服务可用」**——那只是目录查到了，不代表背后的天气/数据"
+        "服务此刻在线。若工具返回带了服务状态（available / unavailable / error），"
+        "照它如实说「该数据源当前不可用 / 取数失败」，不要笼统说正常"
+        "（2026-11-10 实测：答「检索服务正常」的同时天气接口实际返回 503）。\n"
         "## 覆盖口径\n"
         "- 回答“某天有没有数据”必须用 get_layer_coverage 返回的 resolved.status "
         "（available / unavailable / unknown）和 resolved.reason，"
@@ -1216,6 +1302,14 @@ def _build_system(
         "“每日 1 帧 / 每 8 天 1 帧”**。要看同一次返回里的 is_single_block、"
         "time_span_days、temporal_summary：只有一片且跨多天时，必须说"
         "“单幅时间块（跨 N 天，非逐日）”，与 temporal_summary 的措辞保持一致。\n"
+        "- **点值就是点值，绝不擅自换成区域均值**：用户说“点值 / 采样 / 这个点的值 / "
+        "北京这个点的土壤水分”时，只能用 sample_layer_point 取点值。"
+        "① 地图上没有选点（client_context.map_point 为空）→ 如实说“地图上还没选点，"
+        "我无法取点值”，**禁止**改去调 get_layer_statistics 按“北京市行政边界”统计一个"
+        "均值来顶替；② 用户没给坐标也没选点、却带了个地名（如“北京”）时，同样**先说明"
+        "“点值需要一个具体坐标或地图选点，地名我只能做区域统计”，并问一句是否要改按区域**"
+        "，而不是直接算区域均值糊弄过去（2026-11-10 实测：问“北京点值”，被擅自改成"
+        "北京市均值 0.246，口径被悄悄换掉）。\n"
         "- get_layer_meta 的 temporal_coverage 只是描述符**声明值**；一旦 "
         "coverage_conflict=true，必须以 actual_temporal_coverage 为准，"
         "回答里不许念声明里的日期，也不许说“该图层覆盖某年某月”。\n"
@@ -2875,6 +2969,21 @@ def _unknown_region_token(message: str) -> str | None:
     return None
 
 
+#: 用户把「中国 / 全国 / 全境 / 我国」当成统计范围，但系统只有省级和地级市
+#: 行政区掩膜，没有「中国全境」这个范围——resolve_region 认不出它，模型于是
+#: 静默落到**全球整幅栅格**（SMAP 是全球产品），把全球均值当成中国值回给用户
+#: （2026-11-10 线上实测 P0：「中国区域 / 全国 / 中国境内」均返 0.153=全球）。
+_CHINA_SCOPE_RE = re.compile(
+    r"中国(?!气象局|科学院|科学研究院|工程院|政府|央行|人民银行)"
+    r"(?:全境|全图|范围|境内|区域|地区)?|全国|全境|我国"
+)
+
+
+def _mentions_china_scope(message: str) -> bool:
+    """这句话是不是把「中国 / 全国」当成统计范围（而非缩放视图）。"""
+    return bool(_CHINA_SCOPE_RE.search(str(message or "")))
+
+
 def _stats_region_info(steps: list[dict[str, Any]]) -> tuple[str, str]:
     """本轮统计实际用的行政区名与级别 ``(region, region_level)``。
 
@@ -2963,6 +3072,18 @@ def _append_region_scope_note(
         )
 
     if not _has_region_scoped_stats(steps):
+        # 「中国 / 全国」优先于一般地名兜底：它不是「认不出的行政区」，而是
+        # 系统根本没有这一级范围。全球产品落到整幅＝全球，必须点明，否则用户
+        # 会把全球均值当成中国值（2026-11-10 线上实测 P0）。
+        if _mentions_china_scope(msg) and "全球" not in text and "整幅栅格" not in text:
+            return text + (
+                "\n\n补一句口径：你说的「中国 / 全国」不是系统里可统计的行政区范围——"
+                "目前只做到**省级和地级市**，没有「中国全境」这一级掩膜，"
+                "而这类数据是全球产品，所以上面的数实际是按**全球整幅栅格**算的，"
+                "不是中国范围内的值。要中国全境的口径，请给我一个矩形范围"
+                "（西、南、东、北四个经纬度，例如 [73, 18, 135, 53] 附近），"
+                "我按框统计。"
+            )
         unknown = _unknown_region_token(msg)
         if unknown and unknown not in text:
             return text + (
@@ -3420,7 +3541,56 @@ def _run_chat_impl(
             "detail": f"protocol={protocol}",
         }
     )
+    # 整轮总超时：多跳取数到点就停，不再继续调用模型（2026-11-10 老师实测
+    # 一轮 27s+ 还在「工具跳 1/4」等待）。0 = 关闭。
+    _total_timeout = _total_timeout_seconds()
+    _deadline = time.monotonic() + _total_timeout if _total_timeout > 0 else None
+    _timed_out = False
     client_context = sanitize_client_context(client_context)
+
+    def finish_direct(
+        reply: str,
+        *,
+        provider_suffix: str,
+        summary: str,
+        intents: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Return a deterministic answer without paying for a model round-trip."""
+
+        nonlocal topic_state
+        ui_intents = intents or []
+        if ui_intents:
+            topic_state = dialogue_state.merge(
+                topic_state,
+                **_state_patch_from_intents(ui_intents, client_context),
+            )
+        steps.append({"type": "thought", "summary": summary})
+        usage = {
+            "prompt_tokens": estimate_tokens(message),
+            "completion_tokens": estimate_tokens(reply),
+            "total_tokens": 0,
+            "estimated": True,
+        }
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        append_turn(
+            user_id=user_id,
+            session_id=sid,
+            user_message=_compress_history_user(message),
+            assistant_message=reply,
+            state=topic_state,
+        )
+        out = {
+            "session_id": sid,
+            "reply": reply,
+            "ui_intents": ui_intents,
+            "provider": f"{provider_kind}-{provider_suffix}",
+            "profile_id": profile_id,
+            "usage": usage,
+            "steps": list(steps),
+            "confirmations": [],
+        }
+        _emit_stream_tail(on_event, reply=reply, ui_intents=ui_intents)
+        return out
 
     # 2026-11-08 实测：用户问「20251301 那天广州市土壤水分多少」，13 月被当成
     # 「这句话没给日期」，于是拿会话上一轮的 11-16 去取数，正文还写「你请求的日期
@@ -3465,6 +3635,15 @@ def _run_chat_impl(
         _emit_stream_tail(on_event, reply=reply, ui_intents=[])
         return out
 
+    # 新会话里的“刚才/上一轮”没有可继承事实，直接澄清。此前这句也会把完整
+    # 系统提示与全部工具定义发给模型，实测浪费约 2 万 token。
+    if not history and _refers_to_missing_history(message, topic_state):
+        return finish_direct(
+            _MISSING_HISTORY_REPLY,
+            provider_suffix="history-guard",
+            summary="新会话没有可继承的旧答案，已直接澄清",
+        )
+
     # 在模型调用前处理已经审核通过的项目知识与拒答边界。这样普通模式、
     # 本地模型和规则演示模式不会因模型差异而给出不同或未经证实的答案。
     from app.services.agent.knowledge_guard import project_knowledge_reply
@@ -3504,6 +3683,106 @@ def _run_chat_impl(
         }
         _emit_stream_tail(on_event, reply=knowledge_reply, ui_intents=[])
         return out
+
+    # 纯时间切换属于确定性的界面操作，不需要携带完整目录与工具集询问模型。
+    # 含“查询/统计/多少”等取数意图的复合请求仍走正常工具链。
+    simple_timeline = bool(
+        re.search(r"切到|切至|跳到|调整.{0,4}时间|时间轴.{0,6}(?:设|改|切)", message)
+        and re.search(r"(?:19|20)\d{2}[-/年]\d{1,2}[-/月]\d{1,2}", message)
+        and not re.search(r"查询|统计|计算|均值|平均值|多少|数值|取数", message)
+    )
+    if simple_timeline:
+        deterministic = mock_chat(
+            message,
+            session_id=sid,
+            client_context=client_context,
+            state=topic_state,
+        )
+        direct_intents = [
+            item
+            for item in (deterministic.get("ui_intents") or [])
+            if isinstance(item, dict)
+        ]
+        if direct_intents and all(
+            str(item.get("name") or "") == "set_timeline" for item in direct_intents
+        ):
+            return finish_direct(
+                str(deterministic.get("reply") or "已下发时间切换请求。"),
+                provider_suffix="timeline-rule",
+                summary="简单时间切换已由本地规则处理，未调用模型",
+                intents=direct_intents,
+            )
+
+    # 纯底图切换同属确定性界面操作（2026-11-10 线上实测 P0：模型对「切换为
+    # 天地图影像」等 4 种说法都不调工具，却回「已下发」，completion_tokens=18）。
+    # 底图切换没有取数语义，直接走规则引擎直出 switch_basemap，绝不外呼模型。
+    # 含取数意图的复合句仍走正常工具链。
+    simple_basemap = bool(
+        re.search(r"底图|basemap|天地图|高德|esri|osm|openstreetmap", message, re.I)
+        and re.search(r"切换|换成|改为|换到|切到|切至", message)
+        and not re.search(r"查询|统计|计算|均值|平均值|多少|数值|取数", message)
+    )
+    if simple_basemap:
+        deterministic = mock_chat(
+            message,
+            session_id=sid,
+            client_context=client_context,
+            state=topic_state,
+        )
+        direct_intents = [
+            item
+            for item in (deterministic.get("ui_intents") or [])
+            if isinstance(item, dict)
+        ]
+        if direct_intents and all(
+            str(item.get("name") or "") == "switch_basemap" for item in direct_intents
+        ):
+            return finish_direct(
+                str(deterministic.get("reply") or "已切换底图。"),
+                provider_suffix="basemap-rule",
+                summary="底图切换已由本地规则处理，未调用模型",
+                intents=direct_intents,
+            )
+
+    # 纯图层显隐（只显示/只留/单独显示/显示/隐藏）同属确定性界面操作。
+    # 2026-11-10 老师复测用例 04：一句「只显示风云…组中的植被光学厚度，保持其他
+    # 不变」，模型却 search_layers×3 + get_layer_meta 查满 4 跳预算、没轮到下发
+    # 显示就答「工具次数用完」。显隐没有取数语义，目标层往往就挂在页面上，一步
+    # 定位、一步下发即可，不耗工具预算。解析逻辑见 `_resolve_simple_visibility`。
+    _vis_intent = _resolve_simple_visibility(message, client_context)
+    if _vis_intent is not None:
+        _vis_visible = bool(_vis_intent["args"]["visible"])
+        _vis_name = str(_vis_intent["args"].get("display_name") or "该图层")
+        return finish_direct(
+            f"已显示「{_vis_name}」。" if _vis_visible else f"已隐藏「{_vis_name}」。",
+            provider_suffix="visibility-rule",
+            summary="图层显隐已由本地规则定位并下发，未调用模型",
+            intents=[_vis_intent],
+        )
+
+    # 「中国 / 全国」作为统计范围是确定性不可支持的情况：系统只到省级和地级市，
+    # 没有「中国全境」掩膜。若不拦截，模型会把「中国区域」沿用成上一轮的省（实测
+    # 先问河北再问中国 → 答成河北 0.2403），或静默拿全球均值冒充中国值
+    # （2026-11-10 线上实测 P0-2）。含取数词的「中国/全国」直接规则直出，不走模型。
+    # 纯视图（「缩放到中国」）不带取数词，仍走 fit_china 正常路径。
+    china_scope_stats = bool(
+        _mentions_china_scope(message)
+        and re.search(r"查询|统计|计算|均值|平均值|多少|数值|取数|平均", message)
+    )
+    if china_scope_stats:
+        reply = (
+            "「中国 / 全国」不是系统里可统计的行政区范围——目前只做到**省级和地级市**，"
+            "没有「中国全境」这一级掩膜，所以这次没有取数，也没有拿别的地区或全球整幅的数值顶替。\n\n"
+            "两条路任选：\n"
+            "① 换成具体的省或地级市（例如「河南省」「广州市」），我按行政边界统计；\n"
+            "② 给我一个矩形范围（西、南、东、北四个经纬度，例如 [73, 18, 135, 53] 附近），"
+            "我按这个框统计。"
+        )
+        return finish_direct(
+            reply,
+            provider_suffix="china-scope-rule",
+            summary="「中国/全国」作为统计范围不可支持，已规则直出并给出替代口径",
+        )
 
     if protocol == "demo":
         steps.append(
@@ -3808,8 +4087,10 @@ def _run_chat_impl(
 
     # 输入预算守卫：超限直接中止，绝不外呼（防公众乱问消耗项目额度）
     budget = _prompt_token_budget()
+    round_tools_anthropic = _tools_anthropic_for_message(message)
+    round_tools_openai = _tools_openai_for_message(message)
     budget_tools = (
-        _all_tools_anthropic() if protocol == "anthropic" else _all_tools_openai()
+        round_tools_anthropic if protocol == "anthropic" else round_tools_openai
     )
     est_in = _estimate_prompt_tokens(
         system=system,
@@ -3889,7 +4170,7 @@ def _run_chat_impl(
                 model=model,
                 system=system,
                 messages=messages,
-                tools=_all_tools_anthropic() or None,
+                tools=round_tools_anthropic or None,
                 max_tokens=max_out,
             )
             reply, intents, server_calls = _intents_from_anthropic_content(
@@ -3903,6 +4184,16 @@ def _run_chat_impl(
             for hop in range(1, max_hops + 1):
                 all_uses = _anthropic_tool_uses(data.get("content"))
                 if not all_uses:
+                    break
+                # 整轮总超时：到点停止继续取数，跳出后用已有结果收尾，不再外呼。
+                if _deadline is not None and time.monotonic() > _deadline:
+                    _timed_out = True
+                    steps.append(
+                        {
+                            "type": "thought",
+                            "summary": "整轮用时超过上限，已停止继续取数",
+                        }
+                    )
                     break
                 # 产品粘性的判定基准必须是**这一跳之前**的会话基线。
                 # 2026-11-07 实测：下面那句 merge 会把模型这一跳选的 catalog_id
@@ -3993,7 +4284,7 @@ def _run_chat_impl(
                     hop_est = _estimate_messages_tokens(
                         system=system,
                         messages=messages,
-                        tools=_all_tools_anthropic(),
+                        tools=round_tools_anthropic,
                     )
                     if hop_est > budget:
                         raise ValueError(
@@ -4006,7 +4297,7 @@ def _run_chat_impl(
                     model=model,
                     system=system,
                     messages=messages,
-                    tools=_all_tools_anthropic() or None,
+                    tools=round_tools_anthropic or None,
                     max_tokens=max_out,
                 )
                 reply2, intents2, server_calls = _intents_from_anthropic_content(
@@ -4120,7 +4411,7 @@ def _run_chat_impl(
             api_key=api_key or ("ollama" if provider_kind == "ollama" else None),
             model=model,
             messages=messages_oai,
-            tools=_all_tools_openai() or None,
+            tools=round_tools_openai or None,
             max_tokens=max_out,
         )
         choices = data.get("choices")
@@ -4146,6 +4437,16 @@ def _run_chat_impl(
             if not calls:
                 break
             hops_used = hop
+            # 整轮总超时：到点停止继续取数，跳出后用已有结果收尾，不再外呼。
+            if _deadline is not None and time.monotonic() > _deadline:
+                _timed_out = True
+                steps.append(
+                    {
+                        "type": "thought",
+                        "summary": "整轮用时超过上限，已停止继续取数",
+                    }
+                )
+                break
             # 同 Anthropic 分支：先快照这一跳之前的基线，再做 merge。
             # 否则粘性拿到的是「本次模型自己选的层」，判定必然放行。
             pre_call_state = topic_state
@@ -4233,7 +4534,7 @@ def _run_chat_impl(
                 hop_est = _estimate_messages_tokens(
                     system=system,
                     messages=messages_oai,
-                    tools=_all_tools_openai(),
+                    tools=round_tools_openai,
                 )
                 if hop_est > budget:
                     raise ValueError(
@@ -4245,7 +4546,7 @@ def _run_chat_impl(
                 api_key=oai_key,
                 model=model,
                 messages=messages_oai,
-                tools=_all_tools_openai() or None,
+                tools=round_tools_openai or None,
                 max_tokens=max_out,
             )
             choices = data.get("choices")
@@ -4274,15 +4575,20 @@ def _run_chat_impl(
             )
             # 跳到上限时模型只留下开场白（实测 27 字）或搜索结果列表（66 字），
             # 这里补一次不带工具的收尾，逼它用已经拿到的结果作答。
+            # 整轮已超时则不再外呼模型补答，只用已有工具结果确定性合成。
             _final = _finalize_after_hop_limit(
                 reply,
                 list(steps),
-                complete=lambda: _oai_complete_no_tools(
-                    base_url=base_url,
-                    api_key=oai_key,
-                    model=model,
-                    messages=messages_oai,
-                    max_tokens=max_out,
+                complete=(
+                    None
+                    if _timed_out
+                    else lambda: _oai_complete_no_tools(
+                        base_url=base_url,
+                        api_key=oai_key,
+                        model=model,
+                        messages=messages_oai,
+                        max_tokens=max_out,
+                    )
                 ),
             )
             if _final != reply:
@@ -4542,8 +4848,9 @@ def _order_ui_intents(
 #: 2026-11-07 实测 r56/r58/r59：问「把这个图层删掉」，4 次里 2 次模型不调任何
 #: 工具、不下发 remove_layer，却回「已下发移除…请求」。
 _VIEW_WRITE_VERBS = re.compile(
-    r"删|移除|删除|隐藏|显示|透明|定位|缩放|换底图|切(?:换)?底图|播放|暂停|配色|着色|"
-    r"换个色|渐变色|符号化"
+    r"删|移除|删除|隐藏|显示|打开|添加|透明|定位|缩放|换底图|切(?:换)?底图|"
+    r"切到|切至|跳到|切换|换成|换到|改为|调整时间|时间轴.{0,6}(?:设|改|切)|"
+    r"播放|暂停|配色|着色|换个色|渐变色|符号化"
 )
 #: 正文里的「完成态」措辞——只有真正下发过意图才许出现。
 #: 2026-11-08 补：模型还写过「已把「…」从图层面板移除」「已从…移除」，是「已+动词+宾语」
@@ -4552,6 +4859,67 @@ _VIEW_DONE_WORDS = re.compile(
     r"已下发|已移除|已删除|已切换|已隐藏|已显示|已完成|已设置|已定位|已缩放|已暂停|已播放|"
     r"已把|已从|已将|已为|已关掉|已收起"
 )
+
+#: 「切换图层 + 日期」复合指令的两半：前半要求勾选某图层，后半要求切时间轴。
+#: 2026-11-10 实测：同样一句「切换到风云动态图层，日期设到某天」，4 次里 1 次模型
+#: 只下发 set_timeline、漏了 set_layer_visibility，正文却写「下发了显示 + 切时间轴」。
+#: 这类「部分意图 + 正文夸大」现有零意图守卫（_guard_unclaimed_view_intent）拦不住，
+#: 需要单独看「点名了图层却没勾选」这一半。
+_LAYER_SWITCH_WORDS = re.compile(
+    r"切换(?:图层)?|切(?:到|回|换)|换(?:到|回|成)|显示|打开|勾选|图层"
+)
+_DATE_SCOPE_WORDS = re.compile(
+    r"\d{4}\s*年|\d{1,2}\s*月\s*\d{1,2}\s*日|日期|时间轴|切到.*(?:月|日|天)|"
+    r"设(?:到|成|为).*(?:月|日|天)|哪(?:天|一日)"
+)
+
+
+def _guard_partial_layer_switch_intent(
+    message: str, result: dict[str, Any]
+) -> dict[str, Any]:
+    """「切换图层到日期」这类复合指令：点名了图层却没勾选，正文不许说成两条都下发。
+
+    只针对一种明确的情况：用户这句话既要求**勾选/显示某个图层**（含「图层/切/换/
+    显示/打开」等词），又要求**切日期/时间轴**（含日期数字或「日期/时间轴」），
+    但本轮只下发了 ``set_timeline``、漏了 ``set_layer_visibility``，且正文写了完成态。
+
+    2026-11-10 实测：模型偶发漏发 set_layer_visibility，却回「已下发显示 + 切时间轴」，
+    用户看到时间轴动了、图层没勾上，还以为是操作没做完。这里把正文纠正成如实说明，
+    不替它补发（补发需要准确的 catalog_id，模型这轮既然没给，说明没把握）。
+    """
+    try:
+        text = message or ""
+        # 必须同时命中「图层切换」和「日期」两层意思，才是复合指令
+        if not _LAYER_SWITCH_WORDS.search(text):
+            return result
+        if not _DATE_SCOPE_WORDS.search(text):
+            return result
+        intents = result.get("ui_intents")
+        if not isinstance(intents, list) or not intents:
+            return result  # 零意图交给 _guard_unclaimed_view_intent 处理
+        names = {str(i.get("name") or "") for i in intents if isinstance(i, dict)}
+        # 图层已经勾选，或根本没切时间轴（不属于本守卫盯的「切了时间却漏勾选」），都不拦
+        if "set_layer_visibility" in names:
+            return result
+        if "set_timeline" not in names:
+            return result
+        reply = result.get("reply")
+        if not isinstance(reply, str) or not _VIEW_DONE_WORDS.search(reply):
+            return result
+        fixed = (
+            "这次我只把时间轴切过去了，但**没有勾选你要的图层**（图层显示指令没有成功下发）。"
+            "麻烦你再点一次图层名，我重新把图层显示出来。"
+        )
+        result = dict(result)
+        result["reply"] = fixed
+        logger.warning(
+            "agent.intent.partial_layer_switch: timeline set but layer not shown; "
+            "rewrote reply (was %d chars)",
+            len(reply),
+        )
+    except Exception:  # pragma: no cover - 兜底，纠正失败不该影响对话
+        logger.debug("guard partial layer switch intent failed", exc_info=True)
+    return result
 
 
 def _guard_unclaimed_view_intent(
@@ -4591,6 +4959,154 @@ def _guard_unclaimed_view_intent(
         )
     except Exception:  # pragma: no cover - 兜底，纠正失败不该影响对话
         logger.debug("guard unclaimed view intent failed", exc_info=True)
+    return result
+
+
+_MUTATING_UI_INTENTS = frozenset(
+    {
+        "set_layer_visibility",
+        "set_layer_opacity",
+        "fit_layer",
+        "fit_china",
+        "zoom_to_china",
+        "locate_coordinate",
+        "fly_to_location",
+        "fly_to",
+        "switch_basemap",
+        "set_basemap",
+        "set_timeline",
+        "set_timeline_playing",
+        "remove_layer",
+        "reorder_layer",
+        "set_layer_symbology",
+    }
+)
+
+#: 否定/只读限定：用户明说「不要/别/不许 + 动作」，或「只告诉我/只回答/保持原样/
+#: 不要改动」。这类句子里虽然可能出现「打开/切换」等写动词，但语义是**禁止操作**，
+#: 绝不能因为 _VIEW_WRITE_VERBS 命中写动词就放行模型顺手加的那些 UI 意图。
+#: 2026-11-10 实测 A12/D01：「不要打开 GPCP，只告诉我单位」却切了选中图层+时间轴；
+#: 「打开不存在的图层，别选其他」却显示了 GPCP——根因都是写动词放行掩盖了否定语义。
+_NEGATION_OR_READONLY_HINT = re.compile(
+    r"不要|别|不许|别把|无需|不用|不必|不需要|不要动|别动|保持(?:原样|不变|现状)|"
+    r"只(?:告诉|回答|问|查|看|要)我|仅(?:告诉|回答|查|看)|"
+    r"不改|不要改|别改|不许改|不要操作|不要选|别选|不许选|不要换|别换|"
+    r"若(?:不存在|没有).{0,6}(?:说明|告知|告诉)|不存在.{0,6}(?:说明|告知)",
+    re.I,
+)
+
+
+def _resolve_simple_visibility(
+    message: str, client_context: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """纯图层显隐的确定性解析：命中则返回可直接下发的 intent，否则 None。
+
+    2026-11-10 老师复测用例 04：一句「只显示风云…组中的植被光学厚度，保持其他
+    不变」，模型却 search_layers×3 + get_layer_meta 查满 4 跳预算、没轮到下发显示
+    就答「工具次数用完」。显隐没有取数语义，目标层往往就挂在页面上，一步定位、
+    一步下发即可，不耗工具预算。
+
+    关键：**不信任 mock_chat**（它对带「微波反演产品—平均散射约束模型组」目录描述
+    的复杂显隐句会把「显示植被光学厚度」错解析成「显示土壤水分」），而是直接用
+    ``_resolve_layer`` 精确解析（其内部已保证命中的名字片段一定出现在消息里）。
+    解析不到就返回 None，由调用方 fall through 交给模型，绝不直出一个可能串层的意图。
+    """
+    if not re.search(
+        r"只显示|只留|仅显示|单独显示|只打开|显示|打开|隐藏|关掉|关闭显示",
+        message or "",
+        re.I,
+    ):
+        return None
+    # 排除取数/统计/工作流/底图/时间轴等非纯显隐语义
+    if re.search(
+        r"查询|统计|计算|均值|平均值|多少|数值|取数|工作流|运行|跑一下|提交",
+        message or "",
+    ):
+        return None
+    if re.search(
+        r"底图|basemap|天地图|高德|esri|osm|openstreetmap", message or "", re.I
+    ):
+        return None
+    if re.search(r"切到|切至|跳到|时间轴|日期|定位|飞到|缩放到", message or ""):
+        return None
+    try:
+        from app.services.agent import mock_orchestrator as _mo
+
+        layers = _mo._normalize_layers(client_context)
+        pick = _mo._resolve_layer(message or "", layers, allow_demo_fallback=False)
+        if pick is None:
+            return None
+        visible = not re.search(r"隐藏|关掉|关闭显示|hide", message or "", re.I)
+        return {
+            "name": "set_layer_visibility",
+            "args": {
+                "catalog_id": pick.catalog_id,
+                "visible": visible,
+                "display_name": pick.name,
+            },
+        }
+    except Exception:  # pragma: no cover - 解析失败不该拦住这一轮
+        logger.debug("simple_visibility 规则解析失败", exc_info=True)
+        return None
+
+
+def _guard_read_only_ui_intents(message: str, result: dict[str, Any]) -> dict[str, Any]:
+    """只读提问不允许模型顺手新增图层、切时间或改变地图视图。"""
+
+    try:
+        # 否定/只读限定优先于写动词判定：用户说「不要打开 X」「只告诉我单位，
+        # 保持原样」时，哪怕句子里有「打开」这类写动词，也是**禁止操作**，
+        # 一律清空 mutating intents（2026-11-10 A12/D01 实测）。
+        if _NEGATION_OR_READONLY_HINT.search(message or ""):
+            intents = result.get("ui_intents")
+            if isinstance(intents, list) and intents:
+                kept = [
+                    item
+                    for item in intents
+                    if not (
+                        isinstance(item, dict)
+                        and str(item.get("name") or "") in _MUTATING_UI_INTENTS
+                    )
+                ]
+                if len(kept) != len(intents):
+                    result = dict(result)
+                    result["ui_intents"] = kept
+                    reply = str(result.get("reply") or "").rstrip()
+                    note = "本次是只读请求，没有改变地图上的图层、时间或显示状态。"
+                    if note not in reply:
+                        result["reply"] = f"{reply}\n\n{note}" if reply else note
+                    logger.warning(
+                        "agent.intent.negation: removed %d mutating intents",
+                        len(intents) - len(kept),
+                    )
+            return result
+        if _VIEW_WRITE_VERBS.search(message or ""):
+            return result
+        intents = result.get("ui_intents")
+        if not isinstance(intents, list) or not intents:
+            return result
+        kept = [
+            item
+            for item in intents
+            if not (
+                isinstance(item, dict)
+                and str(item.get("name") or "") in _MUTATING_UI_INTENTS
+            )
+        ]
+        if len(kept) == len(intents):
+            return result
+        result = dict(result)
+        result["ui_intents"] = kept
+        reply = str(result.get("reply") or "").rstrip()
+        note = "本次是只读查询，没有改变地图上的图层、时间或显示状态。"
+        if note not in reply:
+            result["reply"] = f"{reply}\n\n{note}" if reply else note
+        logger.warning(
+            "agent.intent.read_only: removed %d mutating intents",
+            len(intents) - len(kept),
+        )
+    except Exception:  # pragma: no cover
+        logger.debug("guard read-only intents failed", exc_info=True)
     return result
 
 
@@ -4646,18 +5162,24 @@ def run_chat(
         )
     try:
         return _attach_command_ids(
-            _guard_unclaimed_view_intent(
+            _guard_partial_layer_switch_intent(
                 message,
-                _order_ui_intents(
-                    _run_chat_impl(
-                        message,
-                        session_id=session_id,
-                        client_context=client_context,
-                        user_id=user_id,
-                        cred=cred,
-                        on_event=on_event,
+                _guard_unclaimed_view_intent(
+                    message,
+                    _order_ui_intents(
+                        _guard_read_only_ui_intents(
+                            message,
+                            _run_chat_impl(
+                                message,
+                                session_id=session_id,
+                                client_context=client_context,
+                                user_id=user_id,
+                                cred=cred,
+                                on_event=on_event,
+                            ),
+                        ),
+                        client_context,
                     ),
-                    client_context,
                 ),
             )
         )

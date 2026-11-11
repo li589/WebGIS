@@ -13,6 +13,21 @@ logger = logging.getLogger(__name__)
 #: 降水等其它变量不参与，避免把非栅格参考层写进映射。
 _VARIABLE_LABELS = frozenset({"sm", "vod", "omega"})
 
+#: 变量「英文缩写 → 中文/英文全称」别名，供 _search_layers 分词匹配时归一化。
+#: 根因（2026-11-10 实测）：图层名/成员变量里写的是「植被光学厚度」「土壤水分」，
+#: 用户嘴里说的是「VOD」「SM」——英文缩写在图层的 name_blob 里根本搜不到子串，
+#: 于是「SMAP 的 VOD」这条 query 分词后 smap/vod 两个 token 只命中 1 个（smap），
+#: 达不到 need=2 的门槛 ⇒ 名称匹配整段失败、全部跌进 description 回落，
+#: 风云产品反而靠描述里「SMAP 辅助数据」拿到低分排到真 SMAP 产品前面。
+#: 这里把英文缩写 token 展开成它的中英文同义词，任一命中即算该 token 命中。
+_VARIABLE_TOKEN_ALIASES: dict[str, tuple[str, ...]] = {
+    "sm": ("土壤水分", "土壤湿度", "soil moisture"),
+    "vod": ("植被光学厚度", "光学厚度", "vegetation optical"),
+    "omega": ("等效散射", "ω", "等效散射 ω"),
+    "tb": ("亮温", "brightness temperature"),
+    "ndvi": ("植被指数", "ndvi"),
+}
+
 # Read tools execute immediately; write tools create confirmation tickets (Phase B/C).
 _READ_TOOLS = frozenset(
     {
@@ -2656,6 +2671,13 @@ def _search_layers(
         if len(_tok) >= 2 and _tok not in _generic and _tok not in q_tokens:
             q_tokens.append(_tok)
 
+    def _token_aliases(tok: str) -> tuple[str, ...]:
+        """把变量英文缩写 token 展开成中英文同义词（VOD→植被光学厚度…）。"""
+        aliases = _VARIABLE_TOKEN_ALIASES.get(tok.casefold())
+        if not aliases:
+            return (tok,)
+        return (tok,) + aliases
+
     def _match_score(text: str) -> int:
         """命中强度：整串/去尾词命中 99，否则按分词命中个数打分（0=不命中）。"""
         low = str(text).casefold()
@@ -2666,7 +2688,8 @@ def _search_layers(
         # 分词多数命中：允许「土壤水分」这种变量词只出现在 group_members 里而
         # 不在族名里（「SMAP 平均散射约束产品」这个名字本身不含「土壤水分」），
         # 否则整串问法又退回 0 条。
-        hit = sum(1 for tok in q_tokens if tok in low)
+        # 每个 token 按别名展开（VOD↔植被光学厚度），任一别名命中即算命中。
+        hit = sum(1 for tok in q_tokens if any(a in low for a in _token_aliases(tok)))
         need = 2 if len(q_tokens) <= 3 else -(-len(q_tokens) * 3 // 5)
         return hit if hit >= need else 0
 
@@ -2777,6 +2800,13 @@ def _search_layers(
             if not _hit(blob):
                 continue
             score = min(_match_score(blob) or 1, 40)
+        else:
+            # 名称命中要稳压「描述命中」（上限 40）。否则「SMAP 的 VOD」问法下，
+            # 风云产品靠描述里的「SMAP 辅助数据」+ 成员变量「植被光学厚度」在
+            # 描述分支里也拿到 hit=2，与 SMAP 名称命中的 hit=2 打平，再按
+            # layer_id 字符串序反而排到真 SMAP 前面（2026-11-10 实测）。
+            # 名称命中抬到 100+ 档，与描述命中的 ≤40 彻底分离。
+            score = 100 + score
         entry: dict[str, Any] = {
             "layer_id": lid,
             "display_name": qualified,
@@ -3874,6 +3904,25 @@ def _month_block_for_message(
         return None
 
 
+def _requires_exact_single_day(
+    user_message: str, explicit_time: str | None, requested: str | None
+) -> bool:
+    """Whether the user explicitly forbids temporal or spatial substitution."""
+
+    return bool(
+        explicit_time
+        and requested
+        and len(str(requested)) == 8
+        and re.search(
+            r"不要.{0,12}(?:替代|代替|其他日期|合成|时间块|月均|整月|全国|全图)"
+            r"|取不到.{0,12}(?:直接|就).{0,8}(?:说|回答|停止|无法|不能)"
+            r"|只要.{0,8}(?:当天|当日|单日|这一天)"
+            r"|(?:当天|当日|单日|这一天).{0,8}(?:独立|观测)",
+            user_message or "",
+        )
+    )
+
+
 def _get_layer_statistics(
     args: dict[str, Any],
     *,
@@ -4117,11 +4166,42 @@ def _get_layer_statistics(
     # prefer_finest=True：同一天若同时落在「8 天窗块」和「跨季季均块」里，
     # 取跨度最短的那一片。否则会拿到季均块的 0.166402，回答却说成"这一天"。
     actual_key = spec.resolve_time_key(spec_time, prefer_finest=True)
+    ondemand_fetch: dict[str, Any] | None = None
+
+    # 用户明确说“取不到就停止 / 不要用别的日期或合成值替代”时，覆盖该日的
+    # 月块、多日块也不算命中。必须先尝试取得该日独立帧；失败就直接返回无值，
+    # 绝不继续统计覆盖块。这个约束优先于默认的“prefer_finest 覆盖块”策略。
+    strict_day = _requires_exact_single_day(user_message, explicit_time, requested)
+    if strict_day and str(actual_key or "") != str(requested):
+        ondemand_fetch = _ensure_ondemand_frame(local_id, requested)
+        if ondemand_fetch.get("ok"):
+            actual_key = spec.resolve_time_key(spec_time, prefer_finest=True)
+        if str(actual_key or "") != str(requested):
+            return {
+                "ok": False,
+                "catalog_id": catalog_id,
+                "display_name": _qualified_layer_name(
+                    catalog_id, _layer_display_name(catalog_id)
+                ),
+                "requested_time": requested,
+                "time_source": time_source,
+                "strict_time_match": True,
+                "must_not_use_block_or_nearby_date": True,
+                "error": (
+                    f"没有取得 {requested} 当天的独立单日数据，因此无法完成本次取数。"
+                    "用户明确禁止替代：不得返回覆盖该日的整月/多日合成块，"
+                    "不得换其他日期、其他区域或其他产品，也不得给出任何统计数值。"
+                ),
+                "user_facing": (
+                    "当前没有取得与指定产品、区域和日期相匹配的单日数据，"
+                    "因此无法给出可靠数值。我没有使用整月、多日合成、其他日期"
+                    "或其他区域的数据替代。"
+                ),
+            }
     # 清单里没有这一天 ⇒ 先去 NAS 现取一张单日帧（2026-11-05 用户要求：
     # 「NAS 上面有 25 年 11 月的数据啊，agent 不能调用 NAS 数据计算是吗」）。
     # 此前补帧只有前端拖时间轴这一个入口，助手只能回「这一层没有这一天」。
     # 只在「明确要了某一天」时才联网；没给日期时保持零开销。
-    ondemand_fetch: dict[str, Any] | None = None
     if actual_key is None and requested:
         ondemand_fetch = _ensure_ondemand_frame(local_id, requested)
         if ondemand_fetch.get("ok"):

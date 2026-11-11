@@ -1036,9 +1036,28 @@ _TAIL_NE_RE = re.compile(r"呢[？?]?\s*$")
 
 #: 用户明确说要整幅 / 全国口径：这时不能再沿用上一轮的行政区，否则会算成
 #: 「河南省」却告诉用户是全国值（2026-11-07 补区域沿用时加的排除项）。
+#: 2026-11-10 补「中国」：先问河北再问「中国区域」，原来的正则匹配不到「中国」，
+#: 于是沿用成河北，答成河北的值。中国/全国都算「不要沿用上一轮区域」。
 _NO_REGION_RE = re.compile(
     r"整幅|整层|整个|全国|全图|全球|全部区域|不分区域|不限区域|矩形框"
+    r"|中国(?:全境|全图|范围|境内|区域|地区)?|我国"
 )
+
+
+def _mentions_china_scope(message: str) -> bool:
+    """这句话是不是把「中国 / 全国」当成统计范围（而非缩放视图）。
+
+    与 orchestrator._mentions_china_scope 同口径，避免两条路径漂移。
+    排除「中国气象局 / 中国科学院」等机构名。
+    """
+    return bool(
+        re.search(
+            r"中国(?!气象局|科学院|科学研究院|工程院|政府|央行|人民银行)"
+            r"(?:全境|全图|范围|境内|区域|地区)?|全国|全境|我国",
+            str(message or ""),
+        )
+    )
+
 
 #: 明确要求「沿用上一轮那个日期」（用户没重新给日期）
 _DATE_CARRY_RE = re.compile(
@@ -1185,13 +1204,18 @@ def _same_variable_candidates(
     盘上没有就不列（绝不凭目录名编一个数出来）。
     """
     out: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen_name_source: set[tuple[str, str]] = set()
 
     def _add(entry: dict[str, Any]) -> None:
-        key = str(entry.get("overlay_layer_id") or entry.get("catalog_id") or "")
-        if not key or key in seen:
+        # 去重键：「显示名 + 来源」。页面层与目录成员 id 对不上时（页面层用的是
+        # 前端传的运行时 overlay_layer_id，目录层用 stable_imported_layer_id 反算的
+        # oid，两者可能不一致），overlay_layer_id 主键会失效，靠 name+source 兜底。
+        # 2026-11-10 实测：「SMAP 平均 · 植被光学厚度 / 等效散射 ω」在页面上挂着时，
+        # 同一条候选被列了两遍。
+        name_source = (str(entry.get("name") or ""), str(entry.get("source") or ""))
+        if name_source[0] and name_source in seen_name_source:
             return
-        seen.add(key)
+        seen_name_source.add(name_source)
         out.append(entry)
 
     def _qualified(layer: dict[str, Any]) -> str:
@@ -2342,6 +2366,23 @@ def _statistics_reply(
     # 2026-11-08 r73 实测「天河区的土壤水分平均值」被答成整层 0.1534，正文里
     # 连"天河"都没出现，用户当成天河区的值拿去用。这里明确回一句并给两条出路。
     if not region:
+        # 「中国 / 全国」也不是可统计的行政区范围（只到省与地级市），绝不能
+        # 静默退回整幅全球、也不能沿用上一轮区域（2026-11-10 线上实测：先问河北
+        # 再问「中国区域」被答成河北 0.2403）。明确回一句并给两条出路。
+        if _mentions_china_scope(text):
+            return {
+                "session_id": sid,
+                "reply": (
+                    "「中国 / 全国」不是系统里可统计的行政区范围——目前只做到**省级和地级市**，"
+                    "没有「中国全境」这一级掩膜，所以这次没有取数，也没有拿别的地区或全球整幅的数值顶替。\n\n"
+                    "两条路任选：\n"
+                    "① 换成具体的省或地级市（例如「河南省」「广州市」），我按行政边界统计；\n"
+                    "② 给我一个矩形范围（西、南、东、北四个经纬度，例如 [73, 18, 135, 53] 附近），"
+                    "我按这个框统计。"
+                ),
+                "ui_intents": intents,
+                "topic_state": {},
+            }
         _county = _county_like_region_name(text)
         if _county:
             return {

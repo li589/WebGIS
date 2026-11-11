@@ -100,3 +100,59 @@ def test_unresolved_region_is_explicitly_locked(monkeypatch):
     assert out["scope_locked"] is True
     assert out["must_not_fallback_to_full_extent"] is True
     assert out["requested_region"] == "甲壳虫省"
+
+
+def test_explicit_no_substitute_requires_an_exact_single_day():
+    from app.services.agent.server_tools_runtime import _requires_exact_single_day
+
+    assert _requires_exact_single_day(
+        "如果这一天取不到，直接说无法完成，不要用其他日期或全国均值替代。",
+        "20250715",
+        "20250715",
+    )
+    assert not _requires_exact_single_day(
+        "查询 2025 年 7 月 15 日北京土壤水分。",
+        "20250715",
+        "20250715",
+    )
+    assert not _requires_exact_single_day("不要替代。", None, "20250715")
+
+
+def test_statistics_does_not_return_covering_block_when_substitute_is_forbidden(
+    monkeypatch,
+):
+    from app.services.agent import server_tools_runtime as runtime
+
+    class FakeSpec:
+        default_time = "20250701_20250731"
+        time_list = ["20250701_20250731"]
+        source_reader = "geotiff"
+
+        def resolve_time_key(self, value, prefer_finest=False):
+            return "20250701_20250731"
+
+    monkeypatch.setattr(runtime, "_filter_ids", lambda ids, cred: list(ids))
+    monkeypatch.setattr(runtime, "_cross_source_guard", lambda *a, **k: None)
+    monkeypatch.setattr(
+        runtime,
+        "_ensure_ondemand_frame",
+        lambda *a, **k: {"attempted": True, "ok": False, "reason": "fetch_failed"},
+    )
+    monkeypatch.setattr(
+        "app.services.overlay_registry.get_overlay_spec", lambda layer_id: FakeSpec()
+    )
+
+    out = runtime._get_layer_statistics(
+        {"catalog_id": "imported-sm", "time": "2025-07-15"},
+        cred=None,
+        user_message=(
+            "查询2025年7月15日北京土壤水分；取不到就直接说无法完成，"
+            "不要用其他日期或全国均值替代。"
+        ),
+    )
+
+    assert out["ok"] is False
+    assert out["strict_time_match"] is True
+    assert out["must_not_use_block_or_nearby_date"] is True
+    assert "mean" not in out
+    assert "整月、多日合成" in out["user_facing"]

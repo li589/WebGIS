@@ -270,6 +270,7 @@ def create_app() -> FastAPI:
         from app.api.rate_limit import (
             check_agent_chat_rate_limit,
             check_agent_guest_quota_layers,
+            RateLimitResult,
             check_agent_models_refresh_rate_limit,
             check_feedback_upload_rate_limit,
             check_login_rate_limit,
@@ -362,9 +363,18 @@ def create_app() -> FastAPI:
             if is_guest_request(request):
                 ip = client_ip(request)
                 visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
-                guest, blocked_by = check_agent_guest_quota_layers(
-                    visitor_id or None, ip
-                )
+                # 前端「流式失败 → 非流式回退」时，同一条用户消息会先后打到
+                # /agent/chat/stream 和 /agent/chat 两个端点，中间件会各扣一次额度，
+                # 导致「每提一个问题计 1 次」的承诺变成一次扣 2 次（2026-11-10
+                # 老师实测 8 条输入扣了 12 次）。回退请求带 X-Agent-Charge: skip
+                # 表示这一跳是重试、额度在流式那跳已扣，这里跳过、不再重复扣。
+                if (request.headers.get("x-agent-charge") or "").lower() != "skip":
+                    guest, blocked_by = check_agent_guest_quota_layers(
+                        visitor_id or None, ip
+                    )
+                else:
+                    guest = RateLimitResult(True, 0)
+                    blocked_by = None
                 if not guest.allowed:
                     logger.info(
                         "游客日额度用尽 scope=%s ip=%s visitor=%s",

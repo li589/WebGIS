@@ -408,7 +408,7 @@ describe("executeAgentUiIntent", () => {
     );
     expect(res.ok).toBe(true);
     expect(res.message).toContain("单日图");
-    expect(res.message).toContain("刚从 NAS 取回");
+    expect(res.message).toContain("刚从取数服务取得");
   });
 
   it("reports the fetch failure reason instead of pretending success", async () => {
@@ -438,9 +438,10 @@ describe("executeAgentUiIntent", () => {
       { name: "set_timeline", args: { date: "2025-12-20" } },
       { ensureOnDemandFrame },
     );
-    expect(res.ok).toBe(true);
+    expect(res.ok).toBe(false);
     expect(res.message).toContain("2025-12-03");
-    expect(res.message).toContain("NAS 成果不覆盖这一天");
+    expect(res.message).toContain("该日没有可用的单日数据");
+    expect(res.message).not.toContain("NAS");
   });
 
   it("toggles timeline playing", async () => {

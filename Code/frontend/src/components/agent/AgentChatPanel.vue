@@ -52,6 +52,7 @@ import {
   type AgentLayerCard,
 } from './agent-chat-helpers'
 import { agentMapPoint } from '../../stores/agent-map-point'
+import { useAuthStore } from '../../stores/auth'
 import companionIcon from '../../assets/agent-companion.png'
 import 'katex/dist/katex.min.css'
 
@@ -94,6 +95,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
+
+const authStore = useAuthStore()
+// 游客（demo 共享账号）没有历史会话：后端对游客一律返回空/404，前端也隐藏入口，
+// 否则所有游客共用同一个 demo user_id，历史会话会互相越权（2026-11-10 实测 P0）。
+const guestWithoutHistory = computed(() => authStore.isRestrictedRole)
 
 interface PendingConfirmation extends AgentConfirmation {
   status: 'pending' | 'approved' | 'rejected' | 'error'
@@ -435,6 +441,7 @@ function downloadChatExport() {
       role: m.role,
       text: m.text,
       usage: m.usage,
+      steps: m.steps,
     })),
     { sessionId: sessionId.value, title: 'CGDA 地图助手会话' },
   )
@@ -1304,7 +1311,7 @@ async function send() {
           ? '请求超时，已自动改用普通请求。'
           : `流式通道不可用，已自动改用普通请求。\n原因：${reason}`,
       })
-      res = await postAgentChat(req, { signal: abortSignal })
+      res = await postAgentChat(req, { signal: abortSignal, chargeSkip: true })
     }
     flushStreamText()
     if (isUserInitiatedStop(abortSignal)) {
@@ -1389,6 +1396,7 @@ function onKeydown(ev: KeyboardEvent) {
       :style="panelStyle"
       role="dialog"
       aria-label="地图助手对话"
+      :aria-busy="sending"
     >
       <header class="agent-chat-header" title="拖动移动对话框" @pointerdown="onHeaderPointerDown">
         <div class="agent-chat-title">
@@ -1407,7 +1415,7 @@ function onKeydown(ev: KeyboardEvent) {
           </span>
         </div>
         <div class="agent-chat-header-actions">
-          <div class="agent-session-wrap">
+          <div v-if="!guestWithoutHistory" class="agent-session-wrap">
             <button
               type="button"
               class="agent-chat-header-btn"
@@ -1480,7 +1488,12 @@ function onKeydown(ev: KeyboardEvent) {
         </div>
       </header>
 
-      <div ref="listRef" class="agent-chat-list" @scroll.passive="onListScroll">
+      <div
+        ref="listRef"
+        class="agent-chat-list"
+        :aria-busy="sending"
+        @scroll.passive="onListScroll"
+      >
         <div
           v-for="msg in messages"
           :key="msg.id"
@@ -1696,7 +1709,6 @@ function onKeydown(ev: KeyboardEvent) {
           class="agent-chat-input"
           rows="1"
           placeholder="输入指令，Enter 发送 · Shift+Enter 换行"
-          :disabled="sending"
           @keydown="onKeydown"
           @input="autosizeInput"
         />

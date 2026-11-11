@@ -213,6 +213,18 @@ def _cred_meta(cred: CredentialContext | None) -> tuple[int | None, str | None]:
     return cred.user_id, cred.role
 
 
+def _is_guest_session_request(request: Request) -> bool:
+    """请求是否属于「游客」——游客不拥有历史会话能力。
+
+    与额度侧 ``is_guest_request`` 同口径：没有有效会话、或会话角色是 demo/guest
+    （含「以游客身份进入」）都算游客。这些请求共用一个共享 demo 账号，绝不能
+    按 ``cred.user_id`` 去列/读/删历史会话，否则会互相越权（2026-11-10 实测 P0）。
+    """
+    from app.api.rate_limit import is_guest_request
+
+    return bool(is_guest_request(request))
+
+
 def _perm_error(exc: AgentPermissionError) -> ApiError:
     return ApiError(
         AUTH_ERROR,
@@ -467,6 +479,11 @@ def agent_list_sessions(
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     _require_agent_access(request, cred)
+    # 游客（demo/guest 共享账号）没有历史会话：直接返回空。否则所有游客共用
+    # 同一个 demo user_id，列表会把其他人的查询全文列出来（2026-11-10 老师
+    # 实测 P0 越权）。游客的「当前会话内」多轮追问走 session_id，不受影响。
+    if _is_guest_session_request(request):
+        return {"sessions": [], "count": 0}
     uid, _role = _cred_meta(cred)
     from app.services.agent.session_store import list_sessions
 
@@ -481,6 +498,13 @@ def agent_get_session(
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     _require_agent_access(request, cred)
+    # 游客读不到任何历史会话（同上，防止共享 demo 桶互相越权读取全文）。
+    if _is_guest_session_request(request):
+        raise ApiError(
+            NOT_FOUND_ERROR,
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found.",
+        )
     uid, _role = _cred_meta(cred)
     from app.services.agent.session_store import get_session_messages
 
@@ -501,6 +525,13 @@ def agent_delete_session(
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     _require_agent_access(request, cred)
+    # 游客不能删历史会话（不存在，也就谈不上删）。
+    if _is_guest_session_request(request):
+        raise ApiError(
+            NOT_FOUND_ERROR,
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found.",
+        )
     uid, _role = _cred_meta(cred)
     # Fail-closed: anonymous callers cannot list/get/delete sessions
     if uid is None:

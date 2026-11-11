@@ -173,12 +173,15 @@ export function getAgentQuota(): Promise<AgentQuota> {
 
 export function postAgentChat(
   body: AgentChatRequest,
-  init?: { signal?: AbortSignal },
+  init?: { signal?: AbortSignal; chargeSkip?: boolean },
 ): Promise<AgentChatResponse> {
   return requestJson<AgentChatResponse>('/agent/chat', {
     method: 'POST',
     body: JSON.stringify(body),
     signal: init?.signal,
+    // 流式失败回退到非流式时带 X-Agent-Charge: skip，让后端中间件跳过
+    // 游客日额度的二次扣费（同一条消息已在流式那跳扣过，见 main.py）。
+    headers: init?.chargeSkip ? { 'X-Agent-Charge': 'skip' } : undefined,
   })
 }
 

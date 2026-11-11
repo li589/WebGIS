@@ -60,6 +60,49 @@ _DEFINITION_HINT = re.compile(
     r"什么是|是什[么麼]|什么意思|含义|概念|介绍(?:一下)?|解释(?:一下)?|指什么",
     re.I,
 )
+#: 项目知识库不覆盖的「机器学习 / 算法超参」等无关技术术语。用户拿这类词来问
+#: （如「Adam 学习率是多少」），若没有拦截，会一路透传到模型，模型再拿上一轮的
+#: 图层统计上下文把问题串成「继续统计土壤水分」（2026-11-10 老师实测 P0：连新会话
+#: 都会复现，根因正是这里缺兜底）。
+_ML_HYPERPARAM_HINT = re.compile(
+    r"学习率|learning\s*rate|batch\s*size|epoch|adam|adamw|sgd|dropout|"
+    r"正则化|regularization|损失函数|loss\s*function|优化器|optimizer|"
+    r"梯度|gradient|权重|weight\s*decay|动量|momentum|lr\b",
+    re.I,
+)
+#: 疑问标记：问「多少 / 是什么 / 默认值」等，说明在求一个值或定义。
+_QUESTION_VALUE_HINT = re.compile(
+    r"是多少|是什么|多少|多大|几多|默认值|设为|取值|数值|默认|怎么设置|"
+    r"how\s*much|what\s*is",
+    re.I,
+)
+#: 规划/设计意图：用户要的是「设计分析流程/工作流、逐项给步骤与参数、先不运行」，
+#: 不是求某个概念的定义、也不是取数。这类请求必须放行给模型走规划路径，绝不能
+#: 被下面的 `_DEFINITION_HINT`（命中「解释」）当成「什么是土壤水分」拦截。
+#: 2026-11-10 老师实测 P1：用例 11/16「设计一个广州土壤水分月均值分析工作流，
+#: 逐项解释所有步骤与参数，先不要运行」被误答成「SM 是 Soil Moisture…」的定义，
+#: 新会话复测则答成「没取到数值」——根因就是这句里的「解释」触发了定义分支。
+_PLANNING_HINT = re.compile(
+    r"设计.{0,12}(?:工作流|流程|方案|步骤|分析)|"
+    r"(?:工作流|分析流程|分析方案|处理流程).{0,6}(?:设计|规划|怎么|如何)|"
+    r"(?:规划|设计).{0,6}(?:分析|处理|计算).{0,6}(?:流程|步骤|方案)|"
+    r"(?:只给|仅给|只要).{0,6}(?:步骤|流程|方案)|"
+    r"先不要运行|先别运行|不要运行|不运行|只出步骤|别运行|先不执行",
+    re.I,
+)
+#: 项目内图层/变量/区域线索：出现这些词说明对象可能仍是系统里的取数对象，不该兜底拒答。
+_KNOWLEDGE_SCOPE_HINT = re.compile(
+    r"土壤水|土壤湿|含水量|墒情|植被光学厚度|光学厚度|等效散射|散射|ω|omega|"
+    r"(?<![a-z])sm(?![a-z])|(?<![a-z])vod(?![a-z])|亮温|微波|反演|"
+    r"图层|产品|数据|降水|温度|湿度",
+    re.I,
+)
+#: 兜底拒答文案：项目资料里没有这个术语的信息，明确承认无法确定，不编造、不串题。
+_ML_HYPERPARAM_REPLY = (
+    "当前项目资料里没有登记「{term}」这个参数，我无法确定它的取值或含义。"
+    "这个问题超出了本系统能回答的范围，我没有拿别的数据来顶替。"
+)
+
 _METRIC_HINT = re.compile(
     r"精度|准确率|误差|不确定度|准不准|rmse|mae|r\s*[²2]|决定系数", re.I
 )
@@ -85,6 +128,25 @@ def project_knowledge_reply(message: str) -> str | None:
     if not text:
         return None
     folded = text.casefold()
+
+    # 规划/设计意图最高优先：用户要「设计分析工作流、只给步骤不运行」时，
+    # 这里必须返回 None 放行给模型走规划路径，绝不能落到下面的定义分支
+    # 被当成「什么是土壤水分」。（2026-11-10 P1：用例 11/16 误答成 SM 定义 /
+    # 没取到数值，根因就是「逐项解释步骤」里的「解释」触发了 _DEFINITION_HINT。）
+    if _PLANNING_HINT.search(text):
+        return None
+
+    # 兜底拒答（最高优先）：用户问「项目知识库没登记的机器学习/算法超参」。
+    # 「Adam 学习率是多少」这类问题若无此拦截，会透传到模型并被上一轮统计上下文串题。
+    # 只在「是疑问句 + 命中无关术语 + 不含系统图层/变量/区域线索」时才拒答，
+    # 避免误伤「SM 的均值」「土壤水分是多少」这类正常取数。
+    _ml_term = _ML_HYPERPARAM_HINT.search(text)
+    if (
+        _ml_term is not None
+        and _QUESTION_VALUE_HINT.search(text)
+        and not _KNOWLEDGE_SCOPE_HINT.search(text)
+    ):
+        return _ML_HYPERPARAM_REPLY.format(term=_ml_term.group(0))
 
     if _METRIC_HINT.search(text) and _PROJECT_CONTEXT.search(text):
         return _UNVERIFIED_METRICS_REPLY
