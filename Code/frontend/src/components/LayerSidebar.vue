@@ -12,7 +12,14 @@ import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import { useAuthStore } from '../stores/auth'
-import type { ActiveLayer, ActiveLayerDisplay } from '../stores/layers/types'
+import type {
+  ActiveLayer,
+  ActiveLayerDisplay,
+  LayerCategory,
+  RuntimeLayerLibraryItem,
+} from '../stores/layers/types'
+import { DEFAULT_LAYERS } from '../stores/layers/default-layers'
+import { LAYER_CATEGORIES } from '../stores/layers/catalog'
 import { deriveDataStatus, normalizeRunGroupMemberStatus } from '../utils/layer-data-status'
 import { resolveCategoryDisplayName } from '../stores/layers/catalog'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
@@ -60,6 +67,120 @@ import { resolveInversionCatalogId } from '../stores/layers/inversion-catalog'
  * （用户选择「先只做界面，等以后接真实数据」）。默认停在「研发产品」。
  */
 const datasetScope = ref<'research' | 'public' | 'favorite'>('research')
+
+/**
+ * 数据集页签分流（2026-11-11 老师需求：研发产品与公共数据分开）。
+ *
+ * 「公共数据」页签只显示四类公开数据集（climate/landcover/terrain/vegetation），
+ * 那四个研发图层组（research-group 核心资产）绝不混入；
+ * 「研发产品」页签显示其余全部（核心资产 + 本地导入 + 在线天气 + 行政区边界）。
+ *
+ * ⚠ 这只是**侧栏「已添加图层」列表的显示层过滤**——地图渲染、图例、信息面板、
+ * 拖拽排序、右键菜单、助手（agent）全部走原始 `activeLayersDisplay`，不受影响。
+ */
+const PUBLIC_DATA_CATEGORIES = new Set(['climate', 'landcover', 'terrain', 'vegetation'])
+
+const scopedActiveLayersDisplay = computed<ActiveLayerDisplay[]>(() => {
+  if (datasetScope.value === 'public') {
+    return activeLayersDisplay.value.filter((l) => PUBLIC_DATA_CATEGORIES.has(l.category))
+  }
+  // research 与 favorite：favorite 走空态占位（模板 v-else-if 拦截），此处返回原列表；
+  // research 显示全部（研发组 + 导入 + 天气 + 边界），无需过滤。
+  return activeLayersDisplay.value
+})
+
+/**
+ * 「研发产品」页签下的图层库，只显示默认四组（风云平均/动态、SMAP平均/动态），
+ * 其余研发产物（模型输入/辅助数据/其他模型输出）一律不显示。
+ *
+ * 白名单来源用 DEFAULT_LAYERS（默认挂载四组的权威 catalogId），并补上 SMAP 平均
+ * 的 catalog 别名 `method-smap-omega-doy-avg`（default-layers 里写的是
+ * `method-smap-season-mean`，二者指向同一产物）。
+ */
+const RESEARCH_GROUP_CATALOG_IDS = new Set<string>([
+  ...DEFAULT_LAYERS.map((e) => e.catalogId),
+  'method-smap-omega-doy-avg',
+])
+
+function isResearchGroupItem(catalogId: string): boolean {
+  if (RESEARCH_GROUP_CATALOG_IDS.has(catalogId)) return true
+  return RESEARCH_GROUP_CATALOG_IDS.has(resolveInversionCatalogId(catalogId))
+}
+
+/**
+ * 图层库面板按页签分流：直接基于 `search.filteredLibrary`（已含搜索过滤、未分桶）
+ * 的**条目**做 scope 过滤后自建分组。
+ *
+ * ⚠ 不能基于 `filteredLibraryByCategory`：它按**运行时分组表**分桶，而管理端
+ * 分组状态可能只建了部分组（2026-11-11 实测 /layers/categories 只返回
+ * research-group 一个）→ climate 等公共条目会被整桶丢光，公共页签永远为空。
+ *
+ * ⚠ 研发四组（method-*）在运行时目录中是**合并组虚拟条目**：
+ *   fy-omega-inversion = [风云平均 + 风云动态]、smap-omega-inversion = [SMAP平均 + SMAP动态]。
+ *   白名单除了匹配 catalogId 本名，还须识别「members 命中四组」的虚拟条目，
+ *   否则研发页签一张卡片都不剩。
+ */
+function buildScopeGroups(items: RuntimeLayerLibraryItem[]): Array<{
+  category: LayerCategory
+  items: RuntimeLayerLibraryItem[]
+}> {
+  const order: string[] = []
+  const byCat = new Map<string, RuntimeLayerLibraryItem[]>()
+  for (const it of items) {
+    let bucket = byCat.get(it.category)
+    if (!bucket) {
+      bucket = []
+      byCat.set(it.category, bucket)
+      order.push(it.category)
+    }
+    bucket.push(it)
+  }
+  // 分组顺序跟目录声明走（运行时分组表优先，静态 codegen 表兜底），
+  // 而不是按条目出现顺序——否则公共数据页签会排成 vegetation→climate→landcover→terrain。
+  const declaredOrder = new Map<string, number>()
+  let seq = 0
+  for (const cat of [...layerCategories.value, ...LAYER_CATEGORIES]) {
+    if (cat.hidden || declaredOrder.has(cat.id)) continue
+    declaredOrder.set(cat.id, seq++)
+  }
+  order.sort((a, b) => {
+    const oa = declaredOrder.get(a) ?? Number.MAX_SAFE_INTEGER
+    const ob = declaredOrder.get(b) ?? Number.MAX_SAFE_INTEGER
+    return oa !== ob ? oa - ob : a.localeCompare(b)
+  })
+  return order.map((id) => ({
+    category: layerCategories.value.find((c) => c.id === id) ??
+      LAYER_CATEGORIES.find((c) => c.id === id) ?? {
+        id,
+        name: id,
+        icon: '',
+        accentColor: 'var(--accent)',
+        chipTone: '',
+      },
+    items: byCat.get(id)!,
+  }))
+}
+
+const scopedFilteredLibraryByCategory = computed(() => {
+  const items = search.filteredLibrary.value
+  if (datasetScope.value === 'research') {
+    // 只保留「研发四组」：条目本名命中白名单，或 members 命中白名单的合并组虚拟条目
+    const hits = items.filter((it) => {
+      if (it.mergedInto) return false // 合并组成员已被虚拟组替代，避免重复
+      if (isResearchGroupItem(it.catalogId)) return true
+      if (it.isMergedGroup && (it.members ?? []).some((m) => isResearchGroupItem(m))) return true
+      return false
+    })
+    return buildScopeGroups(hits)
+  }
+  if (datasetScope.value === 'public') {
+    // 只保留公共数据四分类（climate/landcover/terrain/vegetation）
+    const hits = items.filter((it) => !it.mergedInto && PUBLIC_DATA_CATEGORIES.has(it.category))
+    return buildScopeGroups(hits)
+  }
+  // favorite：空态占位（与「暂无收藏图层」一致），图层库不给内容
+  return []
+})
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -762,7 +883,13 @@ function getCatalogSourceSummary(catalogId: string): string {
 // ── 分类辅助 ─────────────────────────────────────────────────────────────────
 
 function getCategoryMeta(categoryId: string) {
-  return layerCategories.value.find((c) => c.id === categoryId)
+  // 2026-11-11：运行时分组表可能只含部分分组（实测 /layers/categories 只返回
+  // research-group），此时公共分类（climate/landcover/terrain/vegetation）取不到元数据，
+  // 侧栏图层库分组标题会退化成英文 id。这里回落静态 codegen 表拿中文名与主题色。
+  return (
+    layerCategories.value.find((c) => c.id === categoryId) ??
+    LAYER_CATEGORIES.find((c) => c.id === categoryId)
+  )
 }
 
 function getCategoryName(categoryId: string): string {
@@ -983,7 +1110,7 @@ onMounted(() => {
       v-else-if="sidebarView === 'library'"
       :search-query="search.searchQuery.value"
       :selected-sub-category="search.selectedSubCategory.value"
-      :filtered-library-by-category="search.filteredLibraryByCategory.value"
+      :filtered-library-by-category="scopedFilteredLibraryByCategory"
       :research-sub-category-pills="search.researchSubCategoryPills.value"
       :expanded-categories="search.expandedCategories.value"
       :is-added="isAdded"
@@ -1037,7 +1164,7 @@ onMounted(() => {
     <!-- ── ACTIVE STATE ───────────────────────────────────────────────── -->
     <LayerSidebarActive
       v-else-if="sidebarView === 'active'"
-      :active-layers-display="activeLayersDisplay"
+      :active-layers-display="scopedActiveLayersDisplay"
       :active-toc-rows="drag.activeTocRows.value"
       :selected-instance-id="selectedInstanceId"
       :drag-over-instance-id="drag.dragOverInstanceId.value"

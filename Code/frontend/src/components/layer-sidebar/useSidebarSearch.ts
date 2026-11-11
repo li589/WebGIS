@@ -1,5 +1,6 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { RuntimeLayerLibraryItem, LayerCategory } from '../../stores/layers/types'
+import { LAYER_CATEGORIES } from '../../stores/layers/catalog'
 
 /**
  * Extracts search and filtering logic from LayerSidebar.vue.
@@ -18,11 +19,22 @@ export function useSidebarSearch(
   ensureWeatherProviders: (catalogId: string) => Promise<void>,
 ) {
   const searchQuery = ref('')
-  const expandedCategories = ref<Set<string>>(new Set(layerCategories.value.map((c) => c.id)))
+  const expandedCategories = ref<Set<string>>(
+    new Set([
+      ...layerCategories.value.map((c) => c.id),
+      ...LAYER_CATEGORIES.filter((c) => !c.hidden).map((c) => c.id),
+    ]),
+  )
 
-  // 图层平台 P1：分组运行时变化——新增分组默认展开，已删除分组收敛
+  // 图层平台 P1：分组运行时变化——新增分组默认展开，已删除分组收敛。
+  // 2026-11-11：收敛时保留静态种子分类（climate 等）——管理端分组状态可能只建了
+  // 部分组（实测 /layers/categories 只返回 research-group），若只按运行时表收敛，
+  // 图层库页签分流后公共分类会整组折叠，看起来像空的。
   watch(layerCategories, (categories) => {
-    const ids = new Set(categories.map((c) => c.id))
+    const ids = new Set([
+      ...categories.map((c) => c.id),
+      ...LAYER_CATEGORIES.filter((c) => !c.hidden).map((c) => c.id),
+    ])
     const next = new Set([...expandedCategories.value].filter((id) => ids.has(id)))
     for (const id of ids) next.add(id)
     expandedCategories.value = next
