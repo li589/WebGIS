@@ -20,6 +20,7 @@ import {
 import { dataWorkspaceExportTime, dataWorkspaceLayerId } from '../core/workspace-store'
 import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
+import { useAuthStore } from '../../stores/auth'
 import type { ActiveLayer } from '../../stores/layers/types'
 import { resolveExportBasename } from '../../stores/layers/layer-naming'
 
@@ -33,6 +34,16 @@ const emit = defineEmits<{ close: [] }>()
 const workspace = useLayerWorkspace()
 const viewport = useLayerViewport()
 const logStore = useLogStore()
+const authStore = useAuthStore()
+
+/**
+ * 演示（游客）账户没有数据搬运权限：后端 ``require_data_transfer_access``
+ * 对 demo 一律 403。2026-11-11 用户实测：面板顶部已经写了「导入/导出受限」，
+ * 但「开始导出」按钮仍然可点——点下去请求被 403 拒掉、错误显示一闪而过，
+ * 用户看到的就是「按钮变灰又恢复，什么也没发生」。这里直接把按钮锁死，
+ * 让界面和后端的权限判断一致。
+ */
+const exportRestricted = computed(() => authStore.isDemo)
 
 const selectedIds = ref<string[]>([])
 const selectedTime = ref<string>('')
@@ -640,10 +651,14 @@ async function doExport() {
             预估大小：~{{ formatBytes(estimatedSize) }}
             <span class="est-hint">（仅为粗略估算）</span>
           </p>
+          <p v-if="exportRestricted" class="export-restricted-hint" role="note">
+            演示账户没有数据导出权限，无法导出。需要下载数据请联系管理员开通标准账户。
+          </p>
           <AppButton
             variant="primary"
             block
             :disabled="
+              exportRestricted ||
               busy ||
               !selectedIds.length ||
               (showTimePicker && timeExportMode === 'multi' && !selectedTimes.length)
@@ -724,6 +739,16 @@ async function doExport() {
   font-size: var(--font-size-caption);
   color: var(--text-faint);
   line-height: 1.4;
+}
+/* 演示账户导出受限：界面要和后端 403 保持一致，先说清楚再禁用按钮 */
+.export-restricted-hint {
+  margin: 0.5rem 0 0.25rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  background: var(--bg-subtle, rgba(127, 127, 127, 0.1));
+  color: var(--text-muted, var(--text-faint));
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
 }
 .data-panel-body {
   display: flex;
