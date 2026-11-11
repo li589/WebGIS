@@ -198,7 +198,12 @@ _LAYER_ALIASES: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
     (re.compile(r"omega|ω|散射", re.I), ("散射", "ω", "omega")),
 ]
 
-_STAT_VERB = re.compile(r"平均|均值|统计|像元数|最大|最小|mean|average", re.I)
+#: 2026-11-11 用户实测：「显示 SMAP **平均版**土壤水分」被这里裸的「平均」判成统计请求，
+#: 于是「开启一层」变成了「取这个月的平均值」，还回「这层算不出数值」。
+#: 「平均」后面接的是产品形态（版/散射/约束）时它是在点产品，不是要统计。
+_STAT_VERB = re.compile(
+    r"平均(?!版|散射|约束|产品)|均值|统计|像元数|最大|最小|mean|average", re.I
+)
 #: 界面动作动词（用于从复合指令里挑出「顺带要做的界面动作」）
 _SIDE_VERB = re.compile(
     r"打开|显示|隐藏|移除|删除|去掉|切换|缩放|定位|飞到|置顶|置底|透明度", re.I
@@ -247,6 +252,15 @@ def _catalog_pick(message: str) -> LayerPick | None:
             lid = str(it.get("layer_id") or "").strip()
             if not name or not lid:
                 continue
+            # 2026-11-11 用户实测：「显示 SMAP 土壤水分图层」在活动层里判成歧义后
+            # 落到这里，靠名字首词「SMAP」就命中了目录里的「SMAP 平均散射约束产品」——
+            # 变量根本不是土壤水分，页面反而被切到一个错的产品，比反问更糟。
+            # 消息点了变量词，就要求目录层名含同一组变量词。
+            wanted = [terms for pat, terms in _LAYER_ALIASES if pat.search(message)]
+            if wanted and not any(
+                term.lower() in name.lower() for terms in wanted for term in terms
+            ):
+                continue
             # 名字整体或开头词（如「CMFD」）出现在消息里才算认出
             tokens = [name] + name.split()[:1]
             if any(t and t.lower() in lower for t in tokens):
@@ -254,6 +268,136 @@ def _catalog_pick(message: str) -> LayerPick | None:
         return None
     except Exception:
         return None
+
+
+#: 消息里的来源词 → ``resolve_layer_identity`` 的 ``source`` 值。
+#: 与 ``_SOURCE_HINTS`` 的区别：那个拿去比对**层名**（"SMAP"/"风云"），
+#: 这个拿去比对**身份**（"smap"/"fy"），因为层名里常常根本没有来源。
+_IDENTITY_SOURCE_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"smap|斯玛普", re.I), "smap"),
+    (re.compile(r"风云|风三|风四|nsmc|fy-?\s*[34]", re.I), "fy"),
+)
+
+#: 消息里的产品形态词 → ``product_family`` 值。
+_IDENTITY_FAMILY_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"动态|逐日|每天|日尺度", re.I), "raw"),
+    (
+        re.compile(r"平均(?!值|多少|是|为|约|大概|下|一|的|数|量)|月均|季均|气候态"),
+        "average",
+    ),
+)
+
+_IDENTITY_CACHE: dict[str, dict[str, Any]] = {}
+
+#: ``product_family`` → 用户嘴里的叫法（反问和回执都要靠它区分同名层）。
+_FAMILY_LABELS: dict[str, str] = {"average": "平均版", "raw": "动态版"}
+
+#: ``identity.source`` → ``_SOURCE_HINTS`` 里的中文标记，两套写法要能对上。
+_SOURCE_MARKER: dict[str, str] = {"smap": "smap", "fy": "风云"}
+
+
+def _layer_identity(catalog_id: Any) -> dict[str, Any]:
+    """``catalog_id`` → 来源 / 变量 / 产品形态（读不出返回空 dict，绝不抛）。"""
+    key = _bare_layer_id(str(catalog_id or "")).strip()
+    if not key:
+        return {}
+    cached = _IDENTITY_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        from app.services.agent.layer_identity import resolve_layer_identity
+
+        value = resolve_layer_identity(key)
+    except Exception:
+        value = {}
+    _IDENTITY_CACHE[key] = value
+    return value
+
+
+def _narrow_by_identity(
+    message: str, layers: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """用「来源 / 产品形态」把同名层收窄（2026-11-11 用户实测）。
+
+    页面上 SMAP 平均 / SMAP 动态 / 风云平均 / 风云动态 四族的层名往往都叫
+    「土壤水分」，而前端 ``active_layers`` 并不带来源字段——身份只存在
+    ``catalog_id`` 里（``imported-nas-smap-avg-sm``）。旧实现在两个候选上直接
+    反问「要打开哪个图层」，把用户已经说清楚的话又抛回去，于是新开对话单独说
+    「显示 SMAP 土壤水分图层」永远切不过去，页面一直停在原来的层。
+
+    收窄规则：
+    - 消息点了来源 → 只留 ``source`` 对得上的；
+    - 消息点了形态 → 只留 ``product_family`` 对得上的；
+    - 身份读不出来的层**不淘汰**（宁可后面反问，也不凭猜测删候选）；
+    - 来源和形态都没点名 → 原样返回，交给调用方反问。
+    """
+    if not layers:
+        return layers
+    want_source = next(
+        (val for pat, val in _IDENTITY_SOURCE_HINTS if pat.search(message)), None
+    )
+    want_family = next(
+        (val for pat, val in _IDENTITY_FAMILY_HINTS if pat.search(message)), None
+    )
+    if not want_source and not want_family:
+        return layers
+    kept: list[dict[str, Any]] = []
+    for layer in layers:
+        ident = _layer_identity(layer.get("catalog_id"))
+        if not ident:
+            kept.append(layer)
+            continue
+        if want_source and str(ident.get("source") or "") != want_source:
+            continue
+        if want_family and str(ident.get("product_family") or "") != want_family:
+            continue
+        kept.append(layer)
+    return kept
+
+
+def _layer_display_with_identity(layer: dict[str, Any]) -> str:
+    """层名 + 来源/形态前缀，用于区分同名的「土壤水分」。
+
+    页面上四族都叫「土壤水分」，「已显示「土壤水分」」这种回执等于没说——
+    用户不知道切的是 SMAP 平均还是风云动态（2026-11-11 用户实测）。
+    只在名字里确实缺来源/形态时才补前缀，避免「SMAP SMAP 土壤水分」。
+    """
+    name = _display(layer)
+    ident = _layer_identity(layer.get("catalog_id"))
+    if not ident:
+        return name
+    source = str(ident.get("source_label") or "").strip()
+    family = _FAMILY_LABELS.get(str(ident.get("product_family") or ""), "")
+    parts: list[str] = []
+    if source and source.lower() not in name.lower():
+        parts.append(source)
+    if family and family not in name:
+        parts.append(family)
+    if not parts:
+        return name
+    return f"{' '.join(parts)} · {name}"
+
+
+def _page_has_named_candidate(message: str, layers: list[dict[str, Any]]) -> bool:
+    """页面上有没有「字面或别名命中」的层，哪怕因为同名歧义没能定到唯一一个。
+
+    2026-11-11 用户实测：「显示 SMAP 土壤水分图层」在页面上有两个候选（平均版 /
+    动态版），``_resolve_layer`` 正确地不肯猜；但调用方紧接着去图层目录兜底，
+    又加载了目录里第三个「SMAP L3 土壤水分」——用户要的那层本来就在页面上，
+    结果反而多挂一层错的产品。页面既然有相关层，就该反问而不是换一个顶上。
+    """
+    lower = message.lower()
+    for layer in layers:
+        if any(key and key.lower() in lower for key in _name_keys(layer)):
+            return True
+    for pattern, terms in _LAYER_ALIASES:
+        if not pattern.search(message):
+            continue
+        for layer in layers:
+            name = _display(layer).lower()
+            if any(term.lower() in name for term in terms):
+                return True
+    return False
 
 
 def _resolve_layer(
@@ -284,8 +428,14 @@ def _resolve_layer(
             break
     if len(best) == 1:
         only = next(iter(best.values()))
-        return LayerPick(only["catalog_id"], _display(only))
+        return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
     if len(best) > 1:
+        # 同名层（「土壤水分」有 SMAP/风云 各两版）：先按来源/形态收窄，
+        # 收窄到唯一一层才算认得，收不窄才交给调用方反问（2026-11-11 用户实测）。
+        narrowed = _narrow_by_identity(message, list(best.values()))
+        if len(narrowed) == 1:
+            only = narrowed[0]
+            return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
         return None
 
     # 口语别名（VOD / 土壤水分 / 散射）：全名对不上时按产品口径再试一次
@@ -299,9 +449,14 @@ def _resolve_layer(
                 alias_hits[layer["catalog_id"]] = layer
     if len(alias_hits) == 1:
         only = next(iter(alias_hits.values()))
-        return LayerPick(only["catalog_id"], _display(only))
+        return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
     if len(alias_hits) > 1:
-        # 「土壤水分」同时命中风云与 SMAP 两个图层，且用户没点名来源 ⇒ 不猜
+        # 「土壤水分」同时命中风云与 SMAP 两个图层：先按来源/形态收窄
+        # （用户说了「SMAP」就不该再问他要哪一个），收不窄才不猜。
+        narrowed = _narrow_by_identity(message, list(alias_hits.values()))
+        if len(narrowed) == 1:
+            only = narrowed[0]
+            return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
         return None
 
     if not allow_demo_fallback:
@@ -320,7 +475,9 @@ def _layer_choices(layers: list[dict[str, Any]]) -> str:
     """「要操作哪个图层？当前有 A、B、C」的可选项文案。"""
     if not layers:
         return "当前地图上没有活动图层，请先在左侧图层面板添加。"
-    names = "、".join(f"「{_display(layer)}」" for layer in layers[:5])
+    names = "、".join(
+        f"「{_layer_display_with_identity(layer)}」" for layer in layers[:5]
+    )
     return f"请指明是哪个图层。当前有：{names}。"
 
 
@@ -1109,12 +1266,27 @@ def _contradicts_hints(text: str, layer: dict[str, Any]) -> bool:
     而不是拿最近的层顶上。
     """
     name = _display(layer)
+    ident = _layer_identity(layer.get("catalog_id"))
     for pattern, marker in _SOURCE_HINTS:
-        if pattern.search(text) and marker not in name.lower():
-            return True
+        if not pattern.search(text):
+            continue
+        if marker in name.lower():
+            continue
+        # 层名里没有来源（页面上的「土壤水分」全都不带），只能看 catalog_id 的身份。
+        # 不加这一条，「显示 SMAP 平均版土壤水分」会被判成"页面没有这层"而放弃
+        # （2026-11-11 用户实测）。
+        if _SOURCE_MARKER.get(str(ident.get("source") or "")) == marker:
+            continue
+        return True
     for pattern, marker in _FORM_HINTS:
-        if pattern.search(text) and marker not in name:
-            return True
+        if not pattern.search(text):
+            continue
+        if marker in name:
+            continue
+        want = "raw" if marker == "动态" else "average"
+        if str(ident.get("product_family") or "") == want:
+            continue
+        return True
     return False
 
 
@@ -2766,20 +2938,35 @@ def mock_chat(
         re.I,
     ):
         sel = [la for la in layers if la.get("selected")]
+        vis = [la for la in layers if la.get("visible")]
         if len(sel) == 1:
-            reply = f"当前选中的是「{_display(sel[0])}」。"
+            reply = f"当前选中的是「{_layer_display_with_identity(sel[0])}」。"
+        elif not sel and len(vis) == 1:
+            # 2026-11-11 用户实测：把其余层都隐藏、只剩一层可见，前端没有回传
+            # selected（隐藏时仍设选中是前端设计，但可能落空）。旧实现先说
+            # 「当前没有选中任何图层」，紧接着又说「土壤水分处于勾选显示状态」——
+            # 同一句话里自相矛盾。唯一可见的那层就是用户眼里的当前层，照它回答。
+            reply = (
+                f"当前选中的是「{_layer_display_with_identity(vis[0])}」"
+                "（它也是唯一勾选显示的图层）。"
+            )
         elif not sel:
-            vis = [la for la in layers if la.get("visible")]
             if vis:
-                names = "、".join(f"「{_display(la)}」" for la in vis[:5])
-                reply = f"当前没有选中任何图层，正在显示的图层是：{names}。"
+                names = "、".join(
+                    f"「{_layer_display_with_identity(la)}」" for la in vis[:5]
+                )
+                reply = f"当前没有单独选中某一层；正在勾选显示的是：{names}。"
             elif layers:
-                names = "、".join(f"「{_display(la)}」" for la in layers[:5])
+                names = "、".join(
+                    f"「{_layer_display_with_identity(la)}」" for la in layers[:5]
+                )
                 reply = f"当前没有选中任何图层，已加载的图层是：{names}。"
             else:
                 reply = "当前地图上没有图层，也没有选中项。"
         else:
-            names = "、".join(f"「{_display(la)}」" for la in sel[:5])
+            names = "、".join(
+                f"「{_layer_display_with_identity(la)}」" for la in sel[:5]
+            )
             reply = f"当前选中了 {len(sel)} 个图层：{names}。"
         return {"session_id": sid, "reply": reply, "ui_intents": intents}
 
@@ -3025,14 +3212,18 @@ def mock_chat(
         r"打开|显示|开启|show|enable|可见|切换到|切到|换到|转到|切换到", text, re.I
     ):
         pick = _resolve_layer(text, layers)
-        if not pick:
+        if not pick and not _page_has_named_candidate(text, layers):
             # 2026-11-09：页面没有这一层时，去图层目录里找一次。开场示例
             # 推荐的「打开 CMFD 降水」不在页面活动层里，原实现永远反问，
             # 示例指令与实际能力不一致；前端支持显示即自动添加，交出去即可。
+            # 2026-11-11：页面**有**相关层却因同名歧义没定下来时不许走这里，
+            # 否则会加载目录里另一个同名产品，比反问更糟。
             pick = _catalog_pick(text)
         if not pick:
             if layers:
-                names = "、".join(f"「{_display(item)}」" for item in layers[:5])
+                names = "、".join(
+                    f"「{_layer_display_with_identity(item)}」" for item in layers[:5]
+                )
                 reply = (
                     f"要打开哪个图层？当前有：{names}。\n"
                     "也可以直接说图层名，例如「打开 CMFD 降水」。"
