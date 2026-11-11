@@ -536,6 +536,36 @@ def _estimate_messages_tokens(
     return total
 
 
+def _hop_trace(
+    data: dict[str, Any] | None,
+    *,
+    hop: int,
+    est: int,
+    budget: int,
+    tools: int,
+) -> dict[str, Any]:
+    """单次模型调用的输入用量留痕：事前估算 + 服务端回报的真实值。
+
+    为什么两样都留：估算用于**事前**拦截（超了就不发请求），真实值用于校准
+    估算偏差。老师复测要求「按轮记录输入预估和实际用量」——只留一样就说不清
+    到底是谁把预算吃掉的（是 system、是工具 schema、还是上一轮的工具返回）。
+    """
+    actual = 0
+    usage = (data or {}).get("usage")
+    if isinstance(usage, dict):
+        try:
+            actual = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+        except (TypeError, ValueError):
+            actual = 0
+    return {
+        "hop": int(hop),
+        "est_tokens": int(est),
+        "actual_tokens": actual,
+        "budget": int(budget),
+        "tools": int(tools),
+    }
+
+
 class _EventSteps(list):
     """Step list that emits SSE ``step`` events on append (Phase D)."""
 
@@ -1045,30 +1075,116 @@ _READ_ONLY_DATA_TOOL_NAMES = frozenset(
     }
 )
 
+#: 界面动作类工具（前端执行）。工具裁剪时**不允许缺**：少了它这一轮就动不了页面。
+_UI_ACTION_TOOL_NAMES = frozenset(
+    {
+        "set_layer_visibility",
+        "set_layer_opacity",
+        "set_layer_symbology",
+        "set_timeline",
+        "set_timeline_playing",
+        "remove_layer",
+        "reorder_layer",
+        "switch_basemap",
+        "fit_layer",
+        "fit_china",
+        "locate_coordinate",
+        "list_active_layers",
+    }
+)
+
+#: 「这句话是否要求动界面」——只看动作，不看是否提到日期/图层名。
+#: 不能用 ``_DATE_SCOPE_WORDS`` 代替：它连「2025 年」都算命中，而
+#: 「河南省 2025 年 12 月土壤水分平均值」是纯取数，误判成界面动作会让裁剪失效。
+_UI_ACTION_WORDS = re.compile(
+    r"显示|隐藏|打开|关闭|关掉|收起|勾选|取消勾选|添加|移除|删除图层|"
+    r"透明|不透明|上移|下移|置顶|置底|排序|色标|配色|色带|量程|阈值|"
+    r"底图|卫星图|影像图|街道图|放大|缩小|缩放|定位到|全图|中国范围|"
+    r"时间轴|时间滑块|播放|暂停",
+    re.I,
+)
+
+
+def _wants_ui_action(message: str) -> bool:
+    """这句话是不是要「动界面」（显隐 / 时间轴 / 底图 / 缩放 / 配色）。"""
+    return bool(_UI_ACTION_WORDS.search(message or ""))
+
+
+def _tool_names_of(tools: list[dict[str, Any]], *, anthropic: bool) -> set[str]:
+    """取出工具名单，兼容两种协议结构（OpenAI 多一层 ``function``）。"""
+    out: set[str] = set()
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        if anthropic:
+            name = str(item.get("name") or "")
+        else:
+            name = str((item.get("function") or {}).get("name") or "")
+        if name:
+            out.add(name)
+    return out
+
+
+def _keep_tools_for(
+    tools: list[dict[str, Any]], keep: set[str], *, anthropic: bool
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        if anthropic:
+            name = str(item.get("name") or "")
+        else:
+            name = str((item.get("function") or {}).get("name") or "")
+        if name in keep:
+            out.append(item)
+    return out
+
+
+def _tool_keepset_for_message(message: str) -> set[str] | None:
+    """按意图决定这一轮挂哪些工具；None = 全挂（不裁剪）。
+
+    三档（2026-11-11 重写）：
+
+    - **纯界面动作**：只挂界面工具 + 看图要用的元数据/检索，砍掉取数与工作流。
+    - **纯取数**：只挂只读数据工具 + 列表，砍掉写操作与工作流（原有行为）。
+    - **组合指令**（切层→设日期→统计）：**两组都要**。旧实现只认「有统计词」，
+      于是「显示 X 并切到某天再算平均值」被裁成只剩 5 个只读工具，
+      切层和设日期都没有工具可用 —— 老师复测的「组合指令中止」根因就在这里。
+    - 认不出意图：全挂，不冒险。
+    """
+    wants_stats = _wants_statistics(message)
+    wants_ui = _wants_ui_action(message)
+    if wants_stats and wants_ui:
+        return (
+            set(_READ_ONLY_DATA_TOOL_NAMES)
+            | set(_UI_ACTION_TOOL_NAMES)
+            | {"list_workflows"}
+        )
+    if wants_stats:
+        return set(_READ_ONLY_DATA_TOOL_NAMES) | {"list_active_layers"}
+    if wants_ui:
+        # 界面操作只需「知道现在有哪几层 / 这层是什么」，不需要取数和工作流。
+        return set(_UI_ACTION_TOOL_NAMES) | {"get_layer_meta", "search_layers"}
+    return None
+
 
 def _tools_openai_for_message(message: str) -> list[dict[str, Any]]:
     """Avoid resending unrelated write/workflow schemas on read-only data turns."""
 
     tools = _all_tools_openai()
-    if not _wants_statistics(message):
+    keep = _tool_keepset_for_message(message)
+    if keep is None:
         return tools
-    return [
-        item
-        for item in tools
-        if str((item.get("function") or {}).get("name") or "")
-        in _READ_ONLY_DATA_TOOL_NAMES
-    ]
+    return _keep_tools_for(tools, keep, anthropic=False)
 
 
 def _tools_anthropic_for_message(message: str) -> list[dict[str, Any]]:
     tools = _all_tools_anthropic()
-    if not _wants_statistics(message):
+    keep = _tool_keepset_for_message(message)
+    if keep is None:
         return tools
-    return [
-        item
-        for item in tools
-        if str(item.get("name") or "") in _READ_ONLY_DATA_TOOL_NAMES
-    ]
+    return _keep_tools_for(tools, keep, anthropic=True)
 
 
 def sanitize_client_context(
@@ -1326,6 +1442,11 @@ def _build_system(
         "- Server write: run_workflow (confirmation ticket — user must approve before submit; "
         "optional time_range + workflow_variant=online)\n"
         "- Prefer client_context.timeline / viewport / basemap_id for current map clock and view\n"
+        # 2026-11-11：工具按本句意图裁剪（省输入预算），这里必须说明，否则模型会去
+        # 调一个本轮没挂的工具、然后再向用户解释「我没有这个能力」。
+        "- **本轮只挂了与这句话相关的工具**（界面动作只给界面工具，纯取数只给只读取数"
+        "工具，组合指令两组都给）。上面列的是全部工具，不在本轮清单里的就是不提供，"
+        "**不要假装调用，也不要因此说「做不到」**：确实需要时直接说明需要哪一步。\n"
         "- Prefer get_layer_meta / get_workflow_meta for details; sample_layer_point for "
         "map coordinates + layer values (use client_context.map_point when user selected a point); "
         "web_search for public background knowledge only\n"
@@ -2378,7 +2499,12 @@ _STATISTICS_WORDS = re.compile(
     # 2026-11-04 补「多少/是多少/多大」：外部测试第 2 轮问「广州市的土壤水分是多少」，
     # 这句话不含原有关键词，被判定为「不是统计请求」⇒ 兜底不触发 ⇒ 模型凭空报了
     # 0.148 m³/m³ 与 1024 个有效栅格（该时间片全球有效像元其实是 0）。
-    r"平均|均值|统计|像元|mean|average|最大|最小|多少|是多少|多大",
+    # 2026-11-11：「平均版」是**产品版本名**（SMAP 平均版／动态版），不是统计动词。
+    # 裸「平均」会把「显示 SMAP 平均版土壤水分」判成取数请求，于是工具被裁到只剩
+    # 5 个只读工具、`set_layer_visibility` 不在其中 —— 页面根本不可能动。
+    # 实测同族的「动态版」正常、只有「平均版」失灵，就是这个字造成的。
+    # 「平均值／平均数／平均下来」后面不是「版」，一律照旧算统计。
+    r"平均(?!版)|均值|统计|像元|mean|average|最大|最小|多少|是多少|多大",
     re.I,
 )
 # 产品族名自带「平均」二字（「SMAP 平均散射约束产品」），不剥掉的话
@@ -4456,6 +4582,18 @@ def _run_chat_impl(
             "completion_tokens": 0,
             "total_tokens": est_in,
             "estimated": True,
+            # 首跳就超限也要留痕：这样能直接看出是 system、工具 schema 还是历史吃掉的。
+            "budget": budget,
+            "prompt_tokens_est": est_in,
+            "hops": [
+                {
+                    "hop": 0,
+                    "est_tokens": est_in,
+                    "actual_tokens": 0,
+                    "budget": budget,
+                    "tools": len(budget_tools),
+                }
+            ],
         }
         # 历史里只存截断版：否则超长提问会污染上下文，导致后续每问都超预算
         # 助手侧只存一行：超限提示本身有几百字，存完整版会让「失败→历史变肥→
@@ -4517,6 +4655,16 @@ def _run_chat_impl(
             # （意图里的 catalog_id 是模型的请求参数，可能已被粘性纠正掉）。
             tool_layer_state: dict[str, str] = {}
             max_hops = _max_tool_hops()
+            # 按轮留痕：第一跳的真实用量随 data 一起拿到，先记上（老师复测要求）。
+            hop_traces = [
+                _hop_trace(
+                    data,
+                    hop=1,
+                    est=est_in,
+                    budget=budget,
+                    tools=len(round_tools_anthropic),
+                )
+            ]
             seen_server_calls: set[str] = set()
             for hop in range(1, max_hops + 1):
                 all_uses = _anthropic_tool_uses(data.get("content"))
@@ -4632,6 +4780,7 @@ def _run_chat_impl(
                 _shrink_old_tool_results(messages)
                 messages.append({"role": "assistant", "content": data.get("content")})
                 messages.append({"role": "user", "content": tool_result_blocks})
+                hop_est = 0
                 if budget:
                     hop_est = _estimate_messages_tokens(
                         system=system,
@@ -4641,7 +4790,9 @@ def _run_chat_impl(
                     if hop_est > budget:
                         raise AgentRequestLimitError(
                             f"工具多轮累计输入预估约 {hop_est} token，"
-                            f"超过单次上限 {budget} token，已中止。"
+                            f"超过单次上限 {budget} token，已中止"
+                            f"（第 {hop + 1} 跳；首跳 {est_in} token，"
+                            f"工具 schema {len(round_tools_anthropic)} 个）。"
                         )
                 data = anthropic_compat.messages_create(
                     base_url=base_url,
@@ -4651,6 +4802,15 @@ def _run_chat_impl(
                     messages=messages,
                     tools=round_tools_anthropic or None,
                     max_tokens=max_out,
+                )
+                hop_traces.append(
+                    _hop_trace(
+                        data,
+                        hop=hop + 1,
+                        est=hop_est,
+                        budget=budget,
+                        tools=len(round_tools_anthropic),
+                    )
                 )
                 reply2, intents2, server_calls = _intents_from_anthropic_content(
                     data.get("content")
@@ -4725,6 +4885,10 @@ def _run_chat_impl(
             usage = usage_from_anthropic(
                 data, prompt_fallback=system + message, completion_fallback=reply
             )
+            # 按轮留痕：每跳的估算 / 真实输入量，排障时能直接看出是谁吃掉的预算。
+            usage["hops"] = hop_traces
+            usage["prompt_tokens_est"] = est_in
+            usage["budget"] = budget
             append_turn(
                 user_id=user_id,
                 session_id=sid,
@@ -4783,6 +4947,16 @@ def _run_chat_impl(
         # 同 Anthropic 分支：工具真正读到的那一层，界面意图不许再改
         tool_layer_state: dict[str, str] = {}
         max_hops = _max_tool_hops()
+        # 同 Anthropic 分支：按轮留痕，两条协议行为不许分叉
+        hop_traces = [
+            _hop_trace(
+                data,
+                hop=1,
+                est=est_in,
+                budget=budget,
+                tools=len(round_tools_openai),
+            )
+        ]
         oai_key = api_key or ("ollama" if provider_kind == "ollama" else None)
         seen_server_calls: set[str] = set()
 
@@ -4898,6 +5072,7 @@ def _run_chat_impl(
                         "content": json.dumps(tres, ensure_ascii=False),
                     }
                 )
+            hop_est = 0
             if budget:
                 hop_est = _estimate_messages_tokens(
                     system=system,
@@ -4907,7 +5082,9 @@ def _run_chat_impl(
                 if hop_est > budget:
                     raise AgentRequestLimitError(
                         f"工具多轮累计输入预估约 {hop_est} token，"
-                        f"超过单次上限 {budget} token，已中止。"
+                        f"超过单次上限 {budget} token，已中止"
+                        f"（第 {hop + 1} 跳；首跳 {est_in} token，"
+                        f"工具 schema {len(round_tools_openai)} 个）。"
                     )
             data = openai_compat.chat_completions(
                 base_url=base_url,
@@ -4916,6 +5093,15 @@ def _run_chat_impl(
                 messages=messages_oai,
                 tools=round_tools_openai or None,
                 max_tokens=max_out,
+            )
+            hop_traces.append(
+                _hop_trace(
+                    data,
+                    hop=hop + 1,
+                    est=hop_est,
+                    budget=budget,
+                    tools=len(round_tools_openai),
+                )
             )
             choices = data.get("choices")
             message_obj = {}
@@ -5016,6 +5202,9 @@ def _run_chat_impl(
             prompt_fallback=system + message,
             completion_fallback=reply,
         )
+        usage["hops"] = hop_traces
+        usage["prompt_tokens_est"] = est_in
+        usage["budget"] = budget
         append_turn(
             user_id=user_id,
             session_id=sid,
