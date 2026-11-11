@@ -306,9 +306,33 @@ export function resolveSliceForInstant(
      */
     const hits = valid.filter((x) => t >= x.b.start.getTime() && t < x.b.end.getTime())
     if (hits.length) {
-      const hit = hits.reduce((a, b) =>
-        b.b.end.getTime() - b.b.start.getTime() < a.b.end.getTime() - a.b.start.getTime() ? b : a,
-      )
+      let hit: (typeof hits)[number]
+      if (spec.nativeStep.unit === 'month') {
+        /**
+         * ★ 月级图层（整月合成，native_step=1M）语义是「一个观测覆盖一整月」。
+         * 按需补帧（nas-ondemand）会把单日帧（如 20250731）直接写进目录，再由
+         * 服务端 meta_dict 并进对外的 time_list；默认落点停在月块的结束日
+         * （如 7-31）时，上面的「取区间最短」会选中单日帧，把整月平均图顶掉
+         * （2026-11-11 用户报障：一进去风云显示的是 7-31 单日而非 7 月月均）。
+         * 月级图层只该显示跨多日的合成块：命中多片时优先取区间块（t1 ≠ t0），
+         * 忽略落入其中的单日帧。用户主动拖到某天看单日帧走的是 ondemandTag
+         * （displayedDayTag 钉住），不经过本函数，故此规则不影响那条路径。
+         */
+        const block = hits.find((x) => x.sl.t1 && x.sl.t1 !== x.sl.t0)
+        if (block) {
+          hit = block
+        } else {
+          hit = hits.reduce((a, b) =>
+            b.b.end.getTime() - b.b.start.getTime() < a.b.end.getTime() - a.b.start.getTime()
+              ? b
+              : a,
+          )
+        }
+      } else {
+        hit = hits.reduce((a, b) =>
+          b.b.end.getTime() - b.b.start.getTime() < a.b.end.getTime() - a.b.start.getTime() ? b : a,
+        )
+      }
       return {
         slice: hit.sl,
         nativeMatch: true,

@@ -99,4 +99,32 @@ describe('temporal-interval', () => {
     expect(dh!.date.getDate()).toBe(27)
     expect(dh!.hour).toBe(0)
   })
+
+  it('月级图层 containing 命中多片时优先区间块，不被单日帧抢（2026-11-11 修复）', () => {
+    // 风云平均 SM：整月块 20250701_20250731 + 按需补帧的单日 20250731
+    const slices = timeListToSlices(['20250701_20250731', '20250731', '20251201_20251231'])
+    const spec = {
+      nativeStep: { value: 1, unit: 'month' as const },
+      slices,
+      followPolicy: 'containing' as const,
+    }
+    // 默认落点在月块结束日 7-31，单日帧也覆盖这一天
+    const t = new Date(2025, 6, 31, 0, 0, 0, 0)
+    const r = resolveSliceForInstant(spec, t)
+    expect(r.nativeMatch).toBe(true)
+    expect(r.slice?.label).toBe('20250701_20250731')
+  })
+
+  it('逐日图层 containing 仍取区间最短（行为不变）', () => {
+    const slices = timeListToSlices(['20251203_20251212', '20251212'])
+    const spec = {
+      nativeStep: { value: 8, unit: 'day' as const },
+      slices,
+      followPolicy: 'containing' as const,
+    }
+    const t = new Date(2025, 11, 12, 0, 0, 0, 0)
+    const r = resolveSliceForInstant(spec, t)
+    expect(r.nativeMatch).toBe(true)
+    expect(r.slice?.label).toBe('20251212')
+  })
 })
