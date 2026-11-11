@@ -188,3 +188,52 @@ def test_limit_reply_never_tells_user_to_split_a_single_command():
     assert "拆成两句话" not in reply
     assert "内容较多" not in reply
     assert "页面状态没有变化" in reply
+
+
+# ── 八、确定性路径（走 _resolve_deterministic_map_actions 那条） ──────
+#
+# mock_chat 改好了不代表线上修好了：run_chat 会先走这条确定性路径，它自己
+# 有一套子句拆分/日期判定/目标定位。下面几条是实测真实链路时暴露的坑。
+
+
+def _det(message: str, unresolved: list[str] | None = None):
+    from app.services.agent.orchestrator import _resolve_deterministic_map_actions
+
+    return _resolve_deterministic_map_actions(
+        message, _ctx(), unresolved=unresolved if unresolved is not None else []
+    )
+
+
+def test_chinese_date_is_recognized_in_deterministic_path():
+    """「2025年12月25日」以前整条认不出——日期正则的分隔符字符类没有「月」。"""
+    acts = _det("把当前图层切换到2025年12月25日")
+    assert acts is not None
+    assert [a["name"] for a in acts] == ["set_timeline"]
+    assert acts[0]["args"]["date"] == "2025-12-25"
+
+
+def test_deterministic_path_splits_on_bing():
+    """确定性路径的切句正则原来不含「并」⇒ 两个目标共用一个方向。"""
+    acts = _det("隐藏植被光学厚度并显示 SMAP 土壤水分")
+    assert acts is not None
+    pairs = {a["args"]["catalog_id"]: a["args"]["visible"] for a in acts}
+    assert pairs["imported-nas-fy-raw-vod"] is False
+    assert pairs["imported-nas-smap-avg-sm"] is True
+
+
+def test_deterministic_path_reports_unresolved_hidden_target():
+    """隐藏方向不许走 demo 兜底硬配一个层，必须点名「没执行」。"""
+    missing: list[str] = []
+    acts = _det("隐藏 CMFD 和 VOD", missing)
+    assert acts is not None, "有可执行的一步，不该整条退回模型"
+    assert [a["name"] for a in acts] == ["set_layer_visibility"]
+    assert missing and "CMFD" in missing[0]
+
+
+def test_deterministic_path_add_then_date_binds_new_layer():
+    """添加 + 切日期：日期必须绑到新加的那层，且添加排在前面。"""
+    acts = _det("添加 CMFD 降水并切换到 2025-12-01")
+    assert acts is not None
+    names = [a["name"] for a in acts]
+    assert names == ["set_layer_visibility", "set_timeline"]
+    assert acts[1]["args"].get("catalog_id") == acts[0]["args"]["catalog_id"]

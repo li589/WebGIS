@@ -5609,7 +5609,13 @@ _NEGATION_OR_READONLY_HINT = re.compile(
     re.I,
 )
 
-_MAP_ACTION_SPLIT = re.compile(r"(?:、|，|,|；|;|以及|并且|同时|和|及|再|然后)")
+#: 复合指令切句。2026-11-11 补「并 + 动词」：原来不含「并」，于是
+#: 「隐藏植被光学厚度并显示 SMAP 土壤水分」整句算一个子句，方向取全文第一个
+#: 方向词 ⇒ 两个目标都被隐藏（要显示的那个也被隐藏了）。切句后各自取方向才对。
+_MAP_ACTION_SPLIT = re.compile(
+    r"(?:、|，|,|；|;|以及|并且|同时|和|及|再|然后|"
+    r"并(?=把|将|打开|显示|隐藏|添加|移除|切换|算|统计))"
+)
 
 
 def _resolve_deterministic_map_actions(
@@ -5633,8 +5639,14 @@ def _resolve_deterministic_map_actions(
         re.search(r"显示|打开|添加|隐藏|关掉|关闭显示|hide|show", text, re.I)
     )
     has_date = bool(
-        re.search(r"切到|切至|跳到|日期|时间轴|设到|设为|改到", text)
-        and re.search(r"(?:19|20)\d{2}(?:[-/年]\d{1,2}){2}|(?<!\d)\d{8}(?!\d)", text)
+        # 2026-11-11 老师复测原句「把当前图层切换到 2025年12月25日」：两处漏。
+        # ① 只认「切到/切至」，不含「切换**到**」；② 日期正则的分隔符字符类是
+        # `[-/年]`，第二个分隔符是「月」不在里面 ⇒ 中文「2025年12月25日」从头到尾
+        # 没匹配过，只有 ISO 写法能过。两处一起补，否则改了也还是走模型。
+        re.search(r"切到|切至|切换|换到|跳到|日期|时间轴|设到|设为|改到|调到", text)
+        and re.search(
+            r"(?:19|20)\d{2}(?:[-/年月日]\d{1,2}){2}|(?<!\d)\d{8}(?!\d)", text
+        )
     )
     if not has_visibility and not has_date:
         return None
@@ -5646,22 +5658,54 @@ def _resolve_deterministic_map_actions(
         seen: set[tuple[str, bool]] = set()
         inherited_visible = not bool(re.search(r"隐藏|关掉|关闭显示|hide", text, re.I))
         clauses = [p.strip() for p in _MAP_ACTION_SPLIT.split(text) if p.strip()]
-        for clause in clauses:
-            if not re.search(
-                r"图层|降水|土壤水|VOD|植被光学|ω|omega|散射", clause, re.I
+        # 只有真的含显隐动词时才做目标定位。纯日期请求（「把当前图层切换到
+        # 2025年12月25日」）里的「图层」二字会让下面的定位去搜目录，一旦抛异常
+        # 整条被 except 吞掉返回 None ⇒ 又退回模型路径，白改了。
+        for clause in clauses if has_visibility else []:
+            # 2026-11-11：「隐藏 CMFD 和 VOD」里 CMFD 那一句不含「图层/降水/土壤水」
+            # 这类词，旧实现直接 continue ⇒ CMFD 既不定位也不进 unresolved，
+            # 结果只剩 1 条显隐动作 + 空 unresolved ⇒ 被判成「单一显隐」退回旧路径，
+            # 漏掉的那一步彻底消失。含显隐动词的子句一律要处理。
+            if not (
+                re.search(r"图层|降水|土壤水|VOD|植被光学|ω|omega|散射", clause, re.I)
+                or re.search(
+                    r"显示|打开|添加|隐藏|关掉|关闭显示|hide|show", clause, re.I
+                )
             ):
                 continue
+            clause_visible = (
+                False
+                if re.search(r"隐藏|关掉|关闭显示|hide", clause, re.I)
+                else (
+                    True
+                    if re.search(r"显示|打开|添加|show", clause, re.I)
+                    else inherited_visible
+                )
+            )
             pick = _mo._resolve_layer(clause, layers, allow_demo_fallback=False)
-            if pick is None:
+            # 隐藏一个有目录、但不在页面上的层没有意义——显示可以从图层库「添加」，
+            # 隐藏只能操作已经挂在地图上的实例。否则「隐藏 CMFD 和 VOD」会从目录
+            # 里加载一个 CMFD 再声称「已隐藏」，页面根本没这层。
+            if pick is None and clause_visible:
                 pick = _mo._catalog_pick(clause)
-            if pick is None:
+            if pick is None and clause_visible:
                 # 第二个并列对象常省略动作词；用整句再解析一次作为最后尝试。
+                # 只在「显示」方向兜底：demo 兜底会把任何认不出的名字都强行配一个层
+                # （实测「CMFD」→ 别的层），搁在隐藏上就是「说隐藏了、其实没这层」，
+                # 也就是老师说的「漏了那一步却不说」。
                 pick = _mo._resolve_layer(clause, layers, allow_demo_fallback=True)
             if pick is None:
                 # 2026-11-11：以前这里静默丢弃，用户点名 3 个只解析出 2 个时
                 # 第 3 个在回执里彻底消失，成了「笼统说没执行」。记下来交给回执。
                 if unresolved is not None:
-                    label = re.sub(r"^(?:请|帮我|把|将|再|然后|同时|并且)+", "", clause)
+                    # 动词可能在句首（「隐藏 CMFD」）也可能在句尾（「CMFD 显示」），
+                    # 两头都剥，回执里才只出现用户点名的那个目标名。
+                    label = re.sub(
+                        r"^(?:请|帮我|把|将|再|然后|同时|并且|"
+                        r"显示|打开|添加|隐藏|关掉|关闭显示|show|hide)+",
+                        "",
+                        clause,
+                    )
                     label = re.sub(
                         r"(?:显示|打开|添加|隐藏|关掉|关闭显示|show|hide)出来?$",
                         "",
@@ -5669,12 +5713,7 @@ def _resolve_deterministic_map_actions(
                     ).strip(" 的了")
                     unresolved.append(label or clause)
                 continue
-            if re.search(r"隐藏|关掉|关闭显示|hide", clause, re.I):
-                visible = False
-            elif re.search(r"显示|打开|添加|show", clause, re.I):
-                visible = True
-            else:
-                visible = inherited_visible
+            visible = clause_visible
             key = (pick.catalog_id, visible)
             if key in seen:
                 continue
