@@ -86,3 +86,45 @@ def test_zero_intents_is_untouched_here():
         {"reply": "已下发显示并切时间轴。", "ui_intents": []},
     )
     assert out["reply"] == "已下发显示并切时间轴。"
+
+
+def test_date_only_with_done_wording_is_untouched():
+    """只切日期、正文写「已切换到」—— 2026-11-11 用户复测第 2 条的现场。
+
+    旧版把「切到」当图层动作词，「2025 年 12 月」当日期词，两句都命中就判成
+    复合指令，于是把正文整段改写成「没有勾选你要的图层」——用户根本没要求勾选。
+    现在要求图层动作词与具名图层/变量同现，这句话没有可指代的图层，必须原样放行。
+    """
+    out = _guard_partial_layer_switch_intent(
+        "把时间轴切到 2025 年 12 月 15 日",
+        {
+            "reply": "已切换到 2025-12-15。",
+            "ui_intents": [{"name": "set_timeline", "args": {"date": "2025-12-15"}}],
+        },
+    )
+    assert out["reply"] == "已切换到 2025-12-15。"
+    assert "没有勾选" not in out["reply"]
+
+
+def test_date_only_short_month_form_is_untouched():
+    """「切到 12 月」这种不带年份的说法同样不能触发复合守卫。"""
+    out = _guard_partial_layer_switch_intent(
+        "时间轴切到 12 月",
+        {
+            "reply": "已切换到 2025-12-01。",
+            "ui_intents": [{"name": "set_timeline", "args": {"date": "2025-12-01"}}],
+        },
+    )
+    assert "没有勾选" not in out["reply"]
+
+
+def test_composite_with_named_variable_still_corrected():
+    """真复合指令（点名变量 + 日期）仍要纠正，不能因为放宽而漏掉。"""
+    out = _guard_partial_layer_switch_intent(
+        "把土壤水分切到 2025-12-15",
+        {
+            "reply": "已切换到 2025-12-15。",
+            "ui_intents": [{"name": "set_timeline", "args": {"date": "2025-12-15"}}],
+        },
+    )
+    assert "没有勾选" in out["reply"]

@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+"""多步地图指令的「逐项报告」测试（2026-11-11 用户复测第 4 条）。
+
+外部反馈：「同时隐藏 CMFD 和 VOD 时，若仅完成第一步，应明确报告哪一步成功、
+哪一步失败或未执行，不能笼统提示『没有执行』。」
+
+旧实现只遍历**已下发**的意图，回执天然只有成功项；用户点名 3 个、只解析出 2 个时，
+第 3 个在回复里彻底消失。现在解析阶段把「点名但定位不到」的子句收集起来，
+由 ``_map_actions_reply`` 写成「未执行」段。
+"""
+
+from app.services.agent.orchestrator import _map_actions_reply
+
+
+def _hidden_intents() -> list[dict]:
+    return [
+        {
+            "name": "set_layer_visibility",
+            "args": {
+                "catalog_id": "imported-cmfd",
+                "visible": False,
+                "display_name": "CMFD 区域降水",
+            },
+        },
+        {
+            "name": "set_layer_visibility",
+            "args": {
+                "catalog_id": "imported-fy-sm",
+                "visible": False,
+                "display_name": "风云卫星 · 土壤水分",
+            },
+        },
+    ]
+
+
+def test_all_targets_resolved_reports_only_success():
+    """全部定位成功：只报做成了什么，不出现「未执行」（不能无中生有）。"""
+    text = _map_actions_reply(_hidden_intents())
+    assert "已隐藏" in text
+    assert "CMFD 区域降水" in text
+    assert "没有执行" not in text
+
+
+def test_unresolved_target_is_named_in_reply():
+    """有定位不到的目标：必须点名说这一步没执行，不能只报成功的两步。"""
+    text = _map_actions_reply(_hidden_intents(), ["VOD 植被光学厚度"])
+    assert "没有执行" in text
+    assert "VOD 植被光学厚度" in text
+    # 成功项仍然要报，用户才知道「做成了哪些」
+    assert "已隐藏" in text
+
+
+def test_empty_unresolved_list_is_same_as_none():
+    """空列表等价于没有未执行项（调用方无脑传 [] 也安全）。"""
+    assert _map_actions_reply(_hidden_intents(), []) == _map_actions_reply(
+        _hidden_intents()
+    )
+
+
+def test_duplicate_unresolved_is_reported_once():
+    """同一条子句被重复收集时不重复罗列。"""
+    text = _map_actions_reply(_hidden_intents(), ["VOD", "VOD"])
+    assert text.count("VOD") == 1

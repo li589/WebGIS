@@ -1179,6 +1179,11 @@ def _build_system(
         "每项含意图名、ok 与说明）。"
         "上一轮 ok=false 时，这一轮要先承认「上次那条没有生效」并说明原因，"
         "**不许把失败说成成功，也不许当没发生过**。\n"
+        # 2026-11-11 用户复测第 4 条：多步指令必须逐项报成败。
+        "- **一句话里有多个动作时，逐项报结果**：用户说“隐藏 CMFD 和 VOD”这类并列要求，"
+        "做了几个就报几个；其中任何一个没做成（图层库里定位不到、被页面拒绝），"
+        "必须点名“X 那一步没有执行”并说原因，"
+        "**不许**只报成功项（用户会以为都做了），也**不许**笼统回一句“没有执行”。\n"
         "## 页面状态问答（必须逐项回答）\n"
         "- 被问到“现在显示的是什么/选中哪个/什么日期/哪颗卫星/地图好了吗”这类状态问题时，"
         "**必须基于 client_context 逐项回答**：已加载图层数、**可见**图层（visible=true）、"
@@ -1189,6 +1194,23 @@ def _build_system(
         "**不得描述画面内容、不得假装看得到图层**。\n"
         "- 若 active_layers 里没有 visible=true 的图层，如实说“当前没有勾选显示的图层”，"
         "不要拿已加载图层冒充可见图层。\n"
+        # 2026-11-11 用户复测第 1 条：不得把「选中」说成「勾选」。
+        "- **勾选显示（visible）与选中查看（selected）是两件事，不许混说**："
+        "visible 决定这层在不在画面上，selected 只表示右侧分析面板当前指向它。"
+        "隐藏某层时前端仍会把它设为选中（这是设计行为），所以 "
+        "`visible=false` + `selected=true` 是常见组合，**不等于“已勾选”**。"
+        "表述要分开：「「X」已隐藏，只是当前选中」／「「X」已勾选显示」。"
+        "只要存在 visible=true 的图层，就**不得**说“当前没有勾选任何图层”。\n"
+        # 2026-11-11 用户复测第 2 条：纯日期指令不带图层动作。
+        "- **只要求切日期时不要动图层**：用户只说“把时间轴切到 12 月 / 日期设到某天”、"
+        "没点名任何图层或变量时，只下发 `set_timeline` 一条即可。"
+        "**不要**顺带下发 `set_layer_visibility`，**更不许**在正文里写"
+        "“没有勾选你要的图层”——用户根本没有要求勾选。\n"
+        # 2026-11-11 用户复测第 3 条：静态图层不能切日期。
+        "- **静态图层不能切日期**：前端回执会返回“「X」是静态数据，没有时间维度，"
+        "不支持切换日期”。收到这种回执时正文只写两件事：① 这层已添加/已显示；"
+        "② 它是静态数据，没有时间维度，不能切日期。"
+        "**不许**改口说“已切到某天”，也**不许**改切别的图层来顶替。\n"
         "- **「单位 / 时间范围 / 显示状态」这类复合状态问题，要逐项回答、一项不漏**："
         "单位照 unit_label（土壤水分 m³/m³，VOD 与 ω 说“无量纲”）；显示状态照 "
         "visible/selected；**时间范围要分清两层意思**——用户问“这层的时间范围”时，"
@@ -3696,10 +3718,13 @@ def _run_chat_impl(
         _emit_stream_tail(on_event, reply=knowledge_reply, ui_intents=[])
         return out
 
-    deterministic_actions = _resolve_deterministic_map_actions(message, client_context)
+    _unresolved_map_targets: list[str] = []
+    deterministic_actions = _resolve_deterministic_map_actions(
+        message, client_context, unresolved=_unresolved_map_targets
+    )
     if deterministic_actions is not None:
         return finish_direct(
-            _map_actions_reply(deterministic_actions),
+            _map_actions_reply(deterministic_actions, _unresolved_map_targets),
             provider_suffix="" if protocol == "demo" else "map-actions-rule",
             summary="多步骤地图操作已拆解并按顺序下发，未调用模型",
             intents=deterministic_actions,
@@ -4910,11 +4935,27 @@ _VIEW_DONE_WORDS = re.compile(
 #: 只下发 set_timeline、漏了 set_layer_visibility，正文却写「下发了显示 + 切时间轴」。
 #: 这类「部分意图 + 正文夸大」现有零意图守卫（_guard_unclaimed_view_intent）拦不住，
 #: 需要单独看「点名了图层却没勾选」这一半。
-_LAYER_SWITCH_WORDS = re.compile(
-    r"切换(?:图层)?|切(?:到|回|换)|换(?:到|回|成)|显示|打开|勾选|图层"
+#: 2026-11-11 修（用户复测第 2 条：只切日期却被附加「没有勾选你要的图层」）：
+#: 旧版把「切(到|回|换)」「图层」直接当图层动作词，而「切到」同样出现在日期说法里
+#: （「把时间轴切到 12 月」），于是纯日期指令被判成复合指令，正文被整段改写成
+#: 「没有勾选你要的图层」。现在要求**动作词与具名图层/变量同时出现**：句中没有
+#: 可指代的图层名或变量名时，压根不存在「该勾哪一层」的问题，一律放行。
+_LAYER_TARGET_WORDS = re.compile(
+    r"图层|产品组|产品|这层|那层|这一层|那一层|本层|"
+    r"土壤水|SM\b|VOD|植被光学|ω|omega|散射|"
+    r"降水|降雨|气温|温度|蒸散|干旱|植被|"
+    r"风云|SMAP|CMFD|GPCP|MODIS|NSMC",
+    re.I,
+)
+_LAYER_VERB_WORDS = re.compile(
+    r"切(?:换)?(?:到|至|回)|换(?:到|回|成)|显示|打开|勾选|取消勾选|"
+    r"隐藏|关掉|关闭|收起|添加|移除|删除"
 )
 _DATE_SCOPE_WORDS = re.compile(
     r"\d{4}\s*年|\d{1,2}\s*月\s*\d{1,2}\s*日|日期|时间轴|切到.*(?:月|日|天)|"
+    # 2026-11-11：补 ISO 写法。模型与前端回执都用 ``2025-12-15``，
+    # 旧正则只认「2025年12月15日」，于是复合指令根本没被识别到。
+    r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|"
     r"设(?:到|成|为).*(?:月|日|天)|哪(?:天|一日)"
 )
 
@@ -4924,9 +4965,9 @@ def _guard_partial_layer_switch_intent(
 ) -> dict[str, Any]:
     """「切换图层到日期」这类复合指令：点名了图层却没勾选，正文不许说成两条都下发。
 
-    只针对一种明确的情况：用户这句话既要求**勾选/显示某个图层**（含「图层/切/换/
-    显示/打开」等词），又要求**切日期/时间轴**（含日期数字或「日期/时间轴」），
-    但本轮只下发了 ``set_timeline``、漏了 ``set_layer_visibility``，且正文写了完成态。
+    只针对一种明确的情况：用户这句话既要求**勾选/显示某个具名图层或变量**，又要求
+    **切日期/时间轴**（含日期数字或「日期/时间轴」），但本轮只下发了 ``set_timeline``、
+    漏了 ``set_layer_visibility``，且正文写了完成态。
 
     2026-11-10 实测：模型偶发漏发 set_layer_visibility，却回「已下发显示 + 切时间轴」，
     用户看到时间轴动了、图层没勾上，还以为是操作没做完。这里把正文纠正成如实说明，
@@ -4934,8 +4975,11 @@ def _guard_partial_layer_switch_intent(
     """
     try:
         text = message or ""
-        # 必须同时命中「图层切换」和「日期」两层意思，才是复合指令
-        if not _LAYER_SWITCH_WORDS.search(text):
+        # 必须同时命中「图层动作」「具名图层/变量」「日期」三层意思，才是复合指令。
+        # 缺了具名对象一律不拦：只切日期的请求没有「该勾哪一层」这回事（2026-11-11）。
+        if not _LAYER_VERB_WORDS.search(text):
+            return result
+        if not _LAYER_TARGET_WORDS.search(text):
             return result
         if not _DATE_SCOPE_WORDS.search(text):
             return result
@@ -5044,9 +5088,17 @@ _MAP_ACTION_SPLIT = re.compile(r"(?:、|，|,|；|;|以及|并且|同时|和|及
 
 
 def _resolve_deterministic_map_actions(
-    message: str, client_context: dict[str, Any] | None
+    message: str,
+    client_context: dict[str, Any] | None,
+    *,
+    unresolved: list[str] | None = None,
 ) -> list[dict[str, Any]] | None:
-    """Resolve common multi-step layer/date commands without an LLM tool loop."""
+    """Resolve common multi-step layer/date commands without an LLM tool loop.
+
+    ``unresolved``（2026-11-11 新增）用于回收「用户点名了、但图层库里定位不到」的
+    子句，由 ``_map_actions_reply`` 写进回执的「未执行」段——否则多步指令只报成功项，
+    用户看不出哪一步漏了。
+    """
     text = str(message or "").strip()
     if not text or _NEGATION_OR_READONLY_HINT.search(text):
         return None
@@ -5081,6 +5133,16 @@ def _resolve_deterministic_map_actions(
                 # 第二个并列对象常省略动作词；用整句再解析一次作为最后尝试。
                 pick = _mo._resolve_layer(clause, layers, allow_demo_fallback=True)
             if pick is None:
+                # 2026-11-11：以前这里静默丢弃，用户点名 3 个只解析出 2 个时
+                # 第 3 个在回执里彻底消失，成了「笼统说没执行」。记下来交给回执。
+                if unresolved is not None:
+                    label = re.sub(r"^(?:请|帮我|把|将|再|然后|同时|并且)+", "", clause)
+                    label = re.sub(
+                        r"(?:显示|打开|添加|隐藏|关掉|关闭显示|show|hide)出来?$",
+                        "",
+                        label.strip(),
+                    ).strip(" 的了")
+                    unresolved.append(label or clause)
                 continue
             if re.search(r"隐藏|关掉|关闭显示|hide", clause, re.I):
                 visible = False
@@ -5121,7 +5183,9 @@ def _resolve_deterministic_map_actions(
             1 for item in intents if item["name"] == "set_layer_visibility"
         )
         # 单一显隐继续走既有捷径/模型路径；这里只接管真正的复合操作。
-        if has_visibility and not has_date and visibility_count < 2:
+        # 例外（2026-11-11）：用户点名了多个目标、但其中有定位不到的（unresolved 非空）——
+        # 这时必须接管，才能如实报「做成了哪几个、哪个没做」，交给模型反而会笼统带过。
+        if has_visibility and not has_date and visibility_count < 2 and not unresolved:
             return None
         # A composite request must not be partially claimed as successful.
         if has_visibility and not any(
@@ -5136,7 +5200,10 @@ def _resolve_deterministic_map_actions(
         return None
 
 
-def _map_actions_reply(intents: list[dict[str, Any]]) -> str:
+def _map_actions_reply(
+    intents: list[dict[str, Any]],
+    unresolved: list[str] | None = None,
+) -> str:
     shown: list[str] = []
     hidden: list[str] = []
     day = ""
@@ -5154,6 +5221,16 @@ def _map_actions_reply(intents: list[dict[str, Any]]) -> str:
         parts.append("已隐藏" + "、".join(f"「{x}」" for x in hidden))
     if day:
         parts.append(f"日期已切换到 {day}")
+    # 2026-11-11 用户复测第 4 条：多步指令只报成功项，漏做的那一步彻底消失，
+    # 用户只看到「已隐藏 CMFD」，以为 VOD 也做了。这里把没定位到的目标点名列出。
+    if unresolved:
+        uniq = list(dict.fromkeys(x for x in unresolved if x))
+        if uniq:
+            brief = "、".join(f"「{x}」" for x in uniq[:3])
+            more = f" 等 {len(uniq)} 项" if len(uniq) > 3 else ""
+            parts.append(
+                f"另有 {brief}{more} 这一步**没有执行**——图层库里没定位到对应图层"
+            )
     return "；".join(parts) + "。"
 
 

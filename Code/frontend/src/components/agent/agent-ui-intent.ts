@@ -419,6 +419,61 @@ async function waitForTimelineSettle(maxMs = 900): Promise<void> {
 }
 
 /**
+ * 等新加图层的元数据就绪（2026-11-11 用户复测第 3 条）。
+ *
+ * `addLayer` 只同步建出实例壳子，`importedRaster`（bounds / time_list / native_step）
+ * 是随后异步回来的。旧实现加完立刻往下走，于是：
+ *   - 同一条回复里排着的 `set_timeline` 绑到了「元数据还没到」的实例上；
+ *   - `pickDominantTimeseries` 找不到这层的时间序列，退化成「帧数最多的可见层」，
+ *     日期就切到了**别的图层**上——正是用户说的「误用原先选中的图层」。
+ * 这里最多等 `maxMs`，就绪或超时都返回（超时不阻塞，不让页面卡住）。
+ */
+async function waitForLayerMetadata(instanceId: string | undefined, maxMs = 1500): Promise<void> {
+  if (!instanceId) return
+  const workspace = useLayerWorkspace()
+  const started = Date.now()
+  await nextTick()
+  while (Date.now() - started < maxMs) {
+    const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    // 目录层 / 矢量层本来就没有 importedRaster，不该等
+    if (layer.dataState !== 'imported') return
+    const raster = layer.importedRaster
+    if (raster && (raster.bounds || (raster.timeList && raster.timeList.length))) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+/**
+ * 点名的图层是否是「静态数据」（没有时间维度），是则返回它的显示名。
+ *
+ * 判据按可信度排序：图层库条目 `supportsTime === false` / updateLabel 含「静态」 /
+ * 栅格元数据已到手但 time_list 为空。三者都不满足（含「元数据还没回来」）返回 null，
+ * 表示不能断定是静态 —— 宁可不说，也不能把「还没加载完」说成「静态」。
+ */
+function resolveStaticTimelineTarget(catalogId: string, instanceId: string): string | null {
+  if (!catalogId && !instanceId) return null
+  const workspace = useLayerWorkspace()
+  const layer = instanceId
+    ? workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
+    : workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
+  const target = layer?.catalogId || catalogId
+  if (!target) return null
+  const raster = layer?.importedRaster
+  // 只认「timeList 是数组」这一明确状态：有时序 → 不是静态；
+  // timeList 还没赋值（undefined）说明元数据在路上，此时什么都不能断定。
+  const list = raster?.timeList
+  if (Array.isArray(list) && list.length > 0) return null
+  const lib = (workspace.layerLibrary.value || []).find((i) => i.catalogId === target)
+  const label = layer?.name || lib?.name || target
+  if (lib?.supportsTime === false) return label
+  if (String(lib?.updateLabel || '').includes('静态')) return label
+  // 元数据已到手、明确给了空数组 ⇒ 确实没有时间维度（静态）
+  if (Array.isArray(list) && list.length === 0) return label
+  return null
+}
+
+/**
  * 切完层后的「日期尾巴」：页面实际停在哪个日期 / 哪一帧。
  *
  * 算不出来（该层没有时间序列、或该日无任何可用帧）就返回空串 —— 宁可不提日期，
@@ -590,6 +645,8 @@ async function executeAgentUiIntentCore(
         return { ok: false, message: block }
       }
       workspace.addLayer(catalogId)
+      // 2026-11-11 用户复测第 3 条：等新层元数据就绪，再让后续日期绑定到它。
+      await waitForLayerMetadata(resolveInstanceId(catalogId, undefined).instanceId)
       resolved = resolveInstanceId(catalogId, undefined)
     }
     if (!resolved.instanceId) {
@@ -873,6 +930,21 @@ async function executeAgentUiIntentCore(
       }
     }
 
+    // 2026-11-11 用户复测第 3 条：点名的层若是静态数据（如 CMFD 区域降水），
+    // 没有时间维度可切。旧实现会落到下面的兜底分支回「时间轴已设为 X」——报成功、
+    // 画面却毫无变化；更糟的是 pickDominantTimeseries 会退到「帧数最多的可见层」，
+    // 日期被切到**别的图层**上，正是用户说的「误用原先选中的图层」。
+    // 这里先认目标层：确认静态就明确说不支持，且一点状态都不改。
+    const namedStatic = resolveStaticTimelineTarget(
+      String(args.catalog_id ?? args.layer_id ?? '').trim(),
+      String(args.instance_id ?? '').trim(),
+    )
+    if (namedStatic) {
+      return {
+        ok: false,
+        message: `「${namedStatic}」是静态数据，没有时间维度，不支持切换日期（时间轴保持不变）`,
+      }
+    }
     // 时间轴只负责「选中某个时刻」，真正的帧是渲染层按切片挑的。
     // 这里提前算出会落到哪一帧，如实回报，避免「切到 12-15」实际放的是 12-03。
     // 目标是哪个图层：指令点名 → 当前选中 → 唯一可见（报告第二轮 A06）。
