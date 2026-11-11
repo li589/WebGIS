@@ -166,6 +166,9 @@ def test_budget_limit_on_layer_op_uses_local_rules(monkeypatch):
     )
     assert [i["name"] for i in out["ui_intents"]] == ["set_layer_visibility"]
     assert not any(m in out["reply"] for m in REGION_ADVICE_MARKERS)
+    # 撞预算 ≠ 模型不可用：provider 必须是 limited，前端才不会挂「模型不可用 · 已降级」，
+    # 因为用户下一句还能正常问，模型明明好好的（2026-11-11 用户实测指出）。
+    assert out["provider"] == "limited"
 
 
 def test_budget_limit_on_multi_region_keeps_advice(monkeypatch):
@@ -194,3 +197,58 @@ def test_readonly_negation_still_blocks_takeover(monkeypatch):
         client_context=_ctx("植被光学厚度"),
     )
     assert out["ui_intents"] == []
+
+
+# ── 四、没有唯一日期的时间切换：本地直接说清楚（2026-11-11） ────────
+
+
+def test_vague_month_timeline_is_answered_locally():
+    """「切到 12 月」没有唯一日期落点：不发意图、不进模型、也不甩锅给用户。
+
+    用户判定：现有产物 native_step 基本是 1d，时间轴刻度是天，轴上没有「12 月」
+    这一格。硬接住就是替用户编一个日期下发，跟「零取数不许出数」同一条红线。
+    """
+    out = run_chat(
+        "把时间轴切到 12 月",
+        session_id="s-vague-1",
+        client_context=_ctx("土壤水分"),
+    )
+    assert out["ui_intents"] == []
+    assert "12 月" in out["reply"]
+    assert "按天" in out["reply"]
+    # 不能把「没有唯一日期」说成「请求内容较多，请拆成两句话」
+    assert "请求内容较多" not in out["reply"]
+    # 也不能冒出任何模型状态术语
+    assert "模型不可用" not in out["reply"]
+    assert "降级" not in out["reply"]
+
+
+def test_vague_month_timeline_is_not_marked_degraded():
+    """这句话压根不该走到模型，更不该被标成模型不可用。"""
+    out = run_chat(
+        "切到 2025 年 12 月",
+        session_id="s-vague-2",
+        client_context=_ctx("土壤水分"),
+    )
+    assert out["ui_intents"] == []
+    assert out.get("provider") not in ("degraded", "limited")
+
+
+def test_explicit_day_still_switches_timeline():
+    """给了具体某天照常下发 set_timeline——别把正常请求一起拦掉。"""
+    out = run_chat(
+        "把时间轴切到 2025-12-15",
+        session_id="s-vague-3",
+        client_context=_ctx("土壤水分"),
+    )
+    assert [i["name"] for i in out["ui_intents"]] == ["set_timeline"]
+
+
+def test_month_scope_stats_request_not_blocked():
+    """要整月合成结果属于取数，不能被「没有唯一日期」这道闸拦掉。"""
+    out = run_chat(
+        "河南省 2025 年 12 月土壤水分平均值是多少",
+        session_id="s-vague-4",
+        client_context=_ctx("土壤水分"),
+    )
+    assert "按天" not in out["reply"]

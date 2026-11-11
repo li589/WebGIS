@@ -348,9 +348,34 @@ _LOCAL_TAKEOVER_DENY_RE = re.compile(
     re.I,
 )
 
-_LOCAL_TAKEOVER_SUFFIX = (
-    "\n\n> 这条由本地规则直接处理（云端模型暂时不可用）。"
-    "上面列出的页面操作已下发，实际效果以页面为准。"
+#: 2026-11-11 用户复测：原来这里附一句「这条由本地规则直接处理（云端模型暂时不可用）」，
+#: 结果用户界面上莫名出现「降级」「模型不可用」这类工程术语。用户只关心「做了没有」，
+#: 所以只删术语那半句，保留「以页面为准」这个对用户真正有用的提醒。
+_LOCAL_TAKEOVER_SUFFIX = "\n\n> 上面列出的页面操作已下发，实际效果以页面为准。"
+
+#: 「把时间轴切到 12 月」这类**没有唯一日期落点**的界面切换（2026-11-11 用户判定）。
+#: 现有产物 ``native_step`` 基本都是 ``1d``，时间轴刻度是天，轴上没有「12 月」这一格。
+#: 硬接住就等于替用户编一个 12 月的某一天下发，跟「零取数不许出数」是同一条红线。
+#: 所以本地直接说清楚：不发意图、不进模型，既不会撞预算，也不会冒出状态牌。
+_VAGUE_TIMELINE_RE = re.compile(
+    r"(?:时间轴|日期|时间)\s*(?:切|跳|调|设|改)"
+    r"|(?:切|跳)(?:换)?(?:到|至)\s*(?:(?:19|20)\d{2}\s*年\s*)?\d{1,2}\s*月"
+)
+_VAGUE_MONTH_RE = re.compile(
+    r"(?:(?:19|20)\d{2}\s*年\s*)?\d{1,2}\s*月份?"
+    r"|(?:19|20)\d{2}\s*年"
+    r"|月初|月底|上旬|中旬|下旬"
+)
+#: 已经给到「日」的说法能落到唯一位置，一律放行（「切到 12 月 15 日」「2025-12-15」）。
+_EXPLICIT_DAY_RE = re.compile(
+    r"\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
+    r"|\d{4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,2}"
+    r"|\d{1,2}\s*[日号]"
+)
+#: 要数、要比、要趋势的属于取数，交给正常链路（整月合成块由统计侧处理）。
+_VAGUE_TIMELINE_QUERY_RE = re.compile(
+    r"查询|统计|计算|均值|平均值|平均|多少|数值|取数|趋势|分布|面积|占比|单位|"
+    r"最大值|最小值"
 )
 
 
@@ -409,12 +434,19 @@ def _degraded_or_local(
     detail: str,
     reason: str,
     on_event: EventCallback | None,
+    limited: bool = False,
 ) -> dict[str, Any]:
-    """模型不可用时的统一出口：先让本地规则接管，接不住才说「做不到」。
+    """模型不可用 / 超出单次预算时的统一出口：先让本地规则接管，接不住才说「做不到」。
 
     两种情况都保证：``ui_intents`` 里只有本地规则**已经确定**的动作（没接住就是空），
     正文明确说页面有没有变化，不暴露接口/服务器异常细节。
+
+    ``limited=True`` 表示**模型本身是好的**，只是这条请求被单次预算拦下来了。
+    2026-11-11 用户实测：超预算走的是 ``provider="degraded"``，前端据此挂出
+    「模型不可用 · 已降级」，可用户下一句问「现在选中的是哪个」模型答得清清楚楚——
+    这个状态牌是在撒谎。超预算与连接失败必须分开，且不能对用户说成"模型坏了"。
     """
+    provider = "limited" if limited else "degraded"
     takeover = _local_takeover(
         message,
         client_context=client_context,
@@ -427,18 +459,22 @@ def _degraded_or_local(
             return _degraded_result(
                 session_id=session_id,
                 reply=str(takeover.get("reply") or ""),
-                provider="degraded",
+                provider=provider,
                 reason=f"本地规则接管：{reason}",
                 on_event=on_event,
                 ui_intents=[
                     i for i in takeover.get("ui_intents") or [] if isinstance(i, dict)
                 ],
-                summary="模型不可用，已由本地规则接管这条界面操作",
+                summary="这条界面操作由本地规则完成",
             )
     return _degraded_result(
         session_id=session_id,
-        reply=_llm_down_reply(detail, message=message),
-        provider="degraded",
+        reply=(
+            _request_limit_reply(message=message)
+            if limited
+            else _llm_down_reply(detail, message=message)
+        ),
+        provider=provider,
         reason=reason,
         on_event=on_event,
     )
@@ -3946,6 +3982,28 @@ def _run_chat_impl(
             intents=deterministic_actions,
         )
 
+    # 时间说法没有唯一日期落点（「切到 12 月」）：本地直接说清楚，不进模型。
+    # 2026-11-11 用户实测：这句原先走完整模型链路，撞 20000 token 预算后被
+    # 标成「模型不可用 · 已降级」，而模型本身一直好好的——属于既没做成、又说错原因。
+    vague_month = _VAGUE_MONTH_RE.search(message)
+    if (
+        vague_month
+        and _VAGUE_TIMELINE_RE.search(message)
+        and not _EXPLICIT_DAY_RE.search(message)
+        and not _VAGUE_TIMELINE_QUERY_RE.search(message)
+    ):
+        label = vague_month.group(0).strip()
+        return finish_direct(
+            f"时间轴是按天走的，没有「{label}」这一格，我不替你猜具体是哪天。\n\n"
+            f"要看某一天，直接给日期，比如「把时间轴切到 2025-12-15」。\n"
+            f"要整个「{label}」的合成结果，那是取数，"
+            f"可以说「河南省 2025 年 12 月土壤水分平均值」。\n\n"
+            f"时间轴没有动，还停在原来那天。",
+            provider_suffix="" if protocol == "demo" else "vague-timeline",
+            summary="时间说法没有唯一日期落点，未下发时间轴切换",
+            intents=[],
+        )
+
     # 纯时间切换属于确定性的界面操作，不需要携带完整目录与工具集询问模型。
     # 含“查询/统计/多少”等取数意图的复合请求仍走正常工具链。
     simple_timeline = bool(
@@ -5737,6 +5795,8 @@ def run_chat(
             detail=str(exc),
             reason=str(exc),
             on_event=on_event,
+            # 模型是好的，只是这条被预算拦下——不能标成 degraded（见函数 docstring）。
+            limited=True,
         )
     except LlmClientError as exc:
         logger.warning("agent degraded: LLM error: %s", exc)

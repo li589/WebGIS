@@ -127,7 +127,7 @@ interface ChatMessage {
   layerCards?: AgentLayerCard[]
   /** 结束后是否默认展开「过程」（有工具步骤时） */
   keepStepsOpen?: boolean
-  /** 后端 provider：demo = 规则演示；degraded/busy = 已降级 */
+  /** 后端 provider：demo = 规则演示；limited = 撞单次预算（模型是好的）；busy = 并发满 */
   provider?: string
 }
 
@@ -158,7 +158,10 @@ function finalizeAssistantHtml(msg: ChatMessage) {
  */
 function modeBadge(provider?: string): string {
   if (provider === 'demo') return '规则演示模式'
-  if (provider === 'degraded') return '模型不可用 · 已降级'
+  // 2026-11-11 用户复测：这里原来会挂出「模型不可用 · 已降级」。但用户实际遇到的场景
+  // 是这一条请求撞了单次预算，模型下一句照样答得很完整——状态牌在撒谎；而且「降级」
+  // 是工程术语，用户只关心「到底做了没有」。原因正文里已经说清，这里不再挂牌。
+  if (provider === 'degraded' || provider === 'limited') return ''
   if (provider === 'busy') return '助手繁忙'
   if (provider === 'guard') return '已超出输入预算'
   return ''
