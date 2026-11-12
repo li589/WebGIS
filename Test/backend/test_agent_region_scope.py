@@ -16,7 +16,11 @@
 import json
 
 from app.services.agent import orchestrator as orch
-from app.services.agent.orchestrator import _append_region_scope_note, _guard_reply_numbers
+from app.services.agent.orchestrator import (
+    _append_region_scope_note,
+    _guard_reply_numbers,
+    _rebuild_stats_reply,
+)
 
 
 def _step(payload):
@@ -99,6 +103,36 @@ class TestCountyScopeNote:
         steps = [_step({**_SINGLE_DAY, "region": "广州市", "region_level": "city"})]
         out = _append_region_scope_note("广州市天河区的平均土壤水分", reply, steps)
         assert out == reply
+
+
+class TestGuangzhouShenzhenSeparateResults:
+    """锁住双城请求逐项统计，防止区域被合并或沿用上一轮。"""
+
+    def test_two_city_results_keep_their_own_region_and_values(self):
+        out = _rebuild_stats_reply([
+            {
+                **_SINGLE_DAY,
+                "region": "广州市",
+                "region_level": "city",
+                "mean": 0.06432,
+                "valid_pixels": 28,
+                "display_name": "SMAP 平均版土壤水分",
+                "actual_time": "20251113",
+            },
+            {
+                **_SINGLE_DAY,
+                "region": "深圳市",
+                "region_level": "city",
+                "mean": 0.25750,
+                "valid_pixels": 7,
+                "display_name": "SMAP 平均版土壤水分",
+                "actual_time": "20251113",
+            },
+        ])
+        assert out is not None
+        assert "广州市" in out and "0.06432" in out and "28" in out
+        assert "深圳市" in out and "0.2575" in out and "7" in out
+        assert out.index("广州市") < out.index("深圳市")
 
 
 class TestUnknownRegionNote:
