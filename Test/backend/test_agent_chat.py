@@ -38,7 +38,16 @@ def agent_client(tmp_path, monkeypatch):
 
     from app.core.config import Settings
 
-    cfg_mod.settings = replace(
+    # 2026-11-12：必须先 patch 再赋值，不能写成 ``cfg_mod.settings = 新值`` 后
+    # 再 ``monkeypatch.setattr(..., cfg_mod.settings)``。
+    # monkeypatch 记录的是「调用那一刻的当前值」——先赋值，记录下来的原值就变成
+    # 了 tmp 目录那一份，用例结束还原出来的仍是 tmp。于是 settings 从此永久停在
+    # 最后一个 chat 用例的 ``tmp_path`` 上，后续所有用例读图层次要经过
+    # ``output_root()`` 的就全部落到空目录：``identity_fields`` 一律
+    # source=unknown / variable=unknown，产品粘性判定「身份解析不出就放行」，
+    # 「那 2026-12-16 呢」「换成河南省呢」就不再沿用上一轮的产品。
+    # 表现是 test_agent_page_layer::TestThreeRules 单跑必过、全量必挂。
+    patched = replace(
         Settings(),
         admin_username="testadmin",
         admin_password="test-pass-123",
@@ -51,7 +60,7 @@ def agent_client(tmp_path, monkeypatch):
         workflow_state_dir=str(tmp_path / "state"),
         output_root=str(tmp_path / "out"),
     )
-    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+    monkeypatch.setattr(cfg_mod, "settings", patched)
 
     from app.services import user_repository as ur_mod
     from app.services.user_repository import UserRepository
@@ -243,7 +252,9 @@ def test_normalize_drops_legacy_migration_and_repairs_demo():
     assert ids.count("aaaa") == 1
     demo = next(p for p in store["profiles"] if p["id"] == "demo")
     assert demo == _default_demo_profile()
-    assert not any(str(p.get("name") or "").startswith("迁移自旧配置") for p in store["profiles"])
+    assert not any(
+        str(p.get("name") or "").startswith("迁移自旧配置") for p in store["profiles"]
+    )
 
 
 def test_normalize_collapses_identical_preset_clones():
@@ -344,7 +355,9 @@ def test_personal_store_collapses_identical_clones_on_load(tmp_path, monkeypatch
     from app.core.config import Settings
     from app.services.agent import config_service as cs
 
-    cfg_mod.settings = replace(Settings(), data_root=str(tmp_path / "data"), environment="test")
+    cfg_mod.settings = replace(
+        Settings(), data_root=str(tmp_path / "data"), environment="test"
+    )
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
 
     path = tmp_path / "data" / "_runtime" / "agent" / "users" / "9" / "profiles.json"
@@ -361,7 +374,9 @@ def test_personal_store_collapses_identical_clones_on_load(tmp_path, monkeypatch
     twin2 = dict(twin)
     twin2["id"] = "a2"
     path.write_text(
-        json.dumps({"active_profile_id": "", "profiles": [twin, twin2]}, ensure_ascii=False),
+        json.dumps(
+            {"active_profile_id": "", "profiles": [twin, twin2]}, ensure_ascii=False
+        ),
         encoding="utf-8",
     )
     store = cs._load_store_unlocked(path, personal=True)
@@ -416,7 +431,6 @@ def test_mock_legacy_migrates_to_demo_only(tmp_path, monkeypatch):
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
 
     from app.services.agent import config_service as cs
-
 
     dest = data / "_runtime" / "agent" / "global_profiles.json"
     assert not dest.exists()
@@ -574,16 +588,12 @@ def test_list_workflows_and_get_layer_meta():
     assert wf["ok"] is True
     assert isinstance(wf.get("workflows"), list)
 
-    meta = execute_server_tool(
-        "get_layer_meta", {"catalog_id": "ndvi"}, cred=_Cred()
-    )
+    meta = execute_server_tool("get_layer_meta", {"catalog_id": "ndvi"}, cred=_Cred())
     assert meta["ok"] is True
     assert meta["layer"]["layer_id"] == "ndvi"
     assert "workflow_id" in meta["layer"]
 
-    missing = execute_server_tool(
-        "get_layer_meta", {"catalog_id": ""}, cred=_Cred()
-    )
+    missing = execute_server_tool("get_layer_meta", {"catalog_id": ""}, cred=_Cred())
     assert missing["ok"] is False
 
 
@@ -759,7 +769,6 @@ def test_run_workflow_creates_confirmation_ticket(tmp_path, monkeypatch):
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
 
-
     class _Cred:
         role = "admin"
         user_id = 1
@@ -805,7 +814,6 @@ def test_agent_confirm_approve_reject_and_expire(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-
 
     ticket = ac.create_confirmation(
         action="run_workflow",
@@ -916,7 +924,9 @@ def test_agent_chat_run_workflow_confirmation_and_confirm_api(
     assert ok.json()["run_id"] == "run-testapprove01"
 
 
-def test_agent_sessions_list_get_delete(agent_client: TestClient, tmp_path, monkeypatch):
+def test_agent_sessions_list_get_delete(
+    agent_client: TestClient, tmp_path, monkeypatch
+):
     monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data"))
     from app.services.agent import session_store as ss
 
@@ -1231,7 +1241,9 @@ def test_get_workflow_run_fail_closed_without_uid(monkeypatch):
     assert "未找到" in str(out.get("error") or "")
 
 
-def test_agent_session_invalid_id_returns_404(agent_client: TestClient, tmp_path, monkeypatch):
+def test_agent_session_invalid_id_returns_404(
+    agent_client: TestClient, tmp_path, monkeypatch
+):
     monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data"))
     _login(agent_client, "stduser", "std-pass-123")
     # Illegal chars must 404 (not 500)
@@ -1262,8 +1274,12 @@ def test_should_rate_limit_agent_chat():
 def test_should_rate_limit_agent_models_refresh():
     from app.api.rate_limit import should_rate_limit_agent_models_refresh
 
-    assert should_rate_limit_agent_models_refresh("/agent/models/refresh", "POST") is True
-    assert should_rate_limit_agent_models_refresh("/agent/models/refresh/", "POST") is True
+    assert (
+        should_rate_limit_agent_models_refresh("/agent/models/refresh", "POST") is True
+    )
+    assert (
+        should_rate_limit_agent_models_refresh("/agent/models/refresh/", "POST") is True
+    )
     assert should_rate_limit_agent_models_refresh("/agent/chat", "POST") is False
 
 
@@ -1373,7 +1389,6 @@ def test_leaving_demo_revalidates_base_url(tmp_path, monkeypatch):
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
 
-
     store = {
         "active_profile_id": "demo",
         "profiles": [
@@ -1425,11 +1440,16 @@ def test_session_store_ttl_and_cap(tmp_path, monkeypatch):
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
 
-
     uid = 42
-    ss.append_turn(user_id=uid, session_id="s1", user_message="a", assistant_message="a1")
-    ss.append_turn(user_id=uid, session_id="s2", user_message="b", assistant_message="b1")
-    ss.append_turn(user_id=uid, session_id="s3", user_message="c", assistant_message="c1")
+    ss.append_turn(
+        user_id=uid, session_id="s1", user_message="a", assistant_message="a1"
+    )
+    ss.append_turn(
+        user_id=uid, session_id="s2", user_message="b", assistant_message="b1"
+    )
+    ss.append_turn(
+        user_id=uid, session_id="s3", user_message="c", assistant_message="c1"
+    )
     root = Path(data) / "_runtime" / "agent" / "sessions" / str(uid)
     files = list(root.glob("*.json"))
     assert len(files) <= 2
@@ -1586,9 +1606,7 @@ def test_get_workflow_meta_and_sample_and_web_search(monkeypatch):
             "ok": True,
             "query": query,
             "count": 1,
-            "results": [
-                {"title": "t", "snippet": "s", "url": "https://example.com/x"}
-            ],
+            "results": [{"title": "t", "snippet": "s", "url": "https://example.com/x"}],
             "sources": ["test"],
         }
 

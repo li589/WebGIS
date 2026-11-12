@@ -213,3 +213,63 @@ def test_forecast_query_matches(text):
 def test_forecast_query_does_not_match_history(text):
     """历史观测/统计不能被当成预报拦掉。"""
     assert not _FORECAST_QUERY_RE.search(text), text
+
+
+# ── 五、静态层的日期拦截必须自证（2026-11-12）────────────────────
+#
+# 两条都是「拦截依赖调用方自觉」留下的漏：``_build_timeline_reply`` 的静态
+# 判断原来只在调用方传 ``static_name`` 时生效，确定性路径没传 ⇒ 静态层照样
+# 回「已切到」；层名回退到占位词「该图层」⇒ 用户不知道说的是哪一层。
+
+
+def _timeline_ctx() -> dict:
+    return {
+        "map_ready": True,
+        "timeline": {"date": "2025-12-15", "hour": 0},
+        "active_layers": [
+            {
+                "catalog_id": "imported-nas-fy-avg-vod",
+                "name": "植被光学厚度",
+                "visible": True,
+                "selected": True,
+            }
+        ],
+    }
+
+
+def test_build_timeline_reply_refuses_static_target_by_itself():
+    """只给 catalog_id 也要拦住——不能指望每个调用方都记得传 static_name。"""
+    reply, changeable = mo._build_timeline_reply(
+        {"date": "2025-12-01", "catalog_id": "cmfd-precip-cn"}, _timeline_ctx()
+    )
+    assert changeable is False
+    assert "不支持切换日期" in reply
+    # 层名不能是占位词，否则「「该图层」是静态数据」等于没说
+    assert "CMFD 区域降水" in reply
+    assert "该图层" not in reply
+
+
+def test_build_timeline_reply_allows_normal_layer():
+    reply, changeable = mo._build_timeline_reply(
+        {"date": "2025-12-16", "catalog_id": "imported-nas-fy-avg-vod"},
+        _timeline_ctx(),
+    )
+    assert changeable is True
+    assert "2025-12-16" in reply
+
+
+def test_deterministic_static_target_only_shows_layer():
+    """添加静态层 + 切日期：只下发显示，正文说明日期没动。"""
+    from app.services.agent.orchestrator import _resolve_deterministic_map_actions
+
+    notes: list[str] = []
+    acts = _resolve_deterministic_map_actions(
+        "添加 CMFD 降水并切换到 2025-12-01",
+        _timeline_ctx(),
+        unresolved=[],
+        notes=notes,
+    )
+    assert acts is not None
+    assert [a["name"] for a in acts] == ["set_layer_visibility"]
+    assert acts[0]["args"]["catalog_id"] == "cmfd-precip-cn"
+    assert notes and "不支持切换日期" in notes[0]

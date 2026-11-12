@@ -630,13 +630,29 @@ def _emit_stream_tail(
 _EMPTY_REPLY_MARKERS = frozenset({"", "（模型未返回文本）"})
 
 
+#: 「列图层」和「取数」撞词时的判据。
+#:
+#: ``哪个 / 哪些 + 图层`` 既可能是列表查询，也可能是在问数值
+#: （「哪些图层的土壤水分平均值最高」）。这条分支把请求交给
+#: ``mock_chat`` 本地回答，而 ``mock_chat`` 的统计分支**排在列表分支之前**
+#: （它的注释写明必须如此，否则「只读计算当前图层全范围均值」会被列表截胡）。
+#: 于是带统计词的句子会拿到一段均值正文而不是图层清单——正文里有数、有像元数，
+#: 用户看不出答错了问题。含这些词就不走本地列表，交给模型按工具取数。
+_STAT_INTENT_NOISE_RE = re.compile(
+    r"平均|均值|统计|最大值|最小值|最高|最低|合计|总量|多少|像元|标准差|中位数"
+)
+
+
 def _is_list_active_layers_query(message: str) -> bool:
     import re
 
+    text = message or ""
+    if _STAT_INTENT_NOISE_RE.search(text):
+        return False
     return bool(
         re.search(
             r"哪些.*(图层|层)|活动图层|当前图层|查看.*图层|list.*layer",
-            message or "",
+            text,
             re.I,
         )
     )
@@ -5988,8 +6004,16 @@ def _resolve_deterministic_map_actions(
                     # 前端本来就会拒绝（agent-ui-intent.ts 的 resolveStaticTimelineTarget），
                     # 但那条回执下一轮才回来，本轮正文已经写出去了。
                     if notes is not None:
+                        # 层名优先取本次下发时带的那份 display_name：目录层
+                        # （cmfd-precip-cn）走 _layer_label 读不出中文名，会写成
+                        # 「「该图层」是静态数据」——用户根本不知道说的是哪一层。
+                        label = (
+                            str(shown[-1]["args"].get("display_name") or "")
+                            if shown
+                            else ""
+                        ) or _layer_label(target_id)
                         notes.append(
-                            f"「{_layer_label(target_id)}」是静态数据，没有时间维度，"
+                            f"「{label}」是静态数据，没有时间维度，"
                             "**不支持切换日期**，时间轴没有动"
                         )
                 else:

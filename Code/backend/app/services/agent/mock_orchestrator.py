@@ -315,6 +315,70 @@ def _multi_visibility_actions(
     return actions, missing
 
 
+def _catalog_pick_by_group_and_variable(message: str) -> LayerPick | None:
+    """「显示风云平均产品中的 VOD」→ 落到族内 VOD 那一层（2026-11-12）。
+
+    ``_catalog_pick`` 拿**整句**去搜图层库，这句返回空：目录里的族名是
+    「风云卫星 平均散射约束产品」，和口语的「风云平均产品」差着「卫星」
+    「散射约束」两截。就算搜出族来，名字 token 判定也接不住——它要求「层名
+    整体或首词」出现在消息里，而首词是「风云卫星」，消息里只有「风云」。
+    两条路都断，于是「显示组里的 VOD」只能勾上族（相当于文件夹），画面不变。
+
+    改法：换用**变量词**去搜。「植被光学厚度」这一搜能拿到全部四个族，再用
+    消息里的来源 / 产品形态按 ``identity`` 收窄。收窄到唯一一个族，就展开到
+    该变量的真实成员；仍有多个族则返回 ``None``，交给上层反问——绝不替用户
+    挑族（挑错等于把 SMAP 的数据标成风云的）。
+    """
+    search_terms: list[str] = []
+    for pattern, terms in _LAYER_ALIASES:
+        if pattern.search(message):
+            search_terms = list(terms)
+            break
+    want_var = ""
+    for pattern, code in _GROUP_VARIABLE_HINTS:
+        if pattern.search(message):
+            want_var = code
+            break
+    if not search_terms or not want_var:
+        return None
+    # 没点来源也没点形态（「显示植被光学厚度」）就不该走这里：这句话本来就
+    # 只指变量，交给普通选层逻辑按页面已挂的层挑，比在这里凭目录挑一个更稳。
+    mentions_source = any(pat.search(message) for pat, _ in _IDENTITY_SOURCE_HINTS)
+    mentions_family = any(pat.search(message) for pat, _ in _IDENTITY_FAMILY_HINTS)
+    if not mentions_source and not mentions_family:
+        return None
+    chosen: list[dict[str, Any]] = []
+    # 别名表里同一变量有多种说法（「vod」/「植被光学厚度」）。必须逐个试：
+    # 图层库里的族名是中文（「风云卫星 平均散射约束产品」），拿 "vod" 去搜
+    # 匹配不到族；反过来 "vod" 又会搜到别的不相干层。所以判据不是「有结果」，
+    # 而是「这一搜的结果按来源/形态收窄后正好剩一个」。
+    for term in search_terms:
+        candidate_rows: list[dict[str, Any]] = []
+        try:
+            from app.services.agent.server_tools_runtime import _search_layers
+
+            res = _search_layers({"query": term, "limit": 10}, cred=None)
+        except Exception:
+            continue
+        for item in (res or {}).get("layers") or []:
+            if not isinstance(item, dict):
+                continue
+            lid = str(item.get("layer_id") or "").strip()
+            name = str(item.get("display_name") or "").strip()
+            if lid and name:
+                candidate_rows.append({"catalog_id": lid, "name": name})
+        if not candidate_rows:
+            continue
+        narrowed = _narrow_by_identity(message, candidate_rows)
+        if len(narrowed) == 1:
+            chosen = narrowed
+            break
+    if not chosen:
+        return None
+    pick = LayerPick(str(chosen[0]["catalog_id"]), str(chosen[0]["name"]))
+    return _expand_product_group(pick, message)
+
+
 def _catalog_pick(message: str) -> LayerPick | None:
     """目录兜底：页面没有这一层时，从图层目录里按名字找一次（2026-11-09）。
 
@@ -322,8 +386,12 @@ def _catalog_pick(message: str) -> LayerPick | None:
     活动层里挑，目录层永远落到反问 ⇒ 示例指令与实际能力不一致，用户以为坏了。
     前端 ``set_layer_visibility`` 本就支持「显示＝自动从图层库添加」
     （agent-ui-intent 的 addLayer 分支），所以这里只要把目录层的 catalog_id
-    交给前端即可。只在「名字确实出现在消息里」时才命中，避免把无关层挂上来。
+    交给前端即可。    只在「名字确实出现在消息里」时才命中，避免把无关层挂上来。
     """
+    # 「族 + 变量」的说法优先：整句在图层库里搜不到（见上面那个函数的注释）。
+    grouped = _catalog_pick_by_group_and_variable(message)
+    if grouped is not None:
+        return grouped
     try:
         from app.services.agent.server_tools_runtime import _search_layers
 
@@ -369,19 +437,31 @@ _IDENTITY_SOURCE_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"风云|风三|风四|nsmc|fy-?\s*[34]", re.I), "fy"),
 )
 
-#: 消息里的产品形态词 → ``product_family`` 值。
-_IDENTITY_FAMILY_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"动态|逐日|每天|日尺度", re.I), "raw"),
+#: 消息里的产品形态词 → ``product_family`` 的**可接受取值集合**。
+#:
+#: ``layer_identity._product_family`` 实际只会返回 ``dynamic`` / ``average`` /
+#: ``raw`` 三种，而用户嘴里的「动态」对应的是 ``dynamic``。这里原来写死成
+#: ``"raw"``，两边永远对不上：说「风云动态产品里的土壤水分」时收窄结果为空，
+#: 助手只能回「没找到」——同一句话换成「平均」就好使，用户会以为动态版没有数据。
+_IDENTITY_FAMILY_HINTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (re.compile(r"动态|逐日|每天|日尺度", re.I), ("dynamic", "raw")),
     (
         re.compile(r"平均(?!值|多少|是|为|约|大概|下|一|的|数|量)|月均|季均|气候态"),
-        "average",
+        ("average",),
     ),
 )
 
 _IDENTITY_CACHE: dict[str, dict[str, Any]] = {}
 
 #: ``product_family`` → 用户嘴里的叫法（反问和回执都要靠它区分同名层）。
-_FAMILY_LABELS: dict[str, str] = {"average": "平均版", "raw": "动态版"}
+#: ``product_family`` → 用户嘴里的叫法（反问和回执都要靠它区分同名层）。
+#: ``raw`` 沿用旧叫法「动态版」：那些层（``imported-nas-fy-raw-*``）在业务上
+#: 就是逐日动态帧，改名会让既有回执与用户熟悉的说法对不上。
+_FAMILY_LABELS: dict[str, str] = {
+    "average": "平均版",
+    "dynamic": "动态版",
+    "raw": "动态版",
+}
 
 #: 消息里的变量词 → 产品族成员 code，对齐 ``layer_identity._GROUP_VARIABLE_ROLES``
 #: （``("SM","sm") ("VOD","vod") ("OMEGA","omega")``）。
@@ -573,7 +653,7 @@ def _narrow_by_identity(
             continue
         if want_source and str(ident.get("source") or "") != want_source:
             continue
-        if want_family and str(ident.get("product_family") or "") != want_family:
+        if want_family and str(ident.get("product_family") or "") not in want_family:
             continue
         kept.append(layer)
     return kept
@@ -1056,7 +1136,20 @@ def _build_timeline_reply(
     ``static_name``（2026-11-11 老师复测第 3 条）：目标层是静态数据时，这一层
     根本没有时间维度，切日期不可能生效。直接说「不支持切换日期」并拒绝下发，
     不能让用户看到「已切到 X」而页面毫无变化。
+
+    ``static_name`` 传空时（2026-11-12）这里**自己再看一眼** ``args_tl`` 里的
+    ``catalog_id``：拦截不能依赖每个调用方都记得传参——漏传一处就退回「已切到」。
     """
+    if not static_name:
+        target_cid = str(args_tl.get("catalog_id") or "").strip()
+        if target_cid and _layer_is_static(target_cid):
+            # 目录层（cmfd-precip-cn）在页面上没有实例，
+            # ``human_layer_name`` 查不到会回占位词「该图层」——正文写成
+            # 「「该图层」是静态数据」等于没说。身份解析能读目录里的中文名。
+            label = str(_layer_identity(target_cid).get("display_name") or "")
+            if not label or label == target_cid:
+                label = human_layer_name(target_cid, client_context, default="")
+            static_name = label or target_cid
     if static_name:
         return (
             f"「{static_name}」是静态数据，没有时间维度，**不支持切换日期**，"
@@ -1528,8 +1621,10 @@ def _contradicts_hints(text: str, layer: dict[str, Any]) -> bool:
             continue
         if marker in name:
             continue
-        want = "raw" if marker == "动态" else "average"
-        if str(ident.get("product_family") or "") == want:
+        # 「动态」在身份里是 dynamic，raw 是原始——两个都要认，否则
+        # 「页面上这层是动态版吗」永远判成对不上。
+        want: tuple[str, ...] = ("dynamic", "raw") if marker == "动态" else ("average",)
+        if str(ident.get("product_family") or "") in want:
             continue
         return True
     return False
