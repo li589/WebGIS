@@ -101,6 +101,9 @@ def test_self_contained_statistics_does_not_need_a_previous_chat_or_ui_action():
     message = "请统计 SMAP 平均散射约束产品中的土壤水分在 2025-11-13 广州市行政区的平均值。"
     assert _is_explicit_statistics_read(message)
     assert not _is_explicit_stats_composite(message)
+    assert not _is_explicit_statistics_read(
+        "请分别统计 SMAP 平均散射约束产品中的土壤水分在 2025-11-13 广州市和深圳市行政区的平均值。"
+    )
 
 
 def test_explicit_layer_rule_never_claims_it_was_carried_from_previous_turn():

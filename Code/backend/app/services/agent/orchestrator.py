@@ -733,6 +733,15 @@ def _is_explicit_statistics_read(message: str) -> bool:
     even when the user had supplied product, date and region in one sentence.
     """
     text = str(message or "")
+    # 双城/三城有专门的逐项统计分支；不能让本规则抢先按最后一个地区
+    # 当成单城处理。
+    try:
+        from app.services.agent.region import list_cities
+
+        if sum(1 for city in list_cities() if city and city in text) != 1:
+            return False
+    except Exception:  # pragma: no cover - 地名表异常时保守退回正常链路
+        return False
     return bool(
         re.search(r"(?:统计|平均值|均值)", text)
         and re.search(r"(?:19|20)\d{2}[-年/]\s*\d{1,2}(?:月|[-/]\s*)\d{1,2}", text)
