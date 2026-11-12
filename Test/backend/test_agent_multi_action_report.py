@@ -15,6 +15,7 @@ from app.services.agent.orchestrator import (
     _is_explicit_stats_composite,
     _map_actions_before_statistics,
     _map_actions_reply,
+    _set_composite_visibility_scope,
     _tool_trace_payload,
     _without_false_layer_carry,
 )
@@ -95,6 +96,15 @@ def test_composite_layer_date_statistics_keeps_ui_prefix_for_local_execution():
     assert "统计" not in prefix
     assert "SMAP" in prefix
     assert "2025-11-13" in prefix
+
+
+def test_ordinary_composite_show_is_explicitly_not_solo():
+    intents = [{"name": "set_layer_visibility", "args": {"catalog_id": "smap-sm", "visible": True}}]
+    _set_composite_visibility_scope(intents, "显示 SMAP 土壤水分，设日期后统计广州市")
+    assert intents[0]["args"]["solo"] is False
+
+    _set_composite_visibility_scope(intents, "只显示 SMAP 土壤水分，设日期后统计广州市")
+    assert intents[0]["args"]["solo"] is True
 
 
 def test_self_contained_statistics_does_not_need_a_previous_chat_or_ui_action():

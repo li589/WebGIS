@@ -799,6 +799,19 @@ def _map_actions_before_statistics(message: str) -> str:
     return re.split(r"(?:，|,|；|;|并且|然后|再)?\s*(?:统计|计算|查询|取数)", message, maxsplit=1)[0].strip()
 
 
+def _set_composite_visibility_scope(
+    intents: list[dict[str, Any]], message: str
+) -> None:
+    """Make ordinary composite "show" commands explicitly non-exclusive."""
+    solo = bool(re.search(r"(?:只显示|仅显示|单独显示|只留)", str(message or "")))
+    for item in intents:
+        if not isinstance(item, dict) or str(item.get("name") or "") != "set_layer_visibility":
+            continue
+        args = item.get("args")
+        if isinstance(args, dict) and bool(args.get("visible")):
+            args["solo"] = solo
+
+
 def _reply_needs_tool_synthesis(reply: str) -> bool:
     return (reply or "").strip() in _EMPTY_REPLY_MARKERS
 
@@ -4363,6 +4376,7 @@ def _run_chat_impl(
             notes=composite_notes,
         )
         if composite_intents is not None:
+            _set_composite_visibility_scope(composite_intents, message)
             from app.services.agent import mock_orchestrator as _mo
             from app.services.agent.mock_orchestrator import forced_statistics_reply
 
