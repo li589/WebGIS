@@ -392,6 +392,7 @@ _GUEST_AGENT_IP_TOKEN_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_IP_TOKEN_LIMIT"
 _GUEST_AGENT_GLOBAL_TOKEN_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_GLOBAL_TOKEN_LIMIT", "480000"))
 _guest_token_usage: dict[str, int] = {}
 _guest_token_reservations: dict[str, int] = {}
+_guest_token_settled: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -427,8 +428,12 @@ def reserve_guest_agent_tokens(visitor_id: str | None, ip: str, amount: int) -> 
 def settle_guest_agent_tokens(reservation: GuestTokenReservation | None, actual: int | None) -> None:
     if reservation is None or reservation.amount <= 0:
         return
+    with _guest_quota_memory_lock:
+        if reservation.token in _guest_token_settled:
+            return
+        _guest_token_settled.add(reservation.token)
     # 未发送成功/被取消的请求不应消耗额度；只有拿到上游 usage 才结算。
-    charged = max(0, min(int(actual or 0), reservation.amount))
+    charged = max(0, int(actual or 0))
     with _guest_quota_memory_lock:
         for key in (reservation.visitor_key, reservation.ip_key, reservation.global_key):
             _guest_token_reservations[key] = max(0, _guest_token_reservations.get(key, 0) - reservation.amount)
