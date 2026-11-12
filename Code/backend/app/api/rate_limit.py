@@ -427,11 +427,20 @@ def reserve_guest_agent_tokens(visitor_id: str | None, ip: str, amount: int) -> 
 def settle_guest_agent_tokens(reservation: GuestTokenReservation | None, actual: int | None) -> None:
     if reservation is None or reservation.amount <= 0:
         return
-    charged = max(0, min(int(actual or reservation.amount), reservation.amount))
+    # 未发送成功/被取消的请求不应消耗额度；只有拿到上游 usage 才结算。
+    charged = max(0, min(int(actual or 0), reservation.amount))
     with _guest_quota_memory_lock:
         for key in (reservation.visitor_key, reservation.ip_key, reservation.global_key):
             _guest_token_reservations[key] = max(0, _guest_token_reservations.get(key, 0) - reservation.amount)
             _guest_token_usage[key] = _guest_token_usage.get(key, 0) + charged
+
+
+def peek_guest_agent_tokens(visitor_id: str | None, ip: str) -> tuple[int, int]:
+    """返回游客 token 额度的已用量与单次上限，用于前端展示。"""
+    day, _ttl = _beijing_day_and_ttl()
+    key = f"token:visitor:{visitor_id or ip}:{day}"
+    with _guest_quota_memory_lock:
+        return _guest_token_usage.get(key, 0) + _guest_token_reservations.get(key, 0), _GUEST_AGENT_TOKEN_LIMIT
 
 
 def guest_quota_limit() -> int:

@@ -19,6 +19,7 @@ from app.api.rate_limit import (
     is_guest_request,
     reserve_guest_agent_tokens,
     settle_guest_agent_tokens,
+    peek_guest_agent_tokens,
 )
 from app.api.error_codes import (
     AUTH_ERROR,
@@ -605,6 +606,20 @@ def agent_quota(request: Request) -> AgentQuotaResponse:
 
     visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
     layers = peek_agent_guest_quota_layers(visitor_id or None, client_ip(request))
+    token_used, token_limit = peek_guest_agent_tokens(visitor_id or None, client_ip(request))
+    if token_limit > 0:
+        remaining = max(0, token_limit - token_used)
+        percent = round(remaining / token_limit * 100)
+        return AgentQuotaResponse(
+            scope="guest",
+            limit=token_limit,
+            used=token_used,
+            remaining=remaining,
+            percent=percent,
+            reset_at=reset_at,
+            blocked=remaining <= 0,
+            message="本次 Agent token 额度已用完，额度将在北京时间 0 点恢复。" if remaining <= 0 else None,
+        )
     used, limit = layers.get(QUOTA_SCOPE_VISITOR, (0, 0))
     if limit <= 0:
         return AgentQuotaResponse(
