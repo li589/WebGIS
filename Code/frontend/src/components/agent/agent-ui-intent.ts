@@ -696,20 +696,21 @@ async function executeAgentUiIntentCore(
     if (!visible) {
       return { ok: true, message: `已隐藏「${label}」${nowHint}` }
     }
-    // 2026-11-03：显示某层时把要撤的层收掉。旧版只加不减，两个「土壤水分」叠在
-    // 一起、上层遮住下层，用户会以为「切换没生效」——实际是叠加了。
-    // solo（用户说了「只 / 仅 / 单独」）时清场，除目标层外全收。
+    // 只有用户明确说「只显示 / 仅显示 / 单独显示」才允许收起其他层。
+    // 普通「显示 X」是加显示，不得悄悄改变 VOD 等其他图层状态。
     const solo = strictBool(args.solo)
-    const { closed, kept } = hideConflictingLayers(
-      workspace,
-      handlers,
-      {
-        instanceId: resolved.instanceId,
-        catalogId,
-        name: args.display_name ? String(args.display_name) : layer.name,
-      },
-      solo,
-    )
+    const { closed, kept } = solo
+      ? hideConflictingLayers(
+          workspace,
+          handlers,
+          {
+            instanceId: resolved.instanceId,
+            catalogId,
+            name: args.display_name ? String(args.display_name) : layer.name,
+          },
+          true,
+        )
+      : { closed: [], kept: [] }
     const shown = withSource(handlers, catalogId, label)
     const brief = (names: string[]): string =>
       names.length <= 3
@@ -911,7 +912,7 @@ async function executeAgentUiIntentCore(
     // 于是界面同时出现「✗ 执行失败」和「时间轴确实变了」两种相反的信号。
     // 现在改成 commit()：只有确定能落帧（或确知没有时序图层可校验）才落盘，
     // 失败分支保持页面原状，零副作用（不写 localStorage、不触发重绘）。
-    const commit = (): void => {
+    const commit = (resolvedCatalogId?: string): void => {
       if (hasDate) ui.applyDateHour(targetDate, hour)
       else ui.setHour(hour)
       /**
@@ -925,7 +926,14 @@ async function executeAgentUiIntentCore(
        * 不写 localStorage，不影响用户随后手动拖时间轴。
        */
       if (hasDate) {
-        const pinId = String(args.catalog_id ?? args.layer_id ?? '').trim()
+        // `args.catalog_id` may be the catalogue family id, while a newly added
+        // layer can be normalised to an imported/runtime id.  Timeline sync
+        // watches the latter, so pinning only the requested id lets the late
+        // metadata watcher overwrite an explicit Agent date with its default
+        // (usually the July average frame).
+        const pinId = String(
+          resolvedCatalogId ?? args.catalog_id ?? args.layer_id ?? '',
+        ).trim()
         if (pinId) ui.pinTimelineAt(pinId, targetDate, hour)
       }
     }
@@ -968,7 +976,9 @@ async function executeAgentUiIntentCore(
         message: `${formatLocalDateKey(targetDate)} 没有可用数据：${dominant.name} 还没有任何时间帧（时间轴未改动）`,
       }
     }
-    commit()
+    // Pin the catalog id that the page actually resolved and is about to render,
+    // rather than only the catalogue id supplied by the backend.
+    commit(dominant.catalogId)
     const requested = formatLocalDateKey(targetDate)
     const span = `${readableFrameLabel(dominant.list[0])} 至 ${readableFrameLabel(
       dominant.list[dominant.list.length - 1],

@@ -53,6 +53,7 @@ const activeLayersDisplay = ref<
 
 const applyDateHour = vi.fn();
 const setHour = vi.fn();
+const pinTimelineAt = vi.fn();
 const play = vi.fn();
 const pause = vi.fn();
 const currentHour = ref(12);
@@ -87,6 +88,7 @@ vi.mock("@/stores/ui", () => ({
     },
     applyDateHour,
     setHour,
+    pinTimelineAt,
     play,
     pause,
   }),
@@ -346,6 +348,13 @@ describe("executeAgentUiIntent", () => {
     expect(res.message).toContain("2025-12-02");
     expect(res.message).toContain("土壤水分（SMAP 平均）");
     expect(res.message).not.toContain("imported-38993117b963");
+    // The protection must use the actual runtime/imported layer identity.
+    // The backend may have supplied a catalogue family id that differs from it.
+    expect(pinTimelineAt).toHaveBeenCalledWith(
+      "imported-38993117b963",
+      expect.any(Date),
+      expect.any(Number),
+    );
   });
 
   it("says the day has no data instead of pretending it switched", async () => {

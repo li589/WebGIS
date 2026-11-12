@@ -696,6 +696,35 @@ def _is_explicit_stats_composite(message: str) -> bool:
     )
 
 
+def _is_explicit_point_query(message: str) -> bool:
+    """Whether the user gave a concrete coordinate and asked to read a value there.
+
+    This deliberately requires both a coordinate and a sampling phrase.  A map
+    navigation request such as "locate 116.4, 39.9" must continue through the
+    map-action path instead of being mistaken for data sampling.
+    """
+    from app.services.agent.mock_orchestrator import _parse_lng_lat
+
+    text = str(message or "")
+    if _parse_lng_lat(text) is None:
+        return False
+    return bool(
+        re.search(r"点位|点值|采样|这个点|该点|坐标.*(?:值|数据)|(?:值|数据).*坐标", text)
+    )
+
+
+def _map_actions_before_statistics(message: str) -> str:
+    """Keep only the UI-operation prefix of an explicit map/statistics request.
+
+    A request such as "show X, set the date, then calculate Guangzhou" has two
+    independent parts.  The map part can be resolved locally, while the
+    statistics part must read data on the server.  Feeding the whole sentence to
+    the map-action resolver makes it (correctly) reject the statistics verb and
+    sends the request back into the expensive model loop.
+    """
+    return re.split(r"(?:，|,|；|;|并且|然后|再)?\s*(?:统计|计算|查询|取数)", message, maxsplit=1)[0].strip()
+
+
 def _reply_needs_tool_synthesis(reply: str) -> bool:
     return (reply or "").strip() in _EMPTY_REPLY_MARKERS
 
@@ -730,6 +759,28 @@ def _tool_detail(payload: Any) -> str:
         {"ok": ok, "truncated": True, "preview": text[: _TOOL_DETAIL_LIMIT - 200]},
         ensure_ascii=False,
     )
+
+
+def _tool_trace_payload(args: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Add requested/resolved layer ids to the *execution record* only.
+
+    The original result is still passed to the model unchanged.  This keeps the
+    audit trail inspectable without adding more context to later model calls.
+    """
+    trace = dict(result)
+    requested = str(args.get("catalog_id") or "").strip()
+    resolved = str(result.get("resolved_layer_id") or result.get("catalog_id") or "").strip()
+    samples = result.get("samples")
+    if not resolved and isinstance(samples, list):
+        for sample in samples:
+            if isinstance(sample, dict) and sample.get("catalog_id"):
+                resolved = str(sample["catalog_id"]).strip()
+                break
+    if requested:
+        trace["requested_catalog_id"] = requested
+    if resolved:
+        trace["resolved_layer_id"] = resolved
+    return trace
 
 
 #: 工具入参里代表「图层」的字段名（不同工具叫法不同）
@@ -4000,6 +4051,11 @@ def _run_chat_impl(
         raise ValueError(f"消息过长（上限约 {max_chars} 字符，受配置档上下文窗口限制）")
 
     history = load_history(user_id=user_id, session_id=sid)
+    # A session without turns has no factual "previous round".  If stale state
+    # was ever left behind for a newly created/reused id, it must not leak into
+    # entity resolution or generate an "沿用上一轮" note.
+    if not history:
+        topic_state = {}
     # 读回时也压一次：老会话里在「压缩优化」之前写入的完整回答仍躺在磁盘上，
     # 只压 append_turn 救不了它们；这里对 assistant 内容再做一次截断，模型输入与
     # 预算估算走压缩版，前端展示（get_session_messages）不受影响。
@@ -4040,6 +4096,7 @@ def _run_chat_impl(
         provider_suffix: str,
         summary: str,
         intents: list[dict[str, Any]] | None = None,
+        state_patch: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return a deterministic answer without paying for a model round-trip."""
 
@@ -4050,6 +4107,8 @@ def _run_chat_impl(
                 topic_state,
                 **_state_patch_from_intents(ui_intents, client_context),
             )
+        if state_patch:
+            topic_state = dialogue_state.merge(topic_state, **state_patch)
         steps.append({"type": "thought", "summary": summary})
         usage = {
             "prompt_tokens": estimate_tokens(message),
@@ -4192,6 +4251,96 @@ def _run_chat_impl(
             intents=deterministic_actions,
         )
 
+    # A fully specified "layer + date + administrative-region statistic" request
+    # does not need a language-model planning loop.  The previous one-hop limit
+    # still sent the large prompt once and then stopped before the second tool
+    # call, which is why this exact request repeatedly exceeded 40k tokens
+    # without changing the page or returning a number.
+    if _is_explicit_stats_composite(message):
+        operation_prefix = _map_actions_before_statistics(message)
+        composite_unresolved: list[str] = []
+        composite_notes: list[str] = []
+        composite_intents = _resolve_deterministic_map_actions(
+            operation_prefix,
+            client_context,
+            unresolved=composite_unresolved,
+            notes=composite_notes,
+        )
+        if composite_intents is not None:
+            from app.services.agent import mock_orchestrator as _mo
+            from app.services.agent.mock_orchestrator import forced_statistics_reply
+
+            # Do not let a successful server-side statistic hide a missing UI
+            # operation.  The original composite shortcut accepted any non-None
+            # list here, so a partially built action list could return a number
+            # while the requested date never reached the browser.
+            has_visibility = any(
+                str(item.get("name") or "") == "set_layer_visibility"
+                and bool((item.get("args") or {}).get("visible"))
+                for item in composite_intents
+                if isinstance(item, dict)
+            )
+            has_timeline = any(
+                str(item.get("name") or "") == "set_timeline"
+                for item in composite_intents
+                if isinstance(item, dict)
+            )
+            if not has_timeline:
+                requested_day = _mo._parse_date_arg(message)
+                shown_targets = [
+                    str((item.get("args") or {}).get("catalog_id") or "").strip()
+                    for item in composite_intents
+                    if isinstance(item, dict)
+                    and str(item.get("name") or "") == "set_layer_visibility"
+                    and bool((item.get("args") or {}).get("visible"))
+                ]
+                timeline_target = shown_targets[-1] if shown_targets else _current_layer_id(client_context)
+                if requested_day and timeline_target and not _layer_is_static(timeline_target):
+                    timeline_args = {"catalog_id": timeline_target, "date": requested_day}
+                    _timeline_note, can_set_timeline = _mo._build_timeline_reply(
+                        timeline_args, client_context
+                    )
+                    if can_set_timeline:
+                        composite_intents.append(
+                            {"name": "set_timeline", "args": timeline_args}
+                        )
+                        has_timeline = True
+
+            # This is deliberately fail-closed: when the command asks to show a
+            # layer and switch a date, returning only a statistic is misleading.
+            if not has_visibility or not has_timeline:
+                missing: list[str] = []
+                if not has_visibility:
+                    missing.append("显示目标图层")
+                if not has_timeline:
+                    missing.append("切换目标日期")
+                return finish_direct(
+                    f"这条组合指令尚未执行统计：无法确认{'、'.join(missing)}。"
+                    "为避免统计结果与页面状态不一致，本次没有用其它图层或日期代替。",
+                    provider_suffix="composite-plan-incomplete",
+                    summary="组合指令缺少必要的界面操作，已阻止不一致的统计回复",
+                    intents=composite_intents,
+                )
+
+            statistic = forced_statistics_reply(
+                message,
+                client_context=client_context,
+                session_id=sid,
+                state=topic_state,
+            )
+            statistic_reply = str(statistic.get("reply") or "未能取得统计结果。")
+            return finish_direct(
+                statistic_reply,
+                provider_suffix="composite-statistics-rule",
+                summary="组合图层、日期和行政区统计已由本地规则与取数服务完成，未调用模型",
+                intents=composite_intents,
+                state_patch=(
+                    statistic.get("topic_state")
+                    if isinstance(statistic.get("topic_state"), dict)
+                    else None
+                ),
+            )
+
     # 「现在选中的是哪个」这类**只查页面状态**的请求：本地直接读 client_context。
     # 2026-11-11 用户复测：隐藏图层仍被选中时，查询走模型链路会回「没有下发界面
     # 操作」——查询本来就不该下发任何操作，把「没执行动作」当失败是判定错了。
@@ -4208,6 +4357,94 @@ def _run_chat_impl(
             provider_suffix="active-layers-rule",
             summary="活动图层查询由本地页面状态直接回答，未调用模型",
             intents=[],
+        )
+
+    # A concrete coordinate query is a single read-only server operation.  Do
+    # not send the full tool catalogue and page context through a planning loop
+    # just to call sample_layer_point once.
+    if _is_explicit_point_query(message):
+        from app.services.agent.mock_orchestrator import (
+            _parse_date_arg,
+            _parse_lng_lat,
+            resolve_entities,
+        )
+
+        coordinates = _parse_lng_lat(message)
+        active_layers = (
+            [x for x in client_context.get("active_layers", []) if isinstance(x, dict)]
+            if isinstance(client_context, dict)
+            else []
+        )
+        resolved = resolve_entities(
+            message,
+            active_layers,
+            client_context=client_context,
+            state=topic_state,
+        )
+        target = resolved.get("layer") if isinstance(resolved, dict) else None
+        catalog_id = str(target.get("catalog_id") or "").strip() if isinstance(target, dict) else ""
+        if coordinates is None or not catalog_id:
+            return finish_direct(
+                "未能确定要读取的具体图层，因而没有执行点位取数。请明确图层名称，或先在左侧选中一个图层后再提供经纬度。",
+                provider_suffix="point-query-incomplete",
+                summary="点位查询缺少可核实的目标图层，已停止而未猜测其他图层",
+            )
+        point_args: dict[str, Any] = {
+            "catalog_id": catalog_id,
+            "lng": coordinates[0],
+            "lat": coordinates[1],
+        }
+        requested_date = _parse_date_arg(message)
+        if requested_date:
+            point_args["time"] = requested_date
+        point_result = execute_server_tool(
+            "sample_layer_point",
+            point_args,
+            cred=cred,
+            client_context=client_context,
+            user_message=message,
+            topic_state=topic_state,
+        )
+        steps.append(
+            {
+                "type": "tool",
+                "summary": _tool_step_summary("sample_layer_point", point_args, point_result),
+            }
+        )
+        steps.append(
+            {
+                "type": "tool_result",
+                "summary": "点位取数完成" if point_result.get("ok") else "点位取数未完成",
+                "detail": _tool_detail(_tool_trace_payload(point_args, point_result)),
+            }
+        )
+        samples = point_result.get("samples") if isinstance(point_result.get("samples"), list) else []
+        sample = next((x for x in samples if isinstance(x, dict) and x.get("ok")), None)
+        if not isinstance(sample, dict):
+            error = str(point_result.get("error") or "未取到该点的有效数据").strip()
+            return finish_direct(
+                f"未返回点位数值：{error}。本次没有改动地图或时间轴。",
+                provider_suffix="point-query-rule",
+                summary="点位查询已由本地规则直达取数服务，未调用模型",
+            )
+        display = str(sample.get("display_name") or target.get("name") or "该图层").strip()
+        value = sample.get("value")
+        unit = str(sample.get("unit") or "").strip()
+        actual_time = str(sample.get("actual_time") or "").strip()
+        reply = f"{display}在 ({coordinates[0]:.4f}, {coordinates[1]:.4f}) 的点位值为 {fmt_value(value)}"
+        if unit:
+            reply += f" {unit}"
+        if actual_time:
+            reply += f"；实际数据时间为 {actual_time}"
+        reply += "。本次为只读点位查询，未改动地图或时间轴。"
+        state_patch = canonical_layer_state(catalog_id, display=display, client_context=client_context)
+        if actual_time:
+            state_patch["date"] = actual_time[:10]
+        return finish_direct(
+            reply,
+            provider_suffix="point-query-rule",
+            summary="点位查询已由本地规则直达取数服务，未调用模型",
+            state_patch=state_patch,
         )
 
     if _is_precip_catalog_query(message):
@@ -4313,7 +4550,7 @@ def _run_chat_impl(
     # 纯时间切换属于确定性的界面操作，不需要携带完整目录与工具集询问模型。
     # 含“查询/统计/多少”等取数意图的复合请求仍走正常工具链。
     simple_timeline = bool(
-        re.search(r"切到|切至|跳到|调整.{0,4}时间|时间轴.{0,6}(?:设|改|切)", message)
+        re.search(r"切到|切至|切换|跳到|调整.{0,4}时间|时间轴.{0,6}(?:设|改|切)|只.{0,4}改.{0,2}日期", message)
         and re.search(r"(?:19|20)\d{2}[-/年]\d{1,2}[-/月]\d{1,2}", message)
         and not re.search(r"查询|统计|计算|均值|平均值|多少|数值|取数", message)
     )
@@ -4380,7 +4617,11 @@ def _run_chat_impl(
         _vis_visible = bool(_vis_intent["args"]["visible"])
         _vis_name = str(_vis_intent["args"].get("display_name") or "该图层")
         return finish_direct(
-            f"已显示「{_vis_name}」。" if _vis_visible else f"已隐藏「{_vis_name}」。",
+            (
+                f"已下发显示「{_vis_name}」的请求，未改变其他图层的显示状态。"
+                if _vis_visible
+                else f"已下发隐藏「{_vis_name}」的请求。"
+            ),
             provider_suffix="visibility-rule",
             summary="图层显隐已由本地规则定位并下发，未调用模型",
             intents=[_vis_intent],
@@ -4934,7 +5175,9 @@ def _run_chat_impl(
                             "summary": "待确认"
                             if tres.get("needs_confirmation")
                             else "工具返回",
-                            "detail": _tool_detail(tres),
+                            "detail": _tool_detail(
+                                _tool_trace_payload(dict(sc.get("args") or {}), tres)
+                            ),
                         }
                     )
                     conf = _confirmation_from_tool_result(tres)
@@ -5230,7 +5473,9 @@ def _run_chat_impl(
                         "summary": "待确认"
                         if tres.get("needs_confirmation")
                         else "工具返回",
-                        "detail": _tool_detail(tres),
+                        "detail": _tool_detail(
+                            _tool_trace_payload(dict(sc.get("args") or {}), tres)
+                        ),
                     }
                 )
                 conf = _confirmation_from_tool_result(tres)
@@ -5906,7 +6151,7 @@ def _resolve_deterministic_map_actions(
         # ① 只认「切到/切至」，不含「切换**到**」；② 日期正则的分隔符字符类是
         # `[-/年]`，第二个分隔符是「月」不在里面 ⇒ 中文「2025年12月25日」从头到尾
         # 没匹配过，只有 ISO 写法能过。两处一起补，否则改了也还是走模型。
-        re.search(r"切到|切至|切换|换到|跳到|日期|时间轴|设到|设为|改到|调到", text)
+        re.search(r"切到|切至|切换|换到|跳到|日期|时间轴|设到|设为|改到|改为|调到", text)
         and re.search(
             r"(?:19|20)\d{2}(?:[-/年月日]\d{1,2}){2}|(?<!\d)\d{8}(?!\d)", text
         )

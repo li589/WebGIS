@@ -9,7 +9,27 @@
 由 ``_map_actions_reply`` 写成「未执行」段。
 """
 
-from app.services.agent.orchestrator import _map_actions_reply
+from app.services.agent.orchestrator import (
+    _is_explicit_point_query,
+    _is_explicit_stats_composite,
+    _map_actions_before_statistics,
+    _map_actions_reply,
+    _tool_trace_payload,
+)
+
+
+def test_explicit_coordinate_sampling_is_recognised_but_map_location_is_not():
+    assert _is_explicit_point_query("查询 SMAP 在 116.4074, 39.9042 的点位值")
+    assert not _is_explicit_point_query("定位到 116.4074, 39.9042")
+
+
+def test_execution_trace_keeps_requested_and_resolved_layer_ids_separate():
+    trace = _tool_trace_payload(
+        {"catalog_id": "fy-product-group"},
+        {"ok": True, "samples": [{"ok": True, "catalog_id": "imported-fy-vod"}]},
+    )
+    assert trace["requested_catalog_id"] == "fy-product-group"
+    assert trace["resolved_layer_id"] == "imported-fy-vod"
 
 
 def _hidden_intents() -> list[dict]:
@@ -61,3 +81,13 @@ def test_duplicate_unresolved_is_reported_once():
     """同一条子句被重复收集时不重复罗列。"""
     text = _map_actions_reply(_hidden_intents(), ["VOD", "VOD"])
     assert text.count("VOD") == 1
+
+
+def test_composite_layer_date_statistics_keeps_ui_prefix_for_local_execution():
+    """组合命令应拆成界面操作和一次服务端统计，不能退回模型多轮循环。"""
+    message = "显示 SMAP 平均散射约束产品中的土壤水分，将日期切换到 2025-11-13，并统计广州市行政区平均值。"
+    assert _is_explicit_stats_composite(message)
+    prefix = _map_actions_before_statistics(message)
+    assert "统计" not in prefix
+    assert "SMAP" in prefix
+    assert "2025-11-13" in prefix
