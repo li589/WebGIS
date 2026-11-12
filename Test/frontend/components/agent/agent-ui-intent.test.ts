@@ -128,6 +128,7 @@ describe("executeAgentUiIntent", () => {
     expect(result.ok).toBe(true);
     expect(toggleLayerVisibility).toHaveBeenCalledWith("i1");
     expect(activeLayers.value[0]?.visible).toBe(true);
+    expect(result.message).not.toContain("只留这一层");
   });
 
   it("adds layer when missing then shows it", async () => {
@@ -416,8 +417,8 @@ describe("executeAgentUiIntent", () => {
       expect.any(Date),
     );
     expect(res.ok).toBe(true);
-    expect(res.message).toContain("单日图");
-    expect(res.message).toContain("刚从取数服务取得");
+    expect(res.message).not.toContain("单日图");
+    expect(res.message).toContain("已从取数服务取得显示帧");
   });
 
   it("reports the fetch failure reason instead of pretending success", async () => {

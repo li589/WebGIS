@@ -725,6 +725,38 @@ def _is_explicit_stats_composite(message: str) -> bool:
     )
 
 
+def _is_explicit_statistics_read(message: str) -> bool:
+    """A fully specified read-only administrative statistic.
+
+    Unlike a composite request, this must not require a prior selected layer or
+    a UI action.  Sending it through the model loop made a brand-new chat fail
+    even when the user had supplied product, date and region in one sentence.
+    """
+    text = str(message or "")
+    return bool(
+        re.search(r"(?:统计|平均值|均值)", text)
+        and re.search(r"(?:19|20)\d{2}[-年/]\s*\d{1,2}(?:月|[-/]\s*)\d{1,2}", text)
+        and re.search(r"(?:省|市|自治区|特别行政区|行政区)", text)
+        and re.search(r"(?:SMAP|风云|VOD|土壤水|植被光学|散射|降水|CMFD)", text, re.I)
+        and not re.search(r"(?:显示|打开|切换|切到|换成)", text)
+    )
+
+
+def _without_false_layer_carry(reply: str) -> str:
+    """Remove a carry-over claim when this rule already locked the layer.
+
+    The deterministic multi-city path resolves the requested concrete layer
+    before each read.  The lower-level reply can still label that same layer as
+    coming from session state, which is a misleading user-facing statement.
+    """
+    return re.sub(
+        r"^- 本轮没有重新指定的部分沿用上一轮：图层「[^」]+」(?:、)?\n",
+        "",
+        str(reply or ""),
+        flags=re.M,
+    )
+
+
 def _is_explicit_point_query(message: str) -> bool:
     """Whether the user gave a concrete coordinate and asked to read a value there.
 
@@ -4409,6 +4441,33 @@ def _run_chat_impl(
                 ),
             )
 
+    # A complete read-only statistic is equally deterministic.  In particular,
+    # a new chat has no previous selected layer to inherit, but the sentence
+    # itself already names product, date and administrative region.  Do not send
+    # that self-contained request through the large model/tool loop.
+    if _is_explicit_statistics_read(message):
+        from app.services.agent.mock_orchestrator import forced_statistics_reply
+
+        statistic = forced_statistics_reply(
+            message,
+            client_context=client_context,
+            session_id=sid,
+            state=topic_state,
+        )
+        state_patch = (
+            statistic.get("topic_state")
+            if isinstance(statistic.get("topic_state"), dict)
+            else None
+        )
+        target_id = str((state_patch or {}).get("layer_id") or "")
+        _append_local_statistics_trace(steps, target_id, statistic)
+        return finish_direct(
+            _without_false_layer_carry(str(statistic.get("reply") or "未能取得统计结果。")),
+            provider_suffix="explicit-statistics-rule",
+            summary="完整的图层、日期和行政区统计已由本地规则直接取数，未调用模型",
+            state_patch=state_patch,
+        )
+
     # "Only change the date ... and query again" is a follow-up, not a new
     # open-ended planning task.  The word "query" used to make the generic map
     # resolver opt out, then the full model/tool loop hit its budget.
@@ -4488,7 +4547,11 @@ def _run_chat_impl(
                             state=base_state,
                         )
                         _append_local_statistics_trace(steps, target_id, one)
-                        replies.append(str(one.get("reply") or f"{city}未能取得统计结果。"))
+                        replies.append(
+                            _without_false_layer_carry(
+                                str(one.get("reply") or f"{city}未能取得统计结果。")
+                            )
+                        )
                     return finish_direct(
                         "\n\n".join(replies),
                         provider_suffix="multi-region-statistics-rule",
@@ -6048,6 +6111,13 @@ def _guard_partial_layer_switch_intent(
     """
     try:
         text = message or ""
+        # 「把当前图层的日期切到 2025-07-14」只是在指定时间轴目标，
+        # 没有要求勾选/显示图层。不能因“当前图层”四个字把它改写成
+        # “没有勾选你要的图层”。
+        if re.search(r"(?:当前|这|那|本)图层.{0,12}(?:日期|时间轴|\d{4}[-年/])", text) and not re.search(
+            r"显示|打开|添加|勾选|隐藏|关掉|关闭|收起|移除|删除", text
+        ):
+            return result
         # 必须同时命中「图层动作」「具名图层/变量」「日期」三层意思，才是复合指令。
         # 缺了具名对象一律不拦：只切日期的请求没有「该勾哪一层」这回事（2026-11-11）。
         if not _LAYER_VERB_WORDS.search(text):

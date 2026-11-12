@@ -118,6 +118,19 @@ def test_date_only_short_month_form_is_untouched():
     assert "没有勾选" not in out["reply"]
 
 
+def test_current_layer_date_only_is_untouched():
+    """「当前图层的日期」仍是纯日期操作，不应被误报为漏显示图层。"""
+    out = _guard_partial_layer_switch_intent(
+        "把当前图层的日期切换到 2025-07-14",
+        {
+            "reply": "已切换到 2025-07-14。",
+            "ui_intents": [{"name": "set_timeline", "args": {"date": "2025-07-14"}}],
+        },
+    )
+    assert out["reply"] == "已切换到 2025-07-14。"
+    assert "没有勾选" not in out["reply"]
+
+
 def test_composite_with_named_variable_still_corrected():
     """真复合指令（点名变量 + 日期）仍要纠正，不能因为放宽而漏掉。"""
     out = _guard_partial_layer_switch_intent(

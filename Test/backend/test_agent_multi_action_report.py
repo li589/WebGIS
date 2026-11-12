@@ -11,10 +11,12 @@
 
 from app.services.agent.orchestrator import (
     _is_explicit_point_query,
+    _is_explicit_statistics_read,
     _is_explicit_stats_composite,
     _map_actions_before_statistics,
     _map_actions_reply,
     _tool_trace_payload,
+    _without_false_layer_carry,
 )
 
 
@@ -93,3 +95,14 @@ def test_composite_layer_date_statistics_keeps_ui_prefix_for_local_execution():
     assert "统计" not in prefix
     assert "SMAP" in prefix
     assert "2025-11-13" in prefix
+
+
+def test_self_contained_statistics_does_not_need_a_previous_chat_or_ui_action():
+    message = "请统计 SMAP 平均散射约束产品中的土壤水分在 2025-11-13 广州市行政区的平均值。"
+    assert _is_explicit_statistics_read(message)
+    assert not _is_explicit_stats_composite(message)
+
+
+def test_explicit_layer_rule_never_claims_it_was_carried_from_previous_turn():
+    reply = "- 本轮没有重新指定的部分沿用上一轮：图层「土壤水分」\n\n均值：0.0643"
+    assert _without_false_layer_carry(reply) == "\n均值：0.0643"

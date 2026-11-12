@@ -741,12 +741,9 @@ async function executeAgentUiIntentCore(
         message: `已只显示「${shown}」，关掉了另外 ${closed.length} 层（${brief(closed)}）${tail}${nowHint}`,
       }
     }
-    if (closed.length) {
-      return {
-        ok: true,
-        message: `已显示「${shown}」，同时收起了同一变量的${brief(closed)}——地图上只留这一层${nowHint}`,
-      }
-    }
+    // 非「只显示」指令不得关闭任何其它图层；即使未来某个调用方错误地
+    // 传回了 closed，也不能把普通的「显示 X」说成「只留这一层」。
+    // 这类回执会让用户误以为 VOD 等图层被隐藏，实际页面状态反而无法核验。
     return { ok: true, message: `已显示「${shown}」${nowHint}` }
   }
 
@@ -1020,8 +1017,10 @@ async function executeAgentUiIntentCore(
           }
           return {
             ok: true,
-            message: `${shownName}已切到 ${requested}，显示的是这一天的单日图（${
-              fetched.cached ? '本地已有' : '刚从取数服务取得'
+            // 按需渲染成功只证明浏览器取得了可显示帧；统计工具仍可能按原生
+            // 月/多日时间块取数。这里不能越过后端时间口径，误称“单日图”。
+            message: `${shownName}已切到 ${requested}（${
+              fetched.cached ? '本地已有显示帧' : '已从取数服务取得显示帧'
             }）`,
           }
         }
