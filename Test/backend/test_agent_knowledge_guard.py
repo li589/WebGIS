@@ -149,7 +149,10 @@ def test_negation_read_only_blocks_mutating_intents() -> None:
     from app.services.agent.orchestrator import _guard_read_only_ui_intents
 
     mutating = [
-        {"name": "set_layer_visibility", "args": {"catalog_id": "gpcp", "visible": True}},
+        {
+            "name": "set_layer_visibility",
+            "args": {"catalog_id": "gpcp", "visible": True},
+        },
         {"name": "set_timeline", "args": {"date": "2025-07-15"}},
     ]
     for msg in (
@@ -157,16 +160,24 @@ def test_negation_read_only_blocks_mutating_intents() -> None:
         "打开名为QA不存在的图层，若不存在请明确说明，不要选择其他图层",
         "只告诉我GPCP的单位",
     ):
-        r = _guard_read_only_ui_intents(msg, {"reply": "测试", "ui_intents": list(mutating)})
+        r = _guard_read_only_ui_intents(
+            msg, {"reply": "测试", "ui_intents": list(mutating)}
+        )
         assert r["ui_intents"] == [], msg
         assert "只读" in r["reply"]
 
     # 正常写操作不受影响
     ok = _guard_read_only_ui_intents(
         "打开土壤水分图层",
-        {"reply": "已下发", "ui_intents": [
-            {"name": "set_layer_visibility", "args": {"catalog_id": "sm", "visible": True}}
-        ]},
+        {
+            "reply": "已下发",
+            "ui_intents": [
+                {
+                    "name": "set_layer_visibility",
+                    "args": {"catalog_id": "sm", "visible": True},
+                }
+            ],
+        },
     )
     assert len(ok["ui_intents"]) == 1
 
@@ -247,9 +258,18 @@ def test_simple_timeline_command_skips_model(monkeypatch) -> None:
         },
     )
 
-    assert result["provider"] == "openai-timeline-rule"
+    # 2026-11-11：这句现在由**确定性地图动作**路径接管（「切换到」＋中文日期都补上了），
+    # provider 从 timeline-rule 变成 map-actions-rule；日期会绑到页面当前那一层上，
+    # 免得切到别的图层。核心不变：完全不调用模型。
+    assert result["provider"] in {
+        "openai-timeline-rule",
+        "openai-map-actions-rule",
+    }
     assert result["ui_intents"] == [
-        {"name": "set_timeline", "args": {"date": "2025-07-15"}}
+        {
+            "name": "set_timeline",
+            "args": {"date": "2025-07-15", "catalog_id": "current-sm"},
+        }
     ]
     assert result["usage"]["total_tokens"] < 300
     model_call.assert_not_called()
@@ -259,9 +279,7 @@ def test_statistics_turn_only_sends_read_only_data_tools() -> None:
     from app.services.agent.orchestrator import _tools_openai_for_message
 
     tools = _tools_openai_for_message("查询北京土壤水分是多少？")
-    names = {
-        str((item.get("function") or {}).get("name") or "") for item in tools
-    }
+    names = {str((item.get("function") or {}).get("name") or "") for item in tools}
 
     assert names == {
         "search_layers",
@@ -269,6 +287,9 @@ def test_statistics_turn_only_sends_read_only_data_tools() -> None:
         "get_layer_coverage",
         "get_layer_statistics",
         "sample_layer_point",
+        # 取数前要先知道页面上挂着哪几层（「当前图层」「这一层」都靠它），
+        # 少了它模型只能反问，或者去 search_layers 里瞎猜。
+        "list_active_layers",
     }
     assert "set_layer_visibility" not in names
     assert "run_workflow" not in names

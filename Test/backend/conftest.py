@@ -183,3 +183,43 @@ def client(app):
 def tmp_db(tmp_path: Path) -> Path:
     """返回临时 SQLite 数据库文件路径（不创建文件，首次连接时自动创建）。"""
     return tmp_path / "test.sqlite3"
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_layer_caches():
+    """每个用例前后清掉 agent 侧的**进程级**图层缓存。
+
+    ``mock_orchestrator._IDENTITY_CACHE`` 按 catalog_id 缓存图层身份（来源/变量/
+    产品族/族成员），``layer_identity._IMPORT_INDEX_CACHE`` 缓存目录扫描结果。
+    两者都不看 ``BACKEND_DATA_ROOT``。
+
+    ``test_agent_chat`` 的 ``agent_client`` fixture 会把 ``BACKEND_DATA_ROOT`` 指到
+    空的 ``tmp_path/data``；空数据根下读不出身份，于是把「空身份」写进缓存。
+    ``monkeypatch`` 只还原环境变量，**不还原这些 dict** ⇒ 之后的
+    ``test_agent_page_layer`` 读到空身份，「上一轮统计过哪一层」的粘性判定失效
+    （全量跑必失败、单独跑必通过）。这里统一清一次，把用例之间的耦合断掉。
+
+    ``_ORIGIN_CACHE`` 尤其致命：它缓存的是「这一层来源于哪个目录」，
+    ``layer_identity`` 自己的注释就写着「一次失败就让这一层在进程余生里永远
+    认不出」。空数据根下解析失败会把 ``None`` 记进去，后面再也救不回来。
+
+    注意：这**不能**解决 ``test_agent_page_layer::TestThreeRules`` 那两条用例在
+    全量跑时失败的问题——已用「回退生产代码再跑」验证过，该问题在本次改动前就
+    存在，与本用例级缓存无关（怀疑是 ``settings`` / descriptor 层的进程级固化）。
+    这里只负责把缓存这一层断开。
+    """
+    try:
+        from app.services.agent import layer_identity as _li
+        from app.services.agent import mock_orchestrator as _mo
+    except Exception:  # pragma: no cover - 导入失败时不阻断用例
+        yield
+        return
+
+    def _clear() -> None:
+        _mo._IDENTITY_CACHE.clear()
+        _li._IMPORT_INDEX_CACHE.clear()
+        _li._ORIGIN_CACHE.clear()
+
+    _clear()
+    yield
+    _clear()

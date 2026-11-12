@@ -18,6 +18,7 @@
 from app.services.agent.mock_orchestrator import mock_chat
 from app.services.agent.orchestrator import (
     _NEGATION_OR_READONLY_HINT,
+    _map_actions_reply,
     _request_limit_reply,
 )
 from app.services.agent.server_tools_runtime import (
@@ -137,13 +138,18 @@ def test_second_target_missing_is_reported():
 
 
 def test_add_layer_and_set_date_emits_both():
-    """「添加 CMFD 并切到某天」不能只发时间轴——添加那一步以前直接丢了。"""
+    """「添加 CMFD 并切到某天」：添加要执行，日期要说清为什么切不了。
+
+    CMFD 区域降水是静态数据（没有时间维度）。2026-11-11 老师复测第 3 条：旧口径
+    照样下发 set_timeline，页面拒绝执行，回复却写「已切到」。现在只下发添加，
+    并在正文里说明这一层不支持切换日期。
+    """
     out = _run("添加 CMFD 降水并切换到 2025-12-01")
     names = [i.get("name") for i in _intents(out)]
     assert "set_layer_visibility" in names
-    assert "set_timeline" in names
-    # 顺序：先添加，再把日期绑到新实例上
-    assert names.index("set_layer_visibility") < names.index("set_timeline")
+    assert "set_timeline" not in names
+    assert "静态数据" in out["reply"]
+    assert "不支持切换日期" in out["reply"]
 
 
 def test_date_only_request_does_not_add_anything():
@@ -196,11 +202,16 @@ def test_limit_reply_never_tells_user_to_split_a_single_command():
 # 有一套子句拆分/日期判定/目标定位。下面几条是实测真实链路时暴露的坑。
 
 
-def _det(message: str, unresolved: list[str] | None = None):
+def _det(
+    message: str, unresolved: list[str] | None = None, notes: list[str] | None = None
+):
     from app.services.agent.orchestrator import _resolve_deterministic_map_actions
 
     return _resolve_deterministic_map_actions(
-        message, _ctx(), unresolved=unresolved if unresolved is not None else []
+        message,
+        _ctx(),
+        unresolved=unresolved if unresolved is not None else [],
+        notes=notes,
     )
 
 
@@ -231,9 +242,26 @@ def test_deterministic_path_reports_unresolved_hidden_target():
 
 
 def test_deterministic_path_add_then_date_binds_new_layer():
-    """添加 + 切日期：日期必须绑到新加的那层，且添加排在前面。"""
-    acts = _det("添加 CMFD 降水并切换到 2025-12-01")
+    """添加 + 切日期：图层加上了，静态层要说清「不支持切日期」而不是假装切了。
+
+    CMFD 区域降水盘上没有时间帧（``time_list`` 为空），日期这一步不可能生效。
+    旧口径返回 ``["set_layer_visibility", "set_timeline"]`` 且正文写「日期已切换到
+    2025-12-01」——正是老师复测里「说切了、页面没动」的那条。
+    """
+    notes: list[str] = []
+    acts = _det("添加 CMFD 降水并切换到 2025-12-01", notes=notes)
+    assert acts is not None, "添加这一步做成了，不该整条退回模型"
+    assert [a["name"] for a in acts] == ["set_layer_visibility"]
+    assert notes and "静态数据" in notes[0]
+    reply = _map_actions_reply(acts, [], notes)
+    assert "已显示" in reply
+    assert "静态数据" in reply
+    assert "日期已切换到" not in reply
+
+
+def test_deterministic_path_dynamic_layer_binds_new_instance():
+    """有时序的层：添加 + 切日期两条都要下发，日期绑到新加那层。"""
+    acts = _det("显示 SMAP 土壤水分并切换到 2025-12-01")
     assert acts is not None
-    names = [a["name"] for a in acts]
-    assert names == ["set_layer_visibility", "set_timeline"]
+    assert [a["name"] for a in acts] == ["set_layer_visibility", "set_timeline"]
     assert acts[1]["args"].get("catalog_id") == acts[0]["args"]["catalog_id"]

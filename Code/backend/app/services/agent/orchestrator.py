@@ -634,7 +634,11 @@ def _is_list_active_layers_query(message: str) -> bool:
     import re
 
     return bool(
-        re.search(r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", message or "", re.I)
+        re.search(
+            r"哪些.*(图层|层)|活动图层|当前图层|查看.*图层|list.*layer",
+            message or "",
+            re.I,
+        )
     )
 
 
@@ -653,6 +657,17 @@ def _is_catalog_search_query(message: str) -> bool:
     if "search" in lower and ("layer" in lower or "图层" in text):
         return True
     return False
+
+
+def _is_precip_catalog_query(message: str) -> bool:
+    """只读的气象/降水目录查询，必须绕过模型工具循环。"""
+    text = str(message or "")
+    return bool(
+        re.search(
+            r"(哪些|有什么|有哪些|列出|查看).{0,8}(气象|降水|降雨|雨量).{0,8}(数据|图层|产品)",
+            text,
+        )
+    )
 
 
 def _reply_needs_tool_synthesis(reply: str) -> bool:
@@ -4134,15 +4149,117 @@ def _run_chat_impl(
         return out
 
     _unresolved_map_targets: list[str] = []
+    _map_action_notes: list[str] = []
     deterministic_actions = _resolve_deterministic_map_actions(
-        message, client_context, unresolved=_unresolved_map_targets
+        message,
+        client_context,
+        unresolved=_unresolved_map_targets,
+        notes=_map_action_notes,
     )
     if deterministic_actions is not None:
         return finish_direct(
-            _map_actions_reply(deterministic_actions, _unresolved_map_targets),
+            _map_actions_reply(
+                deterministic_actions, _unresolved_map_targets, _map_action_notes
+            ),
             provider_suffix="" if protocol == "demo" else "map-actions-rule",
             summary="多步骤地图操作已拆解并按顺序下发，未调用模型",
             intents=deterministic_actions,
+        )
+
+    # 「现在选中的是哪个」这类**只查页面状态**的请求：本地直接读 client_context。
+    # 2026-11-11 用户复测：隐藏图层仍被选中时，查询走模型链路会回「没有下发界面
+    # 操作」——查询本来就不该下发任何操作，把「没执行动作」当失败是判定错了。
+    # Pure page queries and map location must not spend a model/tool round.
+    if _is_list_active_layers_query(message):
+        deterministic = mock_chat(
+            message, session_id=sid, client_context=client_context, state=topic_state
+        )
+        return finish_direct(
+            str(
+                deterministic.get("reply")
+                or "当前地图上没有活动图层，请先在左侧图层面板添加。"
+            ),
+            provider_suffix="active-layers-rule",
+            summary="活动图层查询由本地页面状态直接回答，未调用模型",
+            intents=[],
+        )
+
+    if _is_precip_catalog_query(message):
+        try:
+            items = catalog_summary(cred=cred, limit=40)
+        except Exception:
+            items = []
+        names: list[str] = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            text = " ".join(
+                str(item.get(k) or "")
+                for k in ("name", "display_name", "title", "variable")
+            )
+            if re.search(r"气象|降水|降雨|雨量|precip|rain|cmfd", text, re.I):
+                name = str(
+                    item.get("display_name")
+                    or item.get("name")
+                    or item.get("title")
+                    or ""
+                ).strip()
+                if name and name not in names:
+                    names.append(name)
+        reply = (
+            "当前可用的气象/降水数据有：\n" + "\n".join(f"- {name}" for name in names)
+            if names
+            else "当前目录没有找到可用的气象/降水数据，页面状态没有变化。"
+        )
+        return finish_direct(
+            reply,
+            provider_suffix="precip-catalog-rule",
+            summary="气象降水目录查询由本地目录直接回答，未调用模型",
+            intents=[],
+        )
+
+    if re.search(r"定位|飞到|坐标|经纬|locate|fly\s*to", message or "", re.I):
+        deterministic = mock_chat(
+            message, session_id=sid, client_context=client_context, state=topic_state
+        )
+        direct_intents = [
+            item
+            for item in (deterministic.get("ui_intents") or [])
+            if isinstance(item, dict)
+        ]
+        if direct_intents and all(
+            str(item.get("name") or "")
+            in {"locate_coordinate", "fit_layer", "fit_china"}
+            for item in direct_intents
+        ):
+            return finish_direct(
+                str(deterministic.get("reply") or "已完成地图定位。"),
+                provider_suffix="map-location-rule",
+                summary="地图定位由本地规则直接下发，未调用模型",
+                intents=direct_intents,
+            )
+
+    if _STATE_QUERY_RE.search(message) and not _STATE_QUERY_EXCLUDE_RE.search(message):
+        state_reply = _page_state_reply(client_context)
+        if state_reply:
+            return finish_direct(
+                state_reply,
+                provider_suffix="" if protocol == "demo" else "page-state-rule",
+                summary="按页面当前图层列表回答，未调用模型",
+                intents=[],
+            )
+
+    # 「明天会下雨吗」这类预报请求：平台只有已观测/已生成的产品，没有预报能力。
+    # 2026-11-11 老师复测：旧文案「没有取得匹配数据」会让人以为只是这次没查到。
+    if _FORECAST_QUERY_RE.search(message):
+        return finish_direct(
+            "地图助手**暂不支持降雨预报**（也没有未来天气数据）。\n\n"
+            "能查的是已经生成的产品：某个图层在某一天、某个区域的数值。"
+            "例如「河南省 2025 年 12 月 15 日的土壤水分平均值」。\n\n"
+            "页面状态没有变化。",
+            provider_suffix="" if protocol == "demo" else "forecast-unsupported",
+            summary="请求的是预报，平台没有预报数据，已直接说明",
+            intents=[],
         )
 
     # 时间说法没有唯一日期落点（「切到 12 月」）：本地直接说清楚，不进模型。
@@ -5618,17 +5735,137 @@ _MAP_ACTION_SPLIT = re.compile(
 )
 
 
+def _layer_is_static(catalog_id: str) -> bool:
+    """这一层是不是**没有时间维度**的静态数据。
+
+    实现放在 ``mock_orchestrator`` 里，两条路径（确定性下发 / 规则演示）共用同一份
+    判据，避免日后只改一处。2026-11-11 老师复测第 3 条：CMFD 被页面标成静态，
+    时间轴没动，正文却写「已切到」——后端必须在下发前自己判一次。
+    """
+    try:
+        from app.services.agent import mock_orchestrator as _mo
+
+        return bool(_mo._layer_is_static(catalog_id))
+    except Exception:  # pragma: no cover - 判不出来按「有时序」处理
+        return False
+
+
+def _current_layer_id(client_context: dict[str, Any] | None) -> str:
+    """页面「当前那一层」的 catalog_id：优先选中，其次唯一可见，再次唯一一层。
+
+    用户说「把**当前图层**切到某天」时，目标就是它。取不到返回空串，由调用方
+    决定是不绑层还是放弃。
+    """
+    try:
+        from app.services.agent import mock_orchestrator as _mo
+
+        layers = _mo._normalize_layers(client_context)
+    except Exception:  # pragma: no cover
+        return ""
+    for group in (
+        [la for la in layers if la.get("selected")],
+        [la for la in layers if la.get("visible")],
+    ):
+        if len(group) == 1:
+            return str(group[0].get("catalog_id") or "")
+    if len(layers) == 1:
+        return str(layers[0].get("catalog_id") or "")
+    return ""
+
+
+def _layer_label(catalog_id: str) -> str:
+    """catalog_id → 用户看得懂的层名（读不出来就回 id，绝不编）。"""
+    cid = str(catalog_id or "").strip()
+    try:
+        name = human_layer_name(cid, None, default="")
+    except Exception:  # pragma: no cover
+        name = ""
+    return name or cid
+
+
+#: 「只是查页面状态」的句子（2026-11-11 老师复测第 1 条）。
+#: 刻意收得很紧：只认「当前选中 / 哪个图层选中 / 哪些在勾选显示」这类明确问法。
+#: 查询类请求**本来就不该下发界面操作**，把「没执行动作」当成失败是判定错了。
+_STATE_QUERY_RE = re.compile(
+    r"当前选中|现在选中|选中了?哪|哪个图层.{0,4}选中|选中的(?:是)?(?:哪|什么)|"
+    r"selected\s*layer|"
+    r"(?:哪些|哪个|哪几).{0,6}(?:勾选|可见)|"
+    r"(?:现在|目前).{0,8}(?:勾选|选中)",
+    re.I,
+)
+
+#: 上面那句一旦同时带这些词，说明它其实是个**动作**或**取数**请求，交给正常链路。
+#: 宁可漏判（退回模型）也不要误判：把「显示 SMAP 土壤水分」当状态查询回答就完了。
+_STATE_QUERY_EXCLUDE_RE = re.compile(
+    r"显示|打开|隐藏|关闭|添加|移除|删除|切换|切到|切至|调到|设为|"
+    r"统计|计算|查询|平均|多少|数值|取数|趋势",
+    re.I,
+)
+
+#: 预报类请求：平台只有已观测/已生成的栅格产品，没有未来天气数据。
+_FORECAST_QUERY_RE = re.compile(
+    r"(?:降雨|降水|气温|温度|天气).{0,8}预报|"
+    r"预报.{0,8}(?:降雨|降水|天气|气温)|"
+    r"未来\s*(?:\d+|几)\s*天.{0,8}(?:降雨|降水|天气|下雨)|"
+    r"会不会下雨|明天.{0,4}(?:下雨|降雨|晴天|阴天)",
+    re.I,
+)
+
+
+def _page_state_reply(client_context: dict[str, Any] | None) -> str:
+    """按页面回传的 ``active_layers`` 直接回答「现在选中的是哪个」。
+
+    「勾选显示」（visible）和「选中查看」（selected）是两件事：
+    隐藏某层后它仍可能处于选中态，只答层名会让人以为它还画在图上。
+    """
+    try:
+        from app.services.agent import mock_orchestrator as _mo
+
+        layers = _mo._normalize_layers(client_context)
+        display = _mo._layer_display_with_identity
+    except Exception:  # pragma: no cover
+        return ""
+    if not layers:
+        return "当前地图上没有图层，也没有选中项。"
+    sel = [la for la in layers if la.get("selected")]
+    vis = [la for la in layers if la.get("visible")]
+    if len(sel) == 1:
+        title = display(sel[0])
+        if sel[0].get("visible"):
+            return f"当前选中的是「{title}」，它同时也是勾选显示的。"
+        return (
+            f"当前选中的是「{title}」——它是当前选中，但**已隐藏**，画面上看不到。"
+            "要让它重新显示，说「显示这一层」即可。"
+        )
+    if len(sel) > 1:
+        names = "、".join(f"「{display(la)}」" for la in sel[:5])
+        return f"当前选中了 {len(sel)} 个图层：{names}。"
+    if len(vis) == 1:
+        return f"当前选中的是「{display(vis[0])}」（它也是唯一勾选显示的图层）。"
+    if vis:
+        names = "、".join(f"「{display(la)}」" for la in vis[:5])
+        return f"当前没有单独选中某一层；正在勾选显示的是：{names}。"
+    names = "、".join(f"「{display(la)}」" for la in layers[:5])
+    return f"当前没有选中任何图层，已加载的图层是：{names}。"
+
+
 def _resolve_deterministic_map_actions(
     message: str,
     client_context: dict[str, Any] | None,
     *,
     unresolved: list[str] | None = None,
+    notes: list[str] | None = None,
 ) -> list[dict[str, Any]] | None:
     """Resolve common multi-step layer/date commands without an LLM tool loop.
 
     ``unresolved``（2026-11-11 新增）用于回收「用户点名了、但图层库里定位不到」的
     子句，由 ``_map_actions_reply`` 写进回执的「未执行」段——否则多步指令只报成功项，
     用户看不出哪一步漏了。
+
+    ``notes``（2026-11-11 新增）回收**时间轴这一句到底该怎么说**：日期这一步不再
+    由回执拼一句「已切到 X」了事，而是先让 ``_build_timeline_reply`` 校验覆盖范围、
+    再判目标层是不是静态数据，把结论原样交给回执。否则会出现「正文说切成功、
+    页面根本没动」——这正是老师第 3 条复测到的现象。
     """
     text = str(message or "").strip()
     if not text or _NEGATION_OR_READONLY_HINT.search(text):
@@ -5731,17 +5968,41 @@ def _resolve_deterministic_map_actions(
         if has_date:
             day = _mo._parse_date_arg(text)
             if day:
-                args: dict[str, Any] = {"date": day}
                 shown = [
                     i
                     for i in intents
                     if i["name"] == "set_layer_visibility"
                     and i["args"].get("visible") is True
                 ]
-                if shown:
-                    args["catalog_id"] = shown[-1]["args"]["catalog_id"]
-                intents.append({"name": "set_timeline", "args": args})
-        if not intents:
+                # 日期落在哪一层：本次新显示的那层 → 页面当前那一层。
+                target_id = (
+                    str(shown[-1]["args"]["catalog_id"])
+                    if shown
+                    else _current_layer_id(client_context)
+                )
+                args: dict[str, Any] = {"date": day}
+                if target_id:
+                    args["catalog_id"] = target_id
+                if target_id and _layer_is_static(target_id):
+                    # 静态层没有时间维度：不发 set_timeline，也不许正文说「已切到」。
+                    # 前端本来就会拒绝（agent-ui-intent.ts 的 resolveStaticTimelineTarget），
+                    # 但那条回执下一轮才回来，本轮正文已经写出去了。
+                    if notes is not None:
+                        notes.append(
+                            f"「{_layer_label(target_id)}」是静态数据，没有时间维度，"
+                            "**不支持切换日期**，时间轴没有动"
+                        )
+                else:
+                    # 先校验再回答：覆盖范围外 / 越界由 _build_timeline_reply 明确说
+                    # 「没有切换」，并把这句话原样交给回执，不再由这里拼「已切到」。
+                    tl_reply, changeable = _mo._build_timeline_reply(
+                        args, client_context
+                    )
+                    if changeable:
+                        intents.append({"name": "set_timeline", "args": args})
+                    if notes is not None and tl_reply:
+                        notes.append(tl_reply.strip())
+        if not intents and not (notes or []):
             return None
         visibility_count = sum(
             1 for item in intents if item["name"] == "set_layer_visibility"
@@ -5756,7 +6017,13 @@ def _resolve_deterministic_map_actions(
             i["name"] == "set_layer_visibility" for i in intents
         ):
             return None
-        if has_date and not any(i["name"] == "set_timeline" for i in intents):
+        # 日期没落地但有**明确说明**（静态层 / 超出覆盖范围）⇒ 照样接管。
+        # 交给模型反而会含糊其辞，甚至被改写成「已切换」。
+        if (
+            has_date
+            and not any(i["name"] == "set_timeline" for i in intents)
+            and not (notes or [])
+        ):
             return None
         return intents
     except Exception:  # pragma: no cover
@@ -5767,6 +6034,7 @@ def _resolve_deterministic_map_actions(
 def _map_actions_reply(
     intents: list[dict[str, Any]],
     unresolved: list[str] | None = None,
+    notes: list[str] | None = None,
 ) -> str:
     shown: list[str] = []
     hidden: list[str] = []
@@ -5783,7 +6051,10 @@ def _map_actions_reply(
         parts.append("已显示" + "、".join(f"「{x}」" for x in shown))
     if hidden:
         parts.append("已隐藏" + "、".join(f"「{x}」" for x in hidden))
-    if day:
+    # 时间轴这一句优先用 notes 里的原话：那里已经区分了「真的切了」「超出覆盖范围
+    # 没切」「静态层不支持切」。只有旧调用方没给 notes 时才回退到拼「已切到」。
+    note_parts = [str(x).strip() for x in (notes or []) if str(x or "").strip()]
+    if not note_parts and day:
         parts.append(f"日期已切换到 {day}")
     # 2026-11-11 用户复测第 4 条：多步指令只报成功项，漏做的那一步彻底消失，
     # 用户只看到「已隐藏 CMFD」，以为 VOD 也做了。这里把没定位到的目标点名列出。
@@ -5795,7 +6066,11 @@ def _map_actions_reply(
             parts.append(
                 f"另有 {brief}{more} 这一步**没有执行**——图层库里没定位到对应图层"
             )
-    return "；".join(parts) + "。"
+    head = "；".join(parts) + "。" if parts else ""
+    tail = "\n\n".join(note_parts)
+    if head and tail:
+        return f"{head}\n\n{tail}"
+    return head or tail or ""
 
 
 def _resolve_simple_visibility(

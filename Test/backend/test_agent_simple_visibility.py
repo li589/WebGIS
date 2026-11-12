@@ -8,6 +8,7 @@ search_layers / get_layer_meta 查满 4 跳预算，没轮到下发显示就答�
 
 from app.services.agent.orchestrator import (
     _guard_layer_variable_intents,
+    _map_actions_reply,
     _request_limit_reply,
     _resolve_deterministic_map_actions,
     _resolve_simple_visibility,
@@ -100,18 +101,45 @@ def test_show_precip_and_switch_date_is_deterministic():
             },
         ]
     }
+    notes: list[str] = []
     intents = _resolve_deterministic_map_actions(
-        "显示 CMFD 降水图层，并把日期切到 2025-07-15", ctx
+        "显示 CMFD 降水图层，并把日期切到 2025-07-15", ctx, notes=notes
+    )
+    assert intents is not None
+    # 2026-11-11 老师复测第 3 条：CMFD 区域降水是**静态数据**（盘上 time_list 为空）。
+    # 旧口径照旧下发 set_timeline，页面拒绝执行，正文却写「已切到」——说做成了、
+    # 其实没做。现在只下发显示，日期这一步在正文里明确说不支持。
+    assert [item["name"] for item in intents] == ["set_layer_visibility"]
+    assert intents[0]["args"]["catalog_id"] == "cmfd-precip-cn"
+    reply = _map_actions_reply(intents, [], notes)
+    assert "静态数据" in reply
+    assert "不支持切换日期" in reply
+    assert "已把时间轴切到" not in reply
+
+
+def test_show_dynamic_layer_and_switch_date_emits_both():
+    """有时序的图层：显示 + 切日期两条都要下发，日期绑到新显示的那层。"""
+    ctx = {
+        "active_layers": [
+            {
+                "catalog_id": "imported-nas-smap-avg-sm",
+                "name": "土壤水分",
+                "visible": False,
+            }
+        ]
+    }
+    intents = _resolve_deterministic_map_actions(
+        "显示土壤水分图层，并把日期切到 2025-07-15", ctx
     )
     assert intents is not None
     assert [item["name"] for item in intents] == [
         "set_layer_visibility",
         "set_timeline",
     ]
-    assert intents[0]["args"]["catalog_id"] == "cmfd-precip-cn"
+    assert intents[0]["args"]["catalog_id"] == "imported-nas-smap-avg-sm"
     assert intents[1]["args"] == {
         "date": "2025-07-15",
-        "catalog_id": "cmfd-precip-cn",
+        "catalog_id": "imported-nas-smap-avg-sm",
     }
 
 

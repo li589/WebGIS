@@ -353,7 +353,9 @@ def _catalog_pick(message: str) -> LayerPick | None:
             # 名字整体或开头词（如「CMFD」）出现在消息里才算认出
             tokens = [name] + name.split()[:1]
             if any(t and t.lower() in lower for t in tokens):
-                return LayerPick(lid, name)
+                # 目录里命中的若是一个**产品族**（文件夹），同样要落到族内变量层，
+                # 否则前端「显示」一个非栅格层，画面上什么都不会出现。
+                return _expand_product_group(LayerPick(lid, name), message)
         return None
     except Exception:
         return None
@@ -381,6 +383,15 @@ _IDENTITY_CACHE: dict[str, dict[str, Any]] = {}
 #: ``product_family`` → 用户嘴里的叫法（反问和回执都要靠它区分同名层）。
 _FAMILY_LABELS: dict[str, str] = {"average": "平均版", "raw": "动态版"}
 
+#: 消息里的变量词 → 产品族成员 code，对齐 ``layer_identity._GROUP_VARIABLE_ROLES``
+#: （``("SM","sm") ("VOD","vod") ("OMEGA","omega")``）。
+#: 用户说「风云平均产品里的 VOD」时要靠它把「组」收窄到「组内那一层」。
+_GROUP_VARIABLE_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"vod|植被光学厚度|光学厚度", re.I), "vod"),
+    (re.compile(r"土壤水|土壤湿|soil\s*moisture", re.I), "sm"),
+    (re.compile(r"散射|ω|omega", re.I), "omega"),
+)
+
 #: ``identity.source`` → ``_SOURCE_HINTS`` 里的中文标记，两套写法要能对上。
 _SOURCE_MARKER: dict[str, str] = {"smap": "smap", "fy": "风云"}
 
@@ -401,6 +412,130 @@ def _layer_identity(catalog_id: Any) -> dict[str, Any]:
         value = {}
     _IDENTITY_CACHE[key] = value
     return value
+
+
+def _layer_is_static(catalog_id: Any) -> bool:
+    """这一层是不是**没有时间维度**的静态数据（2026-11-11 老师复测第 3 条）。
+
+    「添加 CMFD 并切换到 2025-12-01」时 CMFD 被页面标成静态，时间轴没动，旧实现
+    却写「已切到」。前端 ``agent-ui-intent.ts`` 会拒绝静态层的 ``set_timeline``，
+    但那条回执要下一轮才回到后端，本轮正文已经写出去了 ⇒ 后端必须在下发前自判。
+
+    **判据必须三项同时成立**，否则一律返回 ``False``（当作有时序）：
+    1. 盘上拿不到任何时间帧（``_local_time_keys`` 为空）；
+    2. 这一层确实存在（overlay spec 或 ``meta.json`` 任一能确认）；
+    3. 也没有按需补出过的单日帧。
+
+    第 2 条是硬要求：图层 id 不存在（拼错、还没入库、测试里的临时 id）时
+    「没有时间帧」是**判不出来**，不是「静态」。少了这一条，任何认不出的层都会
+    被当成静态而拒绝切日期——那是把正常功能拦死。
+    """
+    cid = str(catalog_id or "").strip()
+    if not cid:
+        return False
+    try:
+        from app.services.agent.server_tools_runtime import (
+            _local_time_keys,
+            _ondemand_frame_dates,
+        )
+
+        if _local_time_keys(cid):
+            return False
+    except Exception:  # pragma: no cover - 读盘失败不该影响主链路
+        return False
+    exists = False
+    try:
+        from app.services.overlay_registry import get_overlay_spec
+
+        exists = get_overlay_spec(cid) is not None
+    except Exception:  # pragma: no cover
+        exists = False
+    if not exists:
+        try:
+            from app.data_io.services.paths import safe_import_child
+
+            exists = (safe_import_child(cid) / "meta.json").is_file()
+        except Exception:  # pragma: no cover
+            exists = False
+    if not exists:
+        # 这一层根本找不到：判不出来，不能当成静态。
+        return False
+    try:
+        return not _ondemand_frame_dates(cid)
+    except Exception:  # pragma: no cover
+        return True
+
+
+def _static_target_name(catalog_id: Any, layers: list[dict[str, Any]]) -> str | None:
+    """「日期要落到的那一层」若是静态数据，返回它的显示名，否则 ``None``。
+
+    目标层判定：本次新添加/新显示的那层 → 页面当前那一层（唯一选中 → 唯一可见）。
+    判不出来就不拦（宁可让前端去拒绝，也不误伤正常图层）。
+    """
+    cid = str(catalog_id or "").strip()
+    layer: dict[str, Any] | None = None
+    if cid:
+        layer = next(
+            (la for la in layers if str(la.get("catalog_id") or "") == cid), None
+        )
+    else:
+        sel = [la for la in layers if la.get("selected")]
+        vis = [la for la in layers if la.get("visible")]
+        only = sel if len(sel) == 1 else (vis if len(vis) == 1 else [])
+        if len(only) == 1:
+            layer = only[0]
+            cid = str(layer.get("catalog_id") or "")
+    if not cid or not _layer_is_static(cid):
+        return None
+    if layer is not None:
+        return _display(layer)
+    return human_layer_name(cid, None, default="") or cid
+
+
+def _expand_product_group(pick: LayerPick | None, message: str) -> LayerPick | None:
+    """命中**产品族**时，按消息里的变量词落到族内具体成员。
+
+    2026-11-11 老师复测第 3 条：「显示风云平均产品中的 VOD」只勾上了产品族
+    （相当于文件夹），里面的 VOD 根本没打开。产品族自己不是栅格层
+    （``is_product_group``），勾上它画面上不会有任何变化，用户只会看到「说是
+    显示了，其实没变」。
+    ``layer_identity`` 的 ``group_members`` 只列**盘上真有产物**的成员，据此挑
+    一个真实 ``overlay_layer_id`` 下发即可。
+
+    消息里没有变量词（只说「风云平均产品」）⇒ 原样返回，交给调用方反问，
+    绝不替用户挑一个变量。
+    """
+    if pick is None:
+        return None
+    # 先看消息里有没有变量词：没有就直接返回，**不去查身份**。
+    # ``_layer_identity`` 有进程级缓存，任何一次读不出身份的调用都会把「空身份」
+    # 记在缓存里，影响后面同 id 的判断（实测会让「上一轮统计过哪层」的粘性逻辑
+    # 失准）。能少调一次就少调一次。
+    want = ""
+    for pattern, code in _GROUP_VARIABLE_HINTS:
+        if pattern.search(message):
+            want = code
+            break
+    if not want:
+        return pick
+    ident = _layer_identity(pick.catalog_id)
+    if not ident.get("is_product_group"):
+        return pick
+    members = [m for m in (ident.get("group_members") or []) if isinstance(m, dict)]
+    if not members:
+        return pick
+    group_label = str(ident.get("product_group_label") or "").strip()
+    for member in members:
+        if str(member.get("variable") or "") != want:
+            continue
+        oid = str(member.get("overlay_layer_id") or "").strip()
+        if not oid:
+            continue
+        label = str(member.get("variable_label") or "").strip()
+        if group_label and label:
+            return LayerPick(oid, f"{group_label} · {label}")
+        return LayerPick(oid, label or pick.name)
+    return pick
 
 
 def _narrow_by_identity(
@@ -517,14 +652,19 @@ def _resolve_layer(
             break
     if len(best) == 1:
         only = next(iter(best.values()))
-        return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
+        return _expand_product_group(
+            LayerPick(only["catalog_id"], _layer_display_with_identity(only)), message
+        )
     if len(best) > 1:
         # 同名层（「土壤水分」有 SMAP/风云 各两版）：先按来源/形态收窄，
         # 收窄到唯一一层才算认得，收不窄才交给调用方反问（2026-11-11 用户实测）。
         narrowed = _narrow_by_identity(message, list(best.values()))
         if len(narrowed) == 1:
             only = narrowed[0]
-            return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
+            return _expand_product_group(
+                LayerPick(only["catalog_id"], _layer_display_with_identity(only)),
+                message,
+            )
         return None
 
     # 口语别名（VOD / 土壤水分 / 散射）：全名对不上时按产品口径再试一次
@@ -538,14 +678,19 @@ def _resolve_layer(
                 alias_hits[layer["catalog_id"]] = layer
     if len(alias_hits) == 1:
         only = next(iter(alias_hits.values()))
-        return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
+        return _expand_product_group(
+            LayerPick(only["catalog_id"], _layer_display_with_identity(only)), message
+        )
     if len(alias_hits) > 1:
         # 「土壤水分」同时命中风云与 SMAP 两个图层：先按来源/形态收窄
         # （用户说了「SMAP」就不该再问他要哪一个），收不窄才不猜。
         narrowed = _narrow_by_identity(message, list(alias_hits.values()))
         if len(narrowed) == 1:
             only = narrowed[0]
-            return LayerPick(only["catalog_id"], _layer_display_with_identity(only))
+            return _expand_product_group(
+                LayerPick(only["catalog_id"], _layer_display_with_identity(only)),
+                message,
+            )
         return None
 
     if not allow_demo_fallback:
@@ -893,6 +1038,8 @@ def _nas_coverage_range() -> tuple[str, str]:
 def _build_timeline_reply(
     args_tl: dict[str, Any],
     client_context: dict[str, Any] | None,
+    *,
+    static_name: str | None = None,
 ) -> tuple[str, bool]:
     """时间轴切换的回复 ``(文案, 是否允许下发意图)``。
 
@@ -905,7 +1052,16 @@ def _build_timeline_reply(
     覆盖到 2015 年 —— 用户说「切到 2015-12-15」明明取得到，却被这句拒掉。
     现在改成：超出 data_range 但落在 NAS 覆盖内 ⇒ 照旧下发，让前端的按需补帧
     去取；只有真超出 NAS 覆盖才拒绝。
+
+    ``static_name``（2026-11-11 老师复测第 3 条）：目标层是静态数据时，这一层
+    根本没有时间维度，切日期不可能生效。直接说「不支持切换日期」并拒绝下发，
+    不能让用户看到「已切到 X」而页面毫无变化。
     """
+    if static_name:
+        return (
+            f"「{static_name}」是静态数据，没有时间维度，**不支持切换日期**，"
+            "时间轴没有动。"
+        ), False
     date_s = str(args_tl.get("date") or "").strip()
     hour = args_tl.get("hour")
     hour_txt = f"{int(hour):02d}:00" if isinstance(hour, int) else ""
@@ -3076,7 +3232,7 @@ def mock_chat(
     # 图层清单就 return，日期压根没走到下面的时间分支。列出图层不会带完整日期，
     # 带了完整日期说明这句是「切时间」，让给时间分支。
     if _parse_date_arg(text) is None and re.search(
-        r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", text, re.I
+        r"哪些.*(图层|层)|活动图层|当前图层|查看.*图层|list.*layer", text, re.I
     ):
         if not layers:
             reply = (
@@ -3221,6 +3377,7 @@ def mock_chat(
             # 但页面把这个图层标记为静态数据」——说明前端拿到了日期意图却没有
             # 对应的新实例可绑。这里先补添加，日期才能落到新加的实例上。
             added: list[str] = []
+            pick_add: LayerPick | None = None
             if re.search(r"添加|加上|加载|打开|显示|开启", text, re.I):
                 pick_add = _resolve_layer(text, layers)
                 if pick_add is None and not _page_has_named_candidate(text, layers):
@@ -3237,7 +3394,18 @@ def mock_chat(
                             },
                         }
                     )
-            reply, changeable = _build_timeline_reply(args_tl, client_context)
+            reply, changeable = _build_timeline_reply(
+                args_tl,
+                client_context,
+                # 目标层：本次新添加的那层 → 页面当前那一层。静态层不能切日期，
+                # 必须在正文里说清楚，而不是先写「已切到」再让前端拒绝。
+                static_name=(
+                    _static_target_name(
+                        pick_add.catalog_id if pick_add is not None else None,
+                        layers,
+                    )
+                ),
+            )
             # 超出可用范围 ⇒ 不生成意图，避免「前端换了、正文说没数据」自相矛盾
             if changeable:
                 intents.append({"name": "set_timeline", "args": args_tl})
