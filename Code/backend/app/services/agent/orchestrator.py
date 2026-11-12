@@ -686,6 +686,16 @@ def _is_precip_catalog_query(message: str) -> bool:
     )
 
 
+def _is_explicit_stats_composite(message: str) -> bool:
+    """明确的图层/日期/区域统计组合只允许一轮工具调用。"""
+    text = str(message or "")
+    return bool(
+        re.search(r"(?:显示|打开|切换|切到|换成).{1,80}(?:统计|平均|均值|多少)", text)
+        and re.search(r"(?:19|20)\d{2}[-年/]\s*\d{1,2}(?:月|[-/]\s*)\d{1,2}", text)
+        and re.search(r"(?:省|市|自治区|特别行政区|行政区)", text)
+    )
+
+
 def _reply_needs_tool_synthesis(reply: str) -> bool:
     return (reply or "").strip() in _EMPTY_REPLY_MARKERS
 
@@ -4820,7 +4830,7 @@ def _run_chat_impl(
             # 本轮「工具真正读到的那一层」：一旦有值，界面意图就不再改写基线
             # （意图里的 catalog_id 是模型的请求参数，可能已被粘性纠正掉）。
             tool_layer_state: dict[str, str] = {}
-            max_hops = _max_tool_hops()
+            max_hops = 1 if _is_explicit_stats_composite(message) else _max_tool_hops()
             # 按轮留痕：第一跳的真实用量随 data 一起拿到，先记上（老师复测要求）。
             hop_traces = [
                 _hop_trace(
@@ -5112,7 +5122,7 @@ def _run_chat_impl(
         confirmations: list[dict[str, Any]] = []
         # 同 Anthropic 分支：工具真正读到的那一层，界面意图不许再改
         tool_layer_state: dict[str, str] = {}
-        max_hops = _max_tool_hops()
+        max_hops = 1 if _is_explicit_stats_composite(message) else _max_tool_hops()
         # 同 Anthropic 分支：按轮留痕，两条协议行为不许分叉
         hop_traces = [
             _hop_trace(
