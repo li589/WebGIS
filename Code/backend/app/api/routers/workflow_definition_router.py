@@ -39,6 +39,31 @@ from app.services.workflow_graph_compiler import (
 router = APIRouter(prefix="/workflow-definitions", tags=["workflow-definition"])
 
 
+def _validate_standard_workflow_nodes(payload: dict[str, Any]) -> None:
+    """Reject non-catalogue nodes from Standard workflow definitions.
+
+    Standard accounts compose reviewed platform nodes; this is not an arbitrary
+    Python-code upload surface.  The server repeats the UI restriction so a
+    caller cannot bypass it through the API.
+    """
+    nodes = payload.get("nodes")
+    if nodes is None:
+        return
+    if not isinstance(nodes, list):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="nodes must be a list")
+    from app.services.node_template_registry import get_node_template
+
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"node {index} must be an object")
+        node_type = node.get("type")
+        if not isinstance(node_type, str) or not node_type.strip() or get_node_template(node_type) is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"node {index} is not an approved platform node",
+            )
+
+
 # ─── 节点模板 ────────────────────────────────────────────────────────────────
 @router.get("/node-templates", tags=["workflow-definition"])
 def list_node_templates() -> dict[str, Any]:
@@ -307,6 +332,15 @@ def list_definitions(
     return {"items": items, "count": len(items)}
 
 
+@router.get("/review-submissions", tags=["workflow-definition"])
+def list_review_submissions(
+    _admin=Depends(require_admin),
+) -> dict[str, Any]:
+    """Administrator-only queue of Standard/user workflow review submissions."""
+    items = wds.list_review_submissions()
+    return {"items": items, "count": len(items)}
+
+
 @router.get("/{workflow_id}", tags=["workflow-definition"])
 def get_definition(
     workflow_id: str,
@@ -359,6 +393,58 @@ def set_definition_publication(
         ) from exc
 
 
+@router.post("/{workflow_id}/review-submission", tags=["workflow-definition"])
+def submit_definition_for_review(
+    workflow_id: str,
+    payload: dict[str, Any],
+    _write_ok: None = Depends(require_workflow_create_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    """Let an owner freeze a private workflow and submit it to administrators."""
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    if _cred is None or _cred.user_id is None:
+        raise ApiError(AUTH_ERROR, status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    note = payload.get("note")
+    if note is not None and not isinstance(note, str):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="note must be a string")
+    try:
+        return wds.submit_for_review(workflow_id, owner_user_id=int(_cred.user_id), note=note)
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise ApiError(AUTH_ERROR, status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/{workflow_id}/review-decision", tags=["workflow-definition"])
+def decide_definition_review(
+    workflow_id: str,
+    payload: dict[str, Any],
+    _admin=Depends(require_admin),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    """Record an Admin approval/rejection; this never publishes or overwrites core workflows."""
+    approved = payload.get("approved")
+    note = payload.get("note")
+    if not isinstance(approved, bool):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="approved must be a boolean")
+    if note is not None and not isinstance(note, str):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="note must be a string")
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    try:
+        return wds.decide_review(
+            workflow_id,
+            approved=approved,
+            reviewer_user_id=_cred.user_id if _cred is not None else None,
+            note=note,
+        )
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 def _deny_if_cannot_mutate_definition(
     workflow_id: str,
     cred: CredentialContext | None,
@@ -375,6 +461,11 @@ def _deny_if_cannot_mutate_definition(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot modify system workflow definition: {workflow_id}",
+        )
+    if wds.review_status(meta) in {"submitted", "approved"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Submitted or approved workflow must be duplicated before mutation.",
         )
     role = getattr(cred, "role", None) if cred is not None else None
     user_id = getattr(cred, "user_id", None) if cred is not None else None
@@ -399,6 +490,8 @@ def create_definition(
 ) -> dict[str, Any]:
     """创建用户工作流定义。"""
     _cred = cred if isinstance(cred, CredentialContext) else None
+    if _cred is not None and _cred.role == "standard":
+        _validate_standard_workflow_nodes(payload)
     try:
         return wds.create_definition(
             payload,
@@ -426,6 +519,8 @@ def update_definition(
 ) -> dict[str, Any]:
     """更新用户工作流定义。system 定义不可更新；非属主非 admin 拒绝。"""
     _cred = cred if isinstance(cred, CredentialContext) else None
+    if _cred is not None and _cred.role == "standard":
+        _validate_standard_workflow_nodes(payload)
     _deny_if_cannot_mutate_definition(workflow_id, _cred)
     try:
         return wds.update_definition(workflow_id, payload)

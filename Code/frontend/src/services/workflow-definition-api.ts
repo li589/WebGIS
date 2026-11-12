@@ -68,6 +68,9 @@ export interface WorkflowDefinitionSummary {
   tags?: string[]
   /** 工作流主分类（如 "inversion"/"weather"/"data_access"/"demo"） */
   category?: string | null
+  /** Private user-workflow review state; system workflows have no review state. */
+  review_status?: 'draft' | 'submitted' | 'approved' | 'rejected' | null
+  review_submitted_at?: string | null
 }
 
 export interface WorkflowDefinitionNode {
@@ -184,6 +187,32 @@ export async function duplicateWorkflowDefinition(
   return requestJson<WorkflowDefinition>(`${BASE}/${workflowId}/duplicate`, {
     method: 'POST',
     body: JSON.stringify({ new_id: newId, new_name: newName }),
+  })
+}
+
+export async function submitWorkflowForReview(
+  workflowId: string,
+  note?: string,
+): Promise<WorkflowDefinition> {
+  return requestJson<WorkflowDefinition>(`${BASE}/${workflowId}/review-submission`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  })
+}
+
+export async function listWorkflowReviewSubmissions(): Promise<WorkflowDefinitionSummary[]> {
+  const data = await requestJson<{ items: WorkflowDefinitionSummary[] }>(`${BASE}/review-submissions`)
+  return data.items
+}
+
+export async function decideWorkflowReview(
+  workflowId: string,
+  approved: boolean,
+  note?: string,
+): Promise<WorkflowDefinition> {
+  return requestJson<WorkflowDefinition>(`${BASE}/${workflowId}/review-decision`, {
+    method: 'POST',
+    body: JSON.stringify({ approved, note }),
   })
 }
 

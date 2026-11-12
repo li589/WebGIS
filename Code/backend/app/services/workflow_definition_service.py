@@ -203,6 +203,10 @@ def _build_meta(
         # 用户创建的工作流默认私有。公开状态只能由管理员通过专用接口修改，
         # 不能信任 create/update 请求体中的 _meta。
         meta["published"] = False
+        # A user workflow stays private while it is drafted or under review.
+        # This value is deliberately server-owned: create/update payloads must
+        # never be able to make a workflow look reviewed or publishable.
+        meta["review_status"] = "draft"
     if tags is not None:
         meta["tags"] = tags
     if category is not None:
@@ -236,6 +240,84 @@ def can_mutate_user_definition(
         return int(owner) == int(user_id)
     except (TypeError, ValueError):
         return False
+
+
+_REVIEW_STATUSES = frozenset({"draft", "submitted", "approved", "rejected"})
+
+
+def review_status(meta: dict[str, Any]) -> str:
+    """Return a safe review state for a user workflow.
+
+    Older definitions predate review metadata and remain editable drafts.
+    Unknown on-disk values fail closed as ``submitted`` rather than granting
+    the owner another edit path by accident.
+    """
+    value = str(meta.get("review_status") or "draft")
+    return value if value in _REVIEW_STATUSES else "submitted"
+
+
+def submit_for_review(workflow_id: str, *, owner_user_id: int, note: str | None = None) -> dict[str, Any]:
+    """Freeze an owner workflow and make it visible to administrators only."""
+    definition = get_definition(workflow_id)
+    if definition is None:
+        raise WorkflowNotFoundError(f"Workflow definition not found: {workflow_id}")
+    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
+    if meta.get("kind") != "user" or not is_definition_owner(meta, owner_user_id):
+        raise PermissionError("Only the owner may submit a user workflow for review")
+    state = review_status(meta)
+    if state == "submitted":
+        raise ValueError("Workflow is already awaiting review")
+    if state == "approved":
+        raise ValueError("Approved workflow must be duplicated before further changes")
+    meta["review_status"] = "submitted"
+    meta["review_submitted_at"] = _now_iso()
+    meta["review_note"] = (note or "").strip()[:1000] or None
+    meta.pop("review_decision_note", None)
+    meta.pop("reviewed_at", None)
+    meta.pop("reviewed_by_user_id", None)
+    meta["updated_at"] = _now_iso()
+    path = _resolve_file(workflow_id)
+    if path is None:
+        raise WorkflowNotFoundError(f"Workflow definition not found: {workflow_id}")
+    _write_file(path, definition)
+    return definition
+
+
+def decide_review(
+    workflow_id: str,
+    *,
+    approved: bool,
+    reviewer_user_id: int | None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Record an administrator decision without publishing or altering nodes."""
+    definition = get_definition(workflow_id)
+    if definition is None:
+        raise WorkflowNotFoundError(f"Workflow definition not found: {workflow_id}")
+    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
+    if meta.get("kind") != "user":
+        raise ValueError("Only user workflows may enter review")
+    if review_status(meta) != "submitted":
+        raise ValueError("Only submitted workflows may be reviewed")
+    meta["review_status"] = "approved" if approved else "rejected"
+    meta["reviewed_at"] = _now_iso()
+    meta["reviewed_by_user_id"] = reviewer_user_id
+    meta["review_decision_note"] = (note or "").strip()[:1000] or None
+    meta["updated_at"] = _now_iso()
+    path = _resolve_file(workflow_id)
+    if path is None:
+        raise WorkflowNotFoundError(f"Workflow definition not found: {workflow_id}")
+    _write_file(path, definition)
+    return definition
+
+
+def list_review_submissions() -> list[dict[str, Any]]:
+    """Return submitted user workflows for the administrator review queue."""
+    rows: list[dict[str, Any]] = []
+    for item in list_definitions():
+        if item.get("kind") == "user" and item.get("review_status") == "submitted":
+            rows.append(item)
+    return rows
 
 
 def can_view_definition(
@@ -402,6 +484,8 @@ def list_definitions() -> list[dict[str, Any]]:
                         "readonly": meta.get("readonly", default_kind == "system"),
                         "owner_user_id": meta.get("owner_user_id"),
                         "published": meta.get("published", False),
+                        "review_status": review_status(meta) if meta.get("kind", default_kind) == "user" else None,
+                        "review_submitted_at": meta.get("review_submitted_at"),
                         "is_template": bool(meta.get("is_template", False)),
                         "linked_layer_id": meta.get("linked_layer_id"),
                         "updated_at": meta.get("updated_at"),
@@ -515,9 +599,19 @@ def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, An
 
     if meta.get("kind") == "system" or meta.get("readonly", False):
         raise ValueError(f"Cannot modify system workflow definition: {workflow_id}")
+    state = review_status(meta)
+    if state in {"submitted", "approved"}:
+        raise ValueError(
+            "Submitted or approved workflow must be duplicated before further changes"
+        )
 
     # 更新字段
     meta["updated_at"] = _now_iso()
+    # A rejected workflow becomes a new editable draft as soon as its owner
+    # changes it; previous review evidence remains, but it must be submitted
+    # again before an administrator can approve it.
+    if state == "rejected":
+        meta["review_status"] = "draft"
     if "name" in payload:
         meta["name"] = payload["name"]
     if "description" in payload:
