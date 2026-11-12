@@ -708,7 +708,11 @@ def _is_explicit_point_query(message: str) -> bool:
     if _parse_lng_lat(text) is None:
         return False
     return bool(
-        re.search(r"点位|点值|采样|这个点|该点|坐标.*(?:值|数据)|(?:值|数据).*坐标", text)
+        re.search(
+            r"点位|点值|采样|这个点|该点|数值|"
+            r"坐标.*(?:值|数据)|(?:值|数据).*坐标",
+            text,
+        )
     )
 
 

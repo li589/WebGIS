@@ -21,6 +21,7 @@ from app.services.agent.orchestrator import (
 def test_explicit_coordinate_sampling_is_recognised_but_map_location_is_not():
     assert _is_explicit_point_query("查询 SMAP 在 116.4074, 39.9042 的点位值")
     assert _is_explicit_point_query("查询经度 116.4074、纬度 39.9042 处的点位数值")
+    assert _is_explicit_point_query("查询经度 116.4074、纬度 39.9042 处当前 SMAP 图层的数值")
     assert not _is_explicit_point_query("定位到 116.4074, 39.9042")
 
 
