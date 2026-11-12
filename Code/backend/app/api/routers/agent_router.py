@@ -14,6 +14,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import check_resource_access, get_request_user, require_write_access
+from app.api.rate_limit import (
+    client_ip,
+    is_guest_request,
+    reserve_guest_agent_tokens,
+    settle_guest_agent_tokens,
+)
 from app.api.error_codes import (
     AUTH_ERROR,
     NOT_FOUND_ERROR,
@@ -658,6 +664,13 @@ def agent_chat(
 ) -> AgentChatResponse:
     _require_agent_access(request, cred)
     uid, _role = _cred_meta(cred)
+    reservation = None
+    if is_guest_request(request):
+        visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
+        estimate = 12000
+        reservation = reserve_guest_agent_tokens(visitor_id or None, client_ip(request), estimate)
+        if reservation is None:
+            raise ApiError(VALIDATION_ERROR, status_code=429, detail="本次 Agent 请求的 token 额度不足，请稍后再试。")
     try:
         result = run_chat(
             payload.message,
@@ -667,18 +680,22 @@ def agent_chat(
             cred=cred,
         )
     except ValueError as exc:
+        settle_guest_agent_tokens(reservation, None)
         raise ApiError(
             VALIDATION_ERROR,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
     except LlmClientError as exc:
+        settle_guest_agent_tokens(reservation, None)
         raise ApiError(
             UPSTREAM_ERROR,
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
 
+    usage = result.get("usage") if isinstance(result, dict) else None
+    settle_guest_agent_tokens(reservation, usage.get("total_tokens") if isinstance(usage, dict) else None)
     return _chat_result_to_response(result)
 
 
@@ -751,6 +768,13 @@ def agent_chat_stream(
     """SSE chat stream (Phase D). Events: token, step, intent, done, error."""
     _require_agent_access(request, cred)
     uid, _role = _cred_meta(cred)
+    reservation = None
+    if is_guest_request(request):
+        visitor_id = (request.headers.get("x-visitor-id") or "").strip()[:64]
+        estimate = 12000
+        reservation = reserve_guest_agent_tokens(visitor_id or None, client_ip(request), estimate)
+        if reservation is None:
+            raise ApiError(VALIDATION_ERROR, status_code=429, detail="本次 Agent 请求的 token 额度不足，请稍后再试。")
 
     def event_iter() -> Iterator[str]:
         q: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
@@ -768,9 +792,12 @@ def agent_chat_stream(
                     cred=cred,
                     on_event=on_event,
                 )
+                usage = result.get("usage") if isinstance(result, dict) else None
+                settle_guest_agent_tokens(reservation, usage.get("total_tokens") if isinstance(usage, dict) else None)
                 done = _chat_result_to_response(result).model_dump(mode="json")
                 q.put(("done", done))
             except ValueError as exc:
+                settle_guest_agent_tokens(reservation, None)
                 q.put(
                     (
                         "error",
@@ -782,6 +809,7 @@ def agent_chat_stream(
                     )
                 )
             except LlmClientError as exc:
+                settle_guest_agent_tokens(reservation, None)
                 q.put(
                     (
                         "error",

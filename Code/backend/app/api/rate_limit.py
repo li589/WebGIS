@@ -386,6 +386,53 @@ _GUEST_GLOBAL_QUOTA_LIMIT = int(
     os.getenv("BACKEND_AGENT_GUEST_GLOBAL_DAILY_QUOTA", "300")
 )
 
+# Token budget is kept separate from the legacy request-count anti-abuse guard.
+_GUEST_AGENT_TOKEN_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_TOKEN_LIMIT", "12000"))
+_GUEST_AGENT_IP_TOKEN_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_IP_TOKEN_LIMIT", "48000"))
+_GUEST_AGENT_GLOBAL_TOKEN_LIMIT = int(os.getenv("BACKEND_AGENT_GUEST_GLOBAL_TOKEN_LIMIT", "480000"))
+_guest_token_usage: dict[str, int] = {}
+_guest_token_reservations: dict[str, int] = {}
+
+
+@dataclass(frozen=True)
+class GuestTokenReservation:
+    token: str
+    visitor_key: str
+    ip_key: str
+    global_key: str
+    amount: int
+
+
+def reserve_guest_agent_tokens(visitor_id: str | None, ip: str, amount: int) -> GuestTokenReservation | None:
+    """Atomically reserve one request's estimated token budget."""
+    amount = max(0, int(amount))
+    if amount == 0:
+        return GuestTokenReservation("zero", "", "", "", 0)
+    day, _ttl = _beijing_day_and_ttl()
+    visitor_key = f"token:visitor:{visitor_id or ip}:{day}"
+    ip_key = f"token:ip:{ip}:{day}"
+    global_key = f"token:global:{day}"
+    with _guest_quota_memory_lock:
+        limits = ((visitor_key, _GUEST_AGENT_TOKEN_LIMIT), (ip_key, _GUEST_AGENT_IP_TOKEN_LIMIT), (global_key, _GUEST_AGENT_GLOBAL_TOKEN_LIMIT))
+        for key, limit in limits:
+            used = _guest_token_usage.get(key, 0) + _guest_token_reservations.get(key, 0)
+            if limit > 0 and used + amount > limit:
+                return None
+        for key, _limit in limits:
+            _guest_token_reservations[key] = _guest_token_reservations.get(key, 0) + amount
+    token = secrets.token_hex(12)
+    return GuestTokenReservation(token, visitor_key, ip_key, global_key, amount)
+
+
+def settle_guest_agent_tokens(reservation: GuestTokenReservation | None, actual: int | None) -> None:
+    if reservation is None or reservation.amount <= 0:
+        return
+    charged = max(0, min(int(actual or reservation.amount), reservation.amount))
+    with _guest_quota_memory_lock:
+        for key in (reservation.visitor_key, reservation.ip_key, reservation.global_key):
+            _guest_token_reservations[key] = max(0, _guest_token_reservations.get(key, 0) - reservation.amount)
+            _guest_token_usage[key] = _guest_token_usage.get(key, 0) + charged
+
 
 def guest_quota_limit() -> int:
     """当前生效的游客日额度（0 = 关闭）。"""

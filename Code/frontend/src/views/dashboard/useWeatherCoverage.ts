@@ -32,13 +32,30 @@ export function useWeatherCoverage(
     const ac = new AbortController()
     coverageAbort = ac
     try {
-      const cov = await getWeatherCoverage(weatherEngine.defaultModel, ac.signal)
-      if (!ac.signal.aborted) weatherCoverage.value = cov
+      let lastError: unknown = null
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const attemptController = new AbortController()
+          const onAbort = () => attemptController.abort()
+          ac.signal.addEventListener('abort', onAbort, { once: true })
+          const timeout = window.setTimeout(() => attemptController.abort(), 8000)
+          const cov = await getWeatherCoverage(weatherEngine.defaultModel, attemptController.signal)
+          window.clearTimeout(timeout)
+          ac.signal.removeEventListener('abort', onAbort)
+          if (!ac.signal.aborted) weatherCoverage.value = cov
+          return
+        } catch (err) {
+          lastError = err
+          if (ac.signal.aborted || attempt === 1) throw err
+          await new Promise((resolve) => window.setTimeout(resolve, 300))
+        }
+      }
+      throw lastError
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         console.warn('[DashboardView] weather coverage probe failed', err)
         safeLog('client-error', '天气覆盖范围探测失败', String(err), 'warn')
-        if (!ac.signal.aborted) weatherCoverage.value = null
+        // 保留最近一次成功结果，避免一次网络抖动让时间轴突然失去覆盖范围。
       }
     } finally {
       if (coverageAbort === ac) coverageAbort = null

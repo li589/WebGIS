@@ -179,6 +179,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const onlineTileSources = ref<OnlineTileSource[]>([])
   const aboutInfo = ref<AboutInfo | null>(null)
   const loading = ref(false)
+  const loadingNotice = ref<string | null>(null)
   /** 致命错误：核心配置不可用，界面阻断 */
   const error = ref<string | null>(null)
   /** 部分失败提示：不阻断已成功分区 */
@@ -199,8 +200,13 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // quiet：已有数据时后台刷新，不挡面板内容区（避免二次打开白等）
     const quiet = Boolean(options?.quiet && generalConfig.value)
+    let slowTimer: number | undefined
+    let timeoutTimer: number | undefined
     if (!quiet) {
       loading.value = true
+      loadingNotice.value = null
+      slowTimer = window.setTimeout(() => { loadingNotice.value = '配置加载较慢，请稍候…' }, 5000)
+      timeoutTimer = window.setTimeout(() => { loadingNotice.value = '配置加载超时，可点击重试。' }, 15000)
     }
     error.value = null
     partialError.value = null
@@ -370,6 +376,9 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     loading.value = false
+    if (slowTimer) window.clearTimeout(slowTimer)
+    if (timeoutTimer) window.clearTimeout(timeoutTimer)
+    if (!failures.length) loadingNotice.value = null
   }
 
   // ── API Key ──────────────────────────────────────────────────────────────
@@ -764,6 +773,7 @@ export const useSettingsStore = defineStore('settings', () => {
     portalCatalog,
     aboutInfo,
     loading,
+    loadingNotice,
     error,
     partialError,
     failedLoaders,
