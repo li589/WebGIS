@@ -551,6 +551,32 @@ def _estimate_messages_tokens(
     return total
 
 
+def _input_token_breakdown(
+    *, system: str, history: list[dict[str, Any]], message: str, tools: list[dict[str, Any]] | None,
+    client_context: dict[str, Any] | None,
+) -> dict[str, int]:
+    """Admin-only estimate of the first model hop, split by input source."""
+    page_context = 0
+    if client_context:
+        page_context = estimate_tokens(json.dumps(client_context, ensure_ascii=False, default=str))
+    tool_defs = estimate_tokens(json.dumps(tools or [], ensure_ascii=False, default=str))
+    history_tokens = sum(estimate_tokens(str(x.get("content") or "")) for x in history if isinstance(x, dict))
+    examples_tokens = sum(
+        estimate_tokens(line)
+        for line in (system or "").splitlines()
+        if re.search(r"示例|例如|example", line, re.I)
+    )
+    return {
+        "system_prompt": max(0, estimate_tokens(system or "") - page_context),
+        "tool_definitions": tool_defs,
+        "page_context": page_context,
+        "conversation_history": history_tokens,
+        "tool_results": 0,
+        "user_message": estimate_tokens(message or ""),
+        "examples_in_system": examples_tokens,
+    }
+
+
 def _hop_trace(
     data: dict[str, Any] | None,
     *,
@@ -558,6 +584,7 @@ def _hop_trace(
     est: int,
     budget: int,
     tools: int,
+    breakdown: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """单次模型调用的输入用量留痕：事前估算 + 服务端回报的真实值。
 
@@ -572,13 +599,16 @@ def _hop_trace(
             actual = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
         except (TypeError, ValueError):
             actual = 0
-    return {
+    trace = {
         "hop": int(hop),
         "est_tokens": int(est),
         "actual_tokens": actual,
         "budget": int(budget),
         "tools": int(tools),
     }
+    if breakdown is not None:
+        trace["input_breakdown"] = breakdown
+    return trace
 
 
 class _EventSteps(list):
@@ -784,6 +814,28 @@ def _tool_trace_payload(args: dict[str, Any], result: dict[str, Any]) -> dict[st
     if resolved:
         trace["resolved_layer_id"] = resolved
     return trace
+
+
+def _append_local_statistics_trace(
+    steps: list[dict[str, Any]], requested_catalog_id: str, result: dict[str, Any]
+) -> None:
+    """Keep deterministic statistics just as auditable as a model tool call."""
+    state = result.get("topic_state") if isinstance(result, dict) else None
+    resolved = str(state.get("layer_id") or "").strip() if isinstance(state, dict) else ""
+    steps.append(
+        {
+            "type": "tool_result",
+            "summary": "本地统计取数完成",
+            "detail": _tool_detail(
+                {
+                    "ok": bool(result.get("reply")),
+                    "requested_catalog_id": requested_catalog_id,
+                    "resolved_layer_id": resolved or requested_catalog_id,
+                    "execution": "local_statistics_rule",
+                }
+            ),
+        }
+    )
 
 
 #: 工具入参里代表「图层」的字段名（不同工具叫法不同）
@@ -4331,6 +4383,19 @@ def _run_chat_impl(
                 session_id=sid,
                 state=topic_state,
             )
+            _append_local_statistics_trace(
+                steps,
+                next(
+                    (
+                        str((item.get("args") or {}).get("catalog_id") or "")
+                        for item in composite_intents
+                        if isinstance(item, dict)
+                        and str(item.get("name") or "") == "set_timeline"
+                    ),
+                    "",
+                ),
+                statistic,
+            )
             statistic_reply = str(statistic.get("reply") or "未能取得统计结果。")
             return finish_direct(
                 statistic_reply,
@@ -4365,6 +4430,7 @@ def _run_chat_impl(
                     session_id=sid,
                     state=topic_state,
                 )
+                _append_local_statistics_trace(steps, follow_layer, statistic)
                 return finish_direct(
                     str(statistic.get("reply") or "未能取得重新查询结果。"),
                     provider_suffix="date-followup-statistics-rule",
@@ -4421,6 +4487,7 @@ def _run_chat_impl(
                             session_id=sid,
                             state=base_state,
                         )
+                        _append_local_statistics_trace(steps, target_id, one)
                         replies.append(str(one.get("reply") or f"{city}未能取得统计结果。"))
                     return finish_direct(
                         "\n\n".join(replies),
@@ -5047,6 +5114,13 @@ def _run_chat_impl(
     budget_tools = (
         round_tools_anthropic if protocol == "anthropic" else round_tools_openai
     )
+    first_hop_breakdown = _input_token_breakdown(
+        system=system,
+        history=history,
+        message=message,
+        tools=budget_tools,
+        client_context=client_context,
+    )
     est_in = _estimate_prompt_tokens(
         system=system,
         history=history,
@@ -5097,6 +5171,7 @@ def _run_chat_impl(
                     "actual_tokens": 0,
                     "budget": budget,
                     "tools": len(budget_tools),
+                    "input_breakdown": first_hop_breakdown,
                 }
             ],
         }
@@ -5168,6 +5243,7 @@ def _run_chat_impl(
                     est=est_in,
                     budget=budget,
                     tools=len(round_tools_anthropic),
+                    breakdown=first_hop_breakdown,
                 )
             ]
             seen_server_calls: set[str] = set()
@@ -5462,6 +5538,7 @@ def _run_chat_impl(
                 est=est_in,
                 budget=budget,
                 tools=len(round_tools_openai),
+                breakdown=first_hop_breakdown,
             )
         ]
         oai_key = api_key or ("ollama" if provider_kind == "ollama" else None)
