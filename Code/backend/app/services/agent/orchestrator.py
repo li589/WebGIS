@@ -322,11 +322,10 @@ def _request_limit_reply(*, message: str = "") -> str:
             "可以分两次发：第一次说要做哪件事，第二次补日期或区域。"
         )
     return (
-        "这次没能处理完，页面没有变化——不是你这句话有问题，"
-        "是这一次服务的处理额度被占满了。\n\n"
+        "这次没有处理完成，页面没有变化。为避免用不确定的图层、日期或区域给出结果，"
+        "助手已停止本次请求。\n\n"
         f"{state_note}\n\n"
-        "把同一句话再发一次通常就能过；如果连续两次都卡住，"
-        "换一句更短的说法也可以，例如「把时间轴切到 2025-12-15」。"
+        "你可以稍后重试；如果同一句话连续出现三次，请把这条记录交给管理员排查。"
     )
 
 
@@ -4340,6 +4339,91 @@ def _run_chat_impl(
                     else None
                 ),
             )
+
+    # "Only change the date ... and query again" is a follow-up, not a new
+    # open-ended planning task.  The word "query" used to make the generic map
+    # resolver opt out, then the full model/tool loop hit its budget.
+    if re.search(r"只.{0,4}改.{0,3}日期|其他条件不变|其余条件不变", message):
+        from app.services.agent import mock_orchestrator as _mo
+        from app.services.agent.mock_orchestrator import forced_statistics_reply
+
+        follow_day = _mo._parse_date_arg(message)
+        follow_layer = _current_layer_id(client_context)
+        if follow_day and follow_layer and not _layer_is_static(follow_layer):
+            timeline_args = {"catalog_id": follow_layer, "date": follow_day}
+            _timeline_reply, changeable = _mo._build_timeline_reply(
+                timeline_args, client_context
+            )
+            if changeable:
+                statistic = forced_statistics_reply(
+                    message,
+                    client_context=client_context,
+                    session_id=sid,
+                    state=topic_state,
+                )
+                return finish_direct(
+                    str(statistic.get("reply") or "未能取得重新查询结果。"),
+                    provider_suffix="date-followup-statistics-rule",
+                    summary="日期续查已由本地规则切换日期并重新取数，未调用模型",
+                    intents=[{"name": "set_timeline", "args": timeline_args}],
+                    state_patch=(
+                        statistic.get("topic_state")
+                        if isinstance(statistic.get("topic_state"), dict)
+                        else None
+                    ),
+                )
+
+    # Two or three explicitly named cities are bounded, deterministic reads.
+    # They must not be sent to an LLM just to plan the same statistics call for
+    # each city; that was the source of the false "service quota full" reply.
+    if re.search(r"统计|平均值|均值", message):
+        from app.services.agent.region import list_cities
+
+        # Match against the authoritative city list instead of greedily cutting
+        # Chinese text at every "市" ("广州市和深圳市" used to become one token).
+        city_names = [city for city in list_cities() if city and city in message]
+        if 2 <= len(city_names) <= 3:
+            from app.services.agent.mock_orchestrator import (
+                _parse_date_arg,
+                forced_statistics_reply,
+                resolve_entities,
+            )
+            from app.services.agent.region import resolve_region
+
+            verified_cities = [city for city in city_names if resolve_region(city) is not None]
+            active_layers = (
+                [x for x in client_context.get("active_layers", []) if isinstance(x, dict)]
+                if isinstance(client_context, dict)
+                else []
+            )
+            entity = resolve_entities(
+                message, active_layers, client_context=client_context, state=topic_state
+            )
+            target = entity.get("layer") if isinstance(entity, dict) else None
+            if len(verified_cities) == len(city_names) and isinstance(target, dict):
+                target_id = str(target.get("catalog_id") or "").strip()
+                target_name = str(target.get("name") or target.get("display_name") or "").strip()
+                day = _parse_date_arg(message) or str(entity.get("date") or "").strip()
+                if target_id and target_name and day:
+                    base_state = canonical_layer_state(
+                        target_id, display=target_name, client_context=client_context
+                    )
+                    base_state["date"] = day
+                    replies: list[str] = []
+                    for city in verified_cities:
+                        one = forced_statistics_reply(
+                            f"统计{target_name}在{day}{city}行政区平均值",
+                            client_context=client_context,
+                            session_id=sid,
+                            state=base_state,
+                        )
+                        replies.append(str(one.get("reply") or f"{city}未能取得统计结果。"))
+                    return finish_direct(
+                        "\n\n".join(replies),
+                        provider_suffix="multi-region-statistics-rule",
+                        summary="明确城市的逐区统计已由本地规则逐项取数，未调用模型",
+                        state_patch=base_state,
+                    )
 
     # 「现在选中的是哪个」这类**只查页面状态**的请求：本地直接读 client_context。
     # 2026-11-11 用户复测：隐藏图层仍被选中时，查询走模型链路会回「没有下发界面

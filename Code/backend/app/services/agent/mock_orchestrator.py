@@ -815,7 +815,7 @@ def _parse_lng_lat(message: str) -> tuple[float, float] | None:
     """Parse explicit coordinates like 116.4,39.9 or lng=116 lat=40."""
     m = re.search(
         r"(?:lng|lon|longitude|经度)\s*[:=]?\s*(-?\d+(?:\.\d+)?)"
-        r"[,\s]+"
+        r"[,，、\s]+"
         r"(?:lat|latitude|纬度)\s*[:=]?\s*(-?\d+(?:\.\d+)?)",
         message,
         re.I,
