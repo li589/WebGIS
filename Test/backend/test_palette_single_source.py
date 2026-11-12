@@ -1,0 +1,85 @@
+"""产物配色口径的回归防线（2026-11-12）。
+
+来由：2026-11-11 22:02 一次工作流重跑（run-d3d49d0c9236）把风云组两个色带冲掉了：
+
+* 兜底扫描路径**自己抄了一份**变量→色带表，与 ``_MAPPABLE_PRODUCTS`` 各自维护。
+  主路径 ω 是 ``reds``（2026-10-20 用户指定），兜底却写 ``cividis`` ⇒ 只要走到
+  兜底就换色。
+* 风云平均 SM 在 2026-11-05 按老师要求手工改成 ``sm-classic``，但那是直接改盘上
+  ``meta.json``（提交说明写「数据侧（未入库）」），默认表没动 ⇒ 重跑必回退。
+
+两条规则在这里锁死：
+1. 变量→色带/量程只认 ``_MAPPABLE_PRODUCTS``，兜底和主路径共用 ``_palette_for_layer``
+   / ``_range_for_variable``，源码里不许再出现第二份字面量。
+2. 某一层要用与产品默认不同的配色，登记 ``_LAYER_PALETTE_OVERRIDES``，且**只改配色、
+   不动量程**。
+"""
+
+from __future__ import annotations
+
+import inspect
+
+from app.services import python_provider_result_builder as builder
+
+#: 风云平均散射约束产品（老师指定「经典七色」的那一层）
+FY_AVG = "method-fy-omega-doy-avg"
+FY_DYNAMIC = "method-fy-omega-doy-dynamic"
+SMAP_AVG = "method-smap-omega-doy-avg"
+
+
+class TestLayerPaletteOverride:
+    def test_fy_average_sm_pins_classic(self):
+        assert builder._palette_for_layer("SM", FY_AVG) == "sm-classic"
+
+    def test_other_sm_layers_keep_paper(self):
+        """覆盖只针对风云平均那一层，别的 SM 一律仍是论文色带。"""
+        assert builder._palette_for_layer("SM", FY_DYNAMIC) == "sm-paper"
+        assert builder._palette_for_layer("SM", SMAP_AVG) == "sm-paper"
+        assert builder._palette_for_layer("SM", "") == "sm-paper"
+
+    def test_omega_comes_from_registry_single_source(self):
+        """ω 跟着 _MAPPABLE_PRODUCTS 走（reds），不再被兜底写成 cividis。"""
+        registry = builder._MAPPABLE_PRODUCTS["omega_sf_omega_block_dir"]["palette"]
+        assert registry == "reds"
+        assert builder._palette_for_layer("OMEGA", FY_AVG) == registry
+        assert builder._palette_for_layer("OMEGA", SMAP_AVG) == registry
+
+    def test_vod_unchanged(self):
+        assert builder._palette_for_layer("VOD", FY_AVG) == "darkgreen-yellow"
+
+    def test_override_does_not_touch_range(self):
+        """换色 ≠ 改量程：SM 仍是 0–0.6，ω 0–0.5，VOD 0–1.5。"""
+        assert builder._range_for_variable("SM") == (0.0, 0.6)
+        assert builder._range_for_variable("OMEGA") == (0.0, 0.5)
+        assert builder._range_for_variable("VOD") == (0.0, 1.5)
+
+    def test_unknown_variable_falls_back_to_placeholder(self):
+        """认不出的变量不给假色带，回落到函数默认值。"""
+        assert builder._palette_for_layer("UNKNOWN", FY_AVG) == "cividis"
+        assert builder._range_for_variable("UNKNOWN") == (None, None)
+
+
+class TestNoSecondPaletteTable:
+    """兜底扫描不许再维护第二份变量→色带表。"""
+
+    def test_fallback_loop_uses_shared_helper(self):
+        src = inspect.getsource(builder)
+        assert "_palette_for_layer(variable, fallback_layer_key)" in src
+        assert "_range_for_variable(variable)" in src
+
+    def test_old_hardcoded_tuple_is_gone(self):
+        src = inspect.getsource(builder)
+        for literal in (
+            '("SM", "SM", "sm-paper", 0.0, 0.6)',
+            '("VOD", "VOD", "darkgreen-yellow", 0.0, 1.5)',
+            '("OMEGA", "OMEGA", "cividis", 0.0, 0.5)',
+        ):
+            assert literal not in src, f"兜底又抄了一份字面量：{literal}"
+
+    def test_override_table_only_holds_palette(self):
+        """覆盖表里只允许 palette 键——量程不许借道覆盖表偷改。"""
+        for layer_key, override in builder._LAYER_PALETTE_OVERRIDES.items():
+            assert isinstance(override, dict)
+            for variable, value in override.items():
+                assert isinstance(value, str), f"{layer_key}/{variable} 不是色带名"
+                assert isinstance(value, str) and value

@@ -125,6 +125,64 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
 }
 
 
+# ── 配色口径：唯一来源 + 按层钉死 ──────────────────────────────────────────────
+#
+# 背景（2026-11-11 事故）：兜底扫描路径曾经**自己抄了一份**变量→色带的表，
+# 与上面 _MAPPABLE_PRODUCTS 各自维护。两边一漂移，重跑工作流就会换色：
+#   · ω 主路径 reds（2026-10-20 用户指定），兜底却写 cividis
+#   · 风云平均 SM 是 2026-11-05 按老师要求手工改成 sm-classic 的（只落盘、
+#     没进任何默认表），一重跑就被 sm-paper 覆盖
+# 现场：2026-11-11 22:02 一次工作流重跑（run-d3d49d0c9236），22:20 把
+# imported-55359b8ecd3d(SM) / -72aa577da95e(ω) 的色带换掉了。
+#
+# 现在收敛成两条规则：
+#   1. 变量 → 色带/量程 **只从 _MAPPABLE_PRODUCTS 读**，兜底与主路径共用本函数，
+#      不允许再出现第二份字面量。
+#   2. 某一层确实要用与产品默认不同的配色，登记到 _LAYER_PALETTE_OVERRIDES，
+#      键是工作流 layer_id + 变量。重跑会重新套用它 ⇒ 不会再被冲掉。
+
+#: 变量 → _MAPPABLE_PRODUCTS 里的产物键（兜底扫描按变量名反查用）。
+_VARIABLE_PRODUCT_KEYS: dict[str, str] = {
+    "SM": "omega_sf_sm_block_dir",
+    "VOD": "omega_sf_vod_block_dir",
+    "OMEGA": "omega_sf_omega_block_dir",
+}
+
+#: 按图层（工作流 layer_id）钉死的配色覆盖：``{layer_id: {变量: palette}}``。
+#: 只影响配色，**不动量程**——量程口径仍以 _MAPPABLE_PRODUCTS 为准。
+_LAYER_PALETTE_OVERRIDES: dict[str, dict[str, str]] = {
+    # 2026-11-05 老师要求：风云平均散射约束产品的土壤水分用「经典七色」
+    # （0 橙黄 → 0.3 青 → 0.6 深蓝），且 0 值透明；其余 SM 层仍用论文色带
+    # sm-paper。原先只改了盘上的 meta.json，重跑即丢失。
+    "method-fy-omega-doy-avg": {"SM": "sm-classic"},
+}
+
+
+def _palette_for_layer(variable: str, layer_key: str) -> str:
+    """这一层这个变量该用哪个色带（产品默认 + 按层覆盖）。"""
+    product_key = _VARIABLE_PRODUCT_KEYS.get(str(variable or "").upper(), "")
+    config = _MAPPABLE_PRODUCTS.get(product_key) or {}
+    palette = str(config.get("palette") or "cividis")
+    override = _LAYER_PALETTE_OVERRIDES.get(str(layer_key or ""))
+    if isinstance(override, dict):
+        pinned = override.get(str(variable or "").upper())
+        if pinned:
+            return str(pinned)
+    return palette
+
+
+def _range_for_variable(variable: str) -> tuple[float | None, float | None]:
+    """这一变量该用的量程（vmin, vmax），同样只认 _MAPPABLE_PRODUCTS。"""
+    product_key = _VARIABLE_PRODUCT_KEYS.get(str(variable or "").upper(), "")
+    config = _MAPPABLE_PRODUCTS.get(product_key) or {}
+    vmin = config.get("vmin")
+    vmax = config.get("vmax")
+    return (
+        float(vmin) if isinstance(vmin, (int, float)) else None,
+        float(vmax) if isinstance(vmax, (int, float)) else None,
+    )
+
+
 def _legend_ticks_from_range(vmin: object | None, vmax: object | None) -> list[float]:
     if not isinstance(vmin, (int, float)) or not isinstance(vmax, (int, float)):
         return []
@@ -1079,7 +1137,12 @@ class PythonProviderResultBuilder:
                     run_id=run_id,
                     layer_key=str(getattr(payload, "layer_id", "") or ""),
                     grid_preset=str(config["grid_preset"]),
-                    palette=str(config.get("palette") or "cividis"),
+                    # 按层覆盖（如风云平均 SM → sm-classic）同样作用于主路径，
+                    # 否则重跑走主路径时又会被产品默认色带盖回去。
+                    palette=_palette_for_layer(
+                        str(product.get("variable") or config["variable"]),
+                        str(getattr(payload, "layer_id", "") or ""),
+                    ),
                     vmin=config.get("vmin"),
                     vmax=config.get("vmax"),
                     native_step=native_step,
@@ -1910,25 +1973,23 @@ class PythonProviderResultBuilder:
                     except OSError:
                         has_monthly_block = False
                     block_native_step = "1M" if has_monthly_block else "8d"
-                    # vmin/vmax 必须与 _MAPPABLE_PRODUCTS 主注册路径一致，否则
-                    # 兜底扫描会用空范围覆盖已落盘的色阶（VOD 会被冲回自适应，
-                    # 2026-10-14 定位）。VOD 为 0–1.5，见 _MAPPABLE_PRODUCTS 注释。
-                    # 2026-10-20：VOD 这条同时把 palette 由 viridis 对齐成主路径的
-                    # darkgreen-yellow（原先两处 palette 本就不一致，兜底一跑就换色）。
-                    # 2026-11-04：SM 与主注册表同步改为 sm-paper / 0–0.6
-                    # （用户指定论文色带 + 0~0.6 量程），两处必须一致。
-                    for variable, label, palette, vmin, vmax in (
-                        ("SM", "SM", "sm-paper", 0.0, 0.6),
-                        ("VOD", "VOD", "darkgreen-yellow", 0.0, 1.5),
-                        ("OMEGA", "OMEGA", "cividis", 0.0, 0.5),
-                    ):
+                    # 色带/量程**不再在此处写死**：统一走 _palette_for_layer /
+                    # _range_for_variable（唯一来源 = 上面的 _MAPPABLE_PRODUCTS
+                    # + 按层覆盖表）。此前这里另抄了一份
+                    # `("SM",...,"sm-paper") ("OMEGA",...,"cividis")`，与主路径
+                    # 的 reds 不一致 ⇒ 只要落到兜底扫描就换色（2026-11-11 事故）。
+                    fallback_layer_key = str(run_status.layer_id or "")
+                    for variable in ("SM", "VOD", "OMEGA"):
+                        label = variable
+                        palette = _palette_for_layer(variable, fallback_layer_key)
+                        vmin, vmax = _range_for_variable(variable)
                         try:
                             synced = upsert_block_dir_timeseries(
                                 block_dir,
                                 variable_id=variable,
                                 label=label,
                                 run_id=run_id,
-                                layer_key=str(run_status.layer_id or ""),
+                                layer_key=fallback_layer_key,
                                 palette=palette,
                                 vmin=vmin,
                                 vmax=vmax,
