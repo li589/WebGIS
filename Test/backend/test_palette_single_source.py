@@ -83,3 +83,169 @@ class TestNoSecondPaletteTable:
             for variable, value in override.items():
                 assert isinstance(value, str), f"{layer_key}/{variable} 不是色带名"
                 assert isinstance(value, str) and value
+
+
+class TestRerunKeepsExistingPalette:
+    """重跑只更新数据，不换掉已落盘的色带（2026-11-11 事故的通用防线）。
+
+    这一层保护不依赖任何覆盖表：只要该层 meta.json 里已经有 palette，重跑传入
+    的产品默认配色就**不生效**。要强制换色必须显式 override_existing_palette=True。
+    """
+
+    @staticmethod
+    def _write_mat(path, value: float = 0.4) -> None:
+        import numpy as np
+        from scipy.io import savemat
+
+        arr = np.full((8, 8), np.nan, dtype=np.float64)
+        arr[2:6, 2:6] = value
+        savemat(str(path), {"SM": arr, "VOD": arr, "OMEGA": arr})
+
+    @staticmethod
+    def _imports(tmp_path, monkeypatch):
+        imports = tmp_path / "imports"
+        imports.mkdir()
+        monkeypatch.setattr(
+            "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+            lambda: imports,
+        )
+        return imports
+
+    def _publish(self, tmp_path, palette, **kwargs):
+        from app.data_io.services.raster_timeseries import upsert_block_dir_timeseries
+
+        blocks = tmp_path / f"blocks-{palette}-{len(kwargs)}"
+        blocks.mkdir(exist_ok=True)
+        self._write_mat(blocks / "20251201_20251231.mat")
+        return upsert_block_dir_timeseries(
+            blocks,
+            variable_id="SM",
+            label="SM",
+            run_id="run-palette-test",
+            layer_key=FY_AVG,
+            palette=palette,
+            vmin=0.0,
+            vmax=0.6,
+            force=True,
+            **kwargs,
+        )
+
+    def test_rerun_keeps_pinned_palette(self, tmp_path, monkeypatch):
+        import json
+
+        imports = self._imports(tmp_path, monkeypatch)
+        first = self._publish(tmp_path, "sm-classic")
+        meta_path = imports / first["layer_id"] / "meta.json"
+        assert (
+            json.loads(meta_path.read_text(encoding="utf-8"))["palette"] == "sm-classic"
+        )
+
+        second = self._publish(tmp_path, "sm-paper")
+        assert second["layer_id"] == first["layer_id"]
+        assert (
+            json.loads(meta_path.read_text(encoding="utf-8"))["palette"] == "sm-classic"
+        )
+
+    def test_explicit_override_still_changes_palette(self, tmp_path, monkeypatch):
+        import json
+
+        imports = self._imports(tmp_path, monkeypatch)
+        first = self._publish(tmp_path, "sm-classic")
+        meta_path = imports / first["layer_id"] / "meta.json"
+        self._publish(tmp_path, "sm-paper", override_existing_palette=True)
+        assert (
+            json.loads(meta_path.read_text(encoding="utf-8"))["palette"] == "sm-paper"
+        )
+
+    def test_first_publish_uses_given_palette(self, tmp_path, monkeypatch):
+        import json
+
+        imports = self._imports(tmp_path, monkeypatch)
+        out = self._publish(tmp_path, "sm-paper")
+        meta = json.loads(
+            (imports / out["layer_id"] / "meta.json").read_text(encoding="utf-8")
+        )
+        assert meta["palette"] == "sm-paper"
+
+
+class TestRerunKeepsExistingPalette:
+    """重跑只更新数据，不换掉已落盘的色带（2026-11-11 事故的通用防线）。
+
+    这一层保护不依赖任何覆盖表：只要该层 meta.json 里已经有 palette，重跑传入
+    的产品默认配色就**不生效**。要强制换色必须显式 override_existing_palette=True。
+    """
+
+    @staticmethod
+    def _write_mat(path, value: float = 0.4) -> None:
+        import numpy as np
+        from scipy.io import savemat
+
+        arr = np.full((8, 8), np.nan, dtype=np.float64)
+        arr[2:6, 2:6] = value
+        savemat(str(path), {"SM": arr, "VOD": arr, "OMEGA": arr})
+
+    @staticmethod
+    def _imports(tmp_path, monkeypatch):
+        imports = tmp_path / "imports"
+        imports.mkdir()
+        monkeypatch.setattr(
+            "app.data_io.services.raster_timeseries.import_paths.imports_dir",
+            lambda: imports,
+        )
+        return imports
+
+    def _publish(self, tmp_path, palette, **kwargs):
+        from app.data_io.services.raster_timeseries import upsert_block_dir_timeseries
+
+        blocks = tmp_path / f"blocks-{palette}-{len(kwargs)}"
+        blocks.mkdir(exist_ok=True)
+        self._write_mat(blocks / "20251201_20251231.mat")
+        return upsert_block_dir_timeseries(
+            blocks,
+            variable_id="SM",
+            label="SM",
+            run_id="run-palette-test",
+            layer_key=FY_AVG,
+            palette=palette,
+            vmin=0.0,
+            vmax=0.6,
+            force=True,
+            **kwargs,
+        )
+
+    def test_rerun_keeps_pinned_palette(self, tmp_path, monkeypatch):
+        import json
+
+        imports = self._imports(tmp_path, monkeypatch)
+        first = self._publish(tmp_path, "sm-classic")
+        meta_path = imports / first["layer_id"] / "meta.json"
+        assert (
+            json.loads(meta_path.read_text(encoding="utf-8"))["palette"] == "sm-classic"
+        )
+
+        second = self._publish(tmp_path, "sm-paper")
+        assert second["layer_id"] == first["layer_id"]
+        assert (
+            json.loads(meta_path.read_text(encoding="utf-8"))["palette"] == "sm-classic"
+        )
+
+    def test_explicit_override_still_changes_palette(self, tmp_path, monkeypatch):
+        import json
+
+        imports = self._imports(tmp_path, monkeypatch)
+        first = self._publish(tmp_path, "sm-classic")
+        meta_path = imports / first["layer_id"] / "meta.json"
+        self._publish(tmp_path, "sm-paper", override_existing_palette=True)
+        assert (
+            json.loads(meta_path.read_text(encoding="utf-8"))["palette"] == "sm-paper"
+        )
+
+    def test_first_publish_uses_given_palette(self, tmp_path, monkeypatch):
+        import json
+
+        imports = self._imports(tmp_path, monkeypatch)
+        out = self._publish(tmp_path, "sm-paper")
+        meta = json.loads(
+            (imports / out["layer_id"] / "meta.json").read_text(encoding="utf-8")
+        )
+        assert meta["palette"] == "sm-paper"

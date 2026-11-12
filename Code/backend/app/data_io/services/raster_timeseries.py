@@ -278,6 +278,7 @@ def upsert_block_dir_timeseries(
     canonical_viirs8_only: bool = False,
     calendar_month_only: bool = False,
     force: bool = False,
+    override_existing_palette: bool = False,
 ) -> dict[str, Any]:
     """Commit block mats under ``block_dir`` as one time-series overlay.
 
@@ -352,6 +353,7 @@ def upsert_block_dir_timeseries(
             native_step=native_step,
             calendar_month_only=calendar_month_only,
             force=force,
+            override_existing_palette=override_existing_palette,
         )
 
 
@@ -418,6 +420,19 @@ def _preserve_existing_time_slices(
     return len(kept)
 
 
+def _existing_meta_palette(dest_dir: Path) -> str:
+    """读该层已落盘的色带名（读不到回空串）。"""
+    path = Path(dest_dir) / "meta.json"
+    if not path.is_file():
+        return ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return ""
+    value = payload.get("palette") if isinstance(payload, dict) else None
+    return str(value).strip() if isinstance(value, str) else ""
+
+
 def _upsert_block_dir_timeseries_locked(
     *,
     mats: list[tuple[str, Path]],
@@ -433,7 +448,29 @@ def _upsert_block_dir_timeseries_locked(
     native_step: str,
     force: bool,
     calendar_month_only: bool = False,
+    override_existing_palette: bool = False,
 ) -> dict[str, Any]:
+    # 已落盘配色优先（2026-11-12）。
+    #
+    # 重跑一个工作流只该更新数据，**不该换掉用户已经看惯的色带**。现场：
+    # 2026-11-11 22:02 一次重跑（run-d3d49d0c9236）把风云组 SM 从 sm-classic
+    # 冲回 sm-paper、ω 从 reds 冲成 cividis —— 根因是「产物注册表的默认配色」
+    # 与「逐层手工定的配色」是两套东西，重跑只认前者。
+    #
+    # 这里让盘上已有 meta 的 palette 压过入参：首次创建用默认值/按层覆盖，
+    # 之后重跑一律沿用。确实要强制换色时，显式传 override_existing_palette=True。
+    if not override_existing_palette:
+        kept_palette = _existing_meta_palette(dest_dir)
+        if kept_palette:
+            if palette and kept_palette != palette:
+                logger.info(
+                    "upsert_block_dir_timeseries: %s 沿用盘上已配色 %s（入参 %s 不用）",
+                    layer_id,
+                    kept_palette,
+                    palette,
+                )
+            palette = kept_palette
+
     time_list: list[str] = []
     bounds_by_time: dict[str, list[float]] = {}
     valid_count_by_time: dict[str, int] = {}
